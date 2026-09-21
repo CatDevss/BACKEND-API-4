@@ -54,6 +54,20 @@
 			<artifactId>ojdbc17</artifactId>
 			<scope>runtime</scope>
 		</dependency>
+				<dependency>
+			<groupId>com.oracle.database.security</groupId>
+			<artifactId>oraclepki</artifactId>
+		</dependency>
+				<dependency>
+			<groupId>com.oracle.oci.sdk</groupId>
+			<artifactId>oci-java-sdk-objectstorage</artifactId>
+			<version>3.95.0</version>
+		</dependency>
+		<dependency>
+			<groupId>com.oracle.oci.sdk</groupId>
+			<artifactId>oci-java-sdk-common-httpclient-jersey3</artifactId>
+			<version>3.95.0</version>
+		</dependency>
 		<dependency>
 			<groupId>org.projectlombok</groupId>
 			<artifactId>lombok</artifactId>
