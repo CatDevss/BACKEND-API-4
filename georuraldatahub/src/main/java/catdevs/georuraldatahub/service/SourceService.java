@@ -6,6 +6,7 @@ import catdevs.georuraldatahub.entity.Source;
 import catdevs.georuraldatahub.entity.User;
 import catdevs.georuraldatahub.repository.SourceRepository;
 import catdevs.georuraldatahub.repository.UserRepository;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -69,14 +70,23 @@ public class SourceService {
                 user
         );
 
-        Source savedSource = sourceRepository.save(source);
+        try {
+            Source savedSource = sourceRepository.saveAndFlush(source);
 
-        return new SourceResponseDTO(
-                savedSource.getId(),
-                savedSource.getName(),
-                savedSource.getDateCreation(),
-                savedSource.getUrl(),
-                savedSource.getUser().getId()
-        );
+            return new SourceResponseDTO(
+                    savedSource.getId(),
+                    savedSource.getName(),
+                    savedSource.getDateCreation(),
+                    savedSource.getUrl(),
+                    savedSource.getUser().getId()
+            );
+
+        } catch (DataIntegrityViolationException e) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Já existe uma fonte com esse nome",
+                    e
+            );
+        }
     }
 }
