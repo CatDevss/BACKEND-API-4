@@ -15,25 +15,25 @@ import java.util.List;
 @Service
 public class BucketService {
 
-    private final ObjectStorageClient cliente;
-    private final ObjectStorageProperties propriedades;
+    private final ObjectStorageClient client;
+    private final ObjectStorageProperties props;
 
-    public BucketService(ObjectStorageClient cliente, ObjectStorageProperties propriedades) {
-        this.cliente = cliente;
-        this.propriedades = propriedades;
+    public BucketService(ObjectStorageClient client, ObjectStorageProperties props) {
+        this.client = client;
+        this.props = props;
     }
 
     /**
      * Retorna os nomes de todos os arquivos que estão no bucket.
      */
 
-    public List<String> listarObjetos() {
-        var requisicao = ListObjectsRequest.builder()
-                .namespaceName(propriedades.namespace())
-                .bucketName(propriedades.bucketName())
+    public List<String> listObjectsBucket() {
+        var request = ListObjectsRequest.builder()
+                .namespaceName(props.namespace())
+                .bucketName(props.bucketName())
                 .build();
 
-        return cliente.listObjects(requisicao)
+        return client.listObjects(request)
                 .getListObjects()
                 .getObjects()
                 .stream()

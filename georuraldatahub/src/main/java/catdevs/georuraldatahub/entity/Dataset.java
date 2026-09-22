@@ -4,7 +4,7 @@ import jakarta.persistence.*;
 
 @Entity
 @Table(name = "conjunto")
-public class Conjunto {
+public class Dataset {
 
     @Id
     @Column(name = "con_id")
@@ -12,18 +12,18 @@ public class Conjunto {
     private Long id;
 
     @Column(name = "con_nome", nullable = false)
-    private String nome;
+    private String name;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "fon_id")
-    private Fonte fonte;
+    private Source source;
 
-    public Conjunto() {
+    public Dataset() {
     }
 
-    public Conjunto(String nome, Fonte fonte) {
-        this.nome = nome;
-        this.fonte = fonte;
+    public Dataset(String name, Source source) {
+        this.name = name;
+        this.source = source;
     }
 
     public Long getId() {
@@ -34,19 +34,19 @@ public class Conjunto {
         this.id = id;
     }
 
-    public Fonte getFonte() {
-        return fonte;
+    public String getName() {
+        return name;
     }
 
-    public void setFonte(Fonte fonte) {
-        this.fonte = fonte;
+    public void setName(String name) {
+        this.name = name;
     }
 
-    public String getNome() {
-        return nome;
+    public Source getSource() {
+        return source;
     }
 
-    public void setNome(String nome) {
-        this.nome = nome;
+    public void setSource(Source source) {
+        this.source = source;
     }
 }
