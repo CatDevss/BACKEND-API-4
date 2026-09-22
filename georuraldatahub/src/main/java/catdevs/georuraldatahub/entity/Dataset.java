@@ -14,8 +14,8 @@ public class Dataset {
     @Column(name = "con_nome", nullable = false)
     private String name;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "fon_id")
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "fon_id", nullable = false)
     private Source source;
 
     public Dataset() {

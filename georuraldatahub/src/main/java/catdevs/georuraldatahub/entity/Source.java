@@ -21,8 +21,8 @@ public class Source {
     @Column(name = "fon_url", nullable = false)
     private String url;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "usr_id")
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "usr_id", nullable = false)
     private User user;
 
     public Source(){
