@@ -11,6 +11,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.sql.SQLException;
 import java.time.LocalDateTime;
 
 @Service
@@ -82,11 +83,32 @@ public class SourceService {
             );
 
         } catch (DataIntegrityViolationException e) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "Já existe uma fonte com esse nome",
-                    e
-            );
+            if (isUniqueConstraintViolation(e)) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "Já existe uma fonte com esse nome",
+                        e
+                );
+            }
+
+            throw e;
         }
+    }
+
+    private boolean isUniqueConstraintViolation(
+            DataIntegrityViolationException exception
+    ) {
+        Throwable cause = exception;
+
+        while (cause != null) {
+            if (cause instanceof SQLException sqlException
+                    && sqlException.getErrorCode() == 1) {
+                return true;
+            }
+
+            cause = cause.getCause();
+        }
+
+        return false;
     }
 }
