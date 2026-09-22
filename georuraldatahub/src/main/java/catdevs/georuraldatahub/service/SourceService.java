@@ -6,10 +6,12 @@ import catdevs.georuraldatahub.entity.Source;
 import catdevs.georuraldatahub.entity.User;
 import catdevs.georuraldatahub.repository.SourceRepository;
 import catdevs.georuraldatahub.repository.UserRepository;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.sql.SQLException;
 import java.time.LocalDateTime;
 
 @Service
@@ -69,14 +71,44 @@ public class SourceService {
                 user
         );
 
-        Source savedSource = sourceRepository.save(source);
+        try {
+            Source savedSource = sourceRepository.saveAndFlush(source);
 
-        return new SourceResponseDTO(
-                savedSource.getId(),
-                savedSource.getName(),
-                savedSource.getDateCreation(),
-                savedSource.getUrl(),
-                savedSource.getUser().getId()
-        );
+            return new SourceResponseDTO(
+                    savedSource.getId(),
+                    savedSource.getName(),
+                    savedSource.getDateCreation(),
+                    savedSource.getUrl(),
+                    savedSource.getUser().getId()
+            );
+
+        } catch (DataIntegrityViolationException e) {
+            if (isUniqueConstraintViolation(e)) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "Já existe uma fonte com esse nome",
+                        e
+                );
+            }
+
+            throw e;
+        }
+    }
+
+    private boolean isUniqueConstraintViolation(
+            DataIntegrityViolationException exception
+    ) {
+        Throwable cause = exception;
+
+        while (cause != null) {
+            if (cause instanceof SQLException sqlException
+                    && sqlException.getErrorCode() == 1) {
+                return true;
+            }
+
+            cause = cause.getCause();
+        }
+
+        return false;
     }
 }
