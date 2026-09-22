@@ -14,7 +14,7 @@ import jakarta.persistence.Table;
 
 @Entity
 @Table(name = "versao")
-public class Versao {
+public class Version {
 
     @Id
     @Column(name = "ver_id")
@@ -23,22 +23,22 @@ public class Versao {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "con_id", referencedColumnName = "con_id")
-    private Conjunto conjunto;
+    private Dataset dataset;
 
     @Column(name = "ver_data_criacao")
-    private LocalDateTime dataCriacao;
+    private LocalDateTime dateCreation;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ver_usr_criacao", referencedColumnName = "usr_id")
-    private Usuario usuario;
+    private User user;
 
-    public Versao(){
+    public Version(){
     }
 
-    public Versao(Conjunto conjunto, LocalDateTime dataCriacao, Usuario usuario) {
-        this.conjunto = conjunto;
-        this.dataCriacao = dataCriacao;
-        this.usuario = usuario;
+    public Version(Dataset dataset, LocalDateTime dateCreation, User user) {
+        this.dataset = dataset;
+        this.dateCreation = dateCreation;
+        this.user = user;
     }
 
     public Long getId() {
@@ -49,27 +49,27 @@ public class Versao {
         this.id = id;
     }
 
-    public Conjunto getConjunto() {
-        return conjunto;
+    public Dataset getDataset() {
+        return dataset;
     }
 
-    public void setConjunto(Conjunto conjunto) {
-        this.conjunto = conjunto;
+    public void setDataset(Dataset dataset) {
+        this.dataset = dataset;
     }
 
-    public LocalDateTime getDataCriacao() {
-        return dataCriacao;
+    public LocalDateTime getDateCreation() {
+        return dateCreation;
     }
 
-    public void setDataCriacao(LocalDateTime dataCriacao) {
-        this.dataCriacao = dataCriacao;
+    public void setDateCreation(LocalDateTime dateCreation) {
+        this.dateCreation = dateCreation;
     }
 
-    public Usuario getUsuario() {
-        return usuario;
+    public User getUser() {
+        return user;
     }
 
-    public void setUsuario(Usuario usuario) {
-        this.usuario = usuario;
+    public void setUser(User user) {
+        this.user = user;
     }
 }

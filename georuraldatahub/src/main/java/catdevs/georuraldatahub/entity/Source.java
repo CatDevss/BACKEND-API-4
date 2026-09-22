@@ -6,33 +6,33 @@ import jakarta.persistence.*;
 
 @Entity
 @Table(name="fonte")
-public class Fonte {
+public class Source {
     @Id
     @Column(name = "fon_id")
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(name = "fon_nome", nullable = false, unique = true)
-    private String nome;
+    private String name;
 
     @Column(name = "fon_data_criacao", nullable = false)
-    private LocalDateTime dataCriacao;
+    private LocalDateTime dateCreation;
 
     @Column(name = "fon_url", nullable = false)
     private String url;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "usr_id")
-    private Usuario usuario;
+    private User user;
 
-    public Fonte(){
+    public Source(){
     }
 
-    public Fonte(String nome, LocalDateTime dataCriacao, String url, Usuario usuario) {
-        this.nome = nome;
-        this.dataCriacao = dataCriacao;
+    public Source(String name, LocalDateTime dateCreation, String url, User user) {
+        this.name = name;
+        this.dateCreation = dateCreation;
         this.url = url;
-        this.usuario = usuario;
+        this.user = user;
     }
 
     public Long getId() {
@@ -43,20 +43,20 @@ public class Fonte {
         this.id = id;
     }
 
-    public String getNome() {
-        return nome;
+    public String getName() {
+        return name;
     }
 
-    public void setNome(String nome) {
-        this.nome = nome;
+    public void setName(String name) {
+        this.name = name;
     }
 
-    public LocalDateTime getDataCriacao() {
-        return dataCriacao;
+    public LocalDateTime getDateCreation() {
+        return dateCreation;
     }
 
-    public void setDataCriacao(LocalDateTime dataCriacao) {
-        this.dataCriacao = dataCriacao;
+    public void setDateCreation(LocalDateTime dateCreation) {
+        this.dateCreation = dateCreation;
     }
 
     public String getUrl() {
@@ -67,11 +67,11 @@ public class Fonte {
         this.url = url;
     }
 
-    public Usuario getUsuario() {
-        return usuario;
+    public User getUser() {
+        return user;
     }
 
-    public void setUsuario(Usuario usuario) {
-        this.usuario = usuario;
+    public void setUser(User user) {
+        this.user = user;
     }
 }

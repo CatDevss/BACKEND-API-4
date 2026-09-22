@@ -23,13 +23,13 @@ public class ObjectStorageConfig {
 
     @Bean
     public ObjectStorageClient objectStorageClient() throws IOException {
-        var arquivoConfig = ConfigFileReader.parse(
+        var fileConfig = ConfigFileReader.parse(
                 "/workspaces/BACKEND-API-4/georuraldatahub/.oci/config",
                 "DEFAULT");
 
-        var provedor = new ConfigFileAuthenticationDetailsProvider(arquivoConfig);
+        var provider = new ConfigFileAuthenticationDetailsProvider(fileConfig);
 
         return ObjectStorageClient.builder()
-                .build(provedor);
+                .build(provider);
     }
 }

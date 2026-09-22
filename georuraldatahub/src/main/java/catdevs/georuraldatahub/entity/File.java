@@ -12,7 +12,7 @@ import jakarta.persistence.Table;
 
 @Entity
 @Table(name = "arquivo")
-public class Arquivo {
+public class File {
 
     @Id
     @Column(name = "arq_id")
@@ -21,29 +21,29 @@ public class Arquivo {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ver_id", referencedColumnName = "ver_id")
-    private Versao versao;
+    private Version version;
 
     @Column(name = "arq_nome")
-    private String nome;
+    private String name;
 
     @Column(name = "arq_formato")
-    private String formatoArquivo;
+    private String formatFile;
 
     @Column(name = "arq_hash")
     private String hash;
 
     @Column(name = "arq_localizacao")
-    private String localizacao;
+    private String location;
 
-    public Arquivo(){
+    public File(){
     }
 
-    public Arquivo(Versao versao, String nome, String formatoArquivo, String hash, String localizacao) {
-        this.versao = versao;
-        this.nome = nome;
-        this.formatoArquivo = formatoArquivo;
+    public File(Version version, String name, String formatFile, String hash, String location) {
+        this.version = version;
+        this.name = name;
+        this.formatFile = formatFile;
         this.hash = hash;
-        this.localizacao = localizacao;
+        this.location = location;
     }
 
     public Long getId() {
@@ -54,28 +54,28 @@ public class Arquivo {
         this.id = id;
     }
 
-    public Versao getVersao() {
-        return versao;
+    public Version getVersion() {
+        return version;
     }
 
-    public void setVersao(Versao versao) {
-        this.versao = versao;
+    public void setVersion(Version version) {
+        this.version = version;
     }
 
-    public String getNome() {
-        return nome;
+    public String getName() {
+        return name;
     }
 
-    public void setNome(String nome) {
-        this.nome = nome;
+    public void setName(String name) {
+        this.name = name;
     }
 
-    public String getFormatoArquivo() {
-        return formatoArquivo;
+    public String getFormatFile() {
+        return formatFile;
     }
 
-    public void setFormatoArquivo(String formatoArquivo) {
-        this.formatoArquivo = formatoArquivo;
+    public void setFormatFile(String formatFile) {
+        this.formatFile = formatFile;
     }
 
     public String getHash() {
@@ -86,11 +86,11 @@ public class Arquivo {
         this.hash = hash;
     }
 
-    public String getLocalizacao() {
-        return localizacao;
+    public String getLocation() {
+        return location;
     }
 
-    public void setLocalizacao(String localizacao) {
-        this.localizacao = localizacao;
+    public void setLocation(String location) {
+        this.location = location;
     }
 }

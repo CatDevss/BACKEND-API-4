@@ -20,6 +20,6 @@ public class BucketController {
 
     @GetMapping 
     public List<String> listObjects() {
-        return bucketService.listarObjetos();
+        return bucketService.listObjectsBucket();
     }
 }
