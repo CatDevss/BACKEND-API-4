@@ -59,4 +59,11 @@ public class DatasetController {
     ) {
         return ResponseEntity.ok(datasetService.listFiles(id));
     }
+
+    @GetMapping("/{id}/arquivos")
+    public ResponseEntity<List<FileResponseDTO>> listFiles(
+            @PathVariable Long id
+    ) {
+        return ResponseEntity.ok(datasetService.listFiles(id));
+    }
 }
