@@ -2,12 +2,15 @@ package catdevs.georuraldatahub.controller;
 
 import catdevs.georuraldatahub.dto.DatasetCreateRequestDTO;
 import catdevs.georuraldatahub.dto.DatasetResponseDTO;
+import catdevs.georuraldatahub.dto.FileResponseDTO;
 import catdevs.georuraldatahub.service.DatasetService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/conjuntos")
@@ -37,5 +40,12 @@ public class DatasetController {
             @RequestPart("file") MultipartFile file
     ) {
         return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/{id}/arquivos")
+    public ResponseEntity<List<FileResponseDTO>> listFiles(
+            @PathVariable Long id
+    ) {
+        return ResponseEntity.ok(datasetService.listFiles(id));
     }
 }
