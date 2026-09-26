@@ -51,7 +51,7 @@ public class FileService {
         Version version = createVersion(datasetId, userId);
 
         String sanitizedFilename = sanitizeFilename(multipartFile.getOriginalFilename());
-        String location = bucketService.uploadToRawZone(multipartFile, datasetId, hash, sanitizedFilename);
+        String location = bucketService.uploadToRawZone(multipartFile, datasetId, hash);
 
         File file = new File(
                 version,
