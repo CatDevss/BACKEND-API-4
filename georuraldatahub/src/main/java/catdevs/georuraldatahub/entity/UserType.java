@@ -2,8 +2,8 @@ package catdevs.georuraldatahub.entity;
 
 public enum UserType {
     ADMIN,
-    OPERATOR,
-    ANALYST,
-    MANAGER,
+    OPERADOR,
+    ANALISTA,
+    GESTOR,
     AUDITOR
 }
