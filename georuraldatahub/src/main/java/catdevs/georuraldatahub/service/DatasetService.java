@@ -80,6 +80,7 @@ public class DatasetService {
                         file.getId(),
                         file.getName(),
                         file.getFormatFile(),
+                        file.getSize(),
                         file.getHash(),
                         file.getLocation(),
                         file.getVersion().getId(),

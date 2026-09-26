@@ -29,6 +29,9 @@ public class File {
     @Column(name = "arq_formato")
     private String formatFile;
 
+    @Column(name = "arq_tamanho", nullable = false)
+    private Long size;
+
     @Column(name = "arq_hash")
     private String hash;
 
@@ -38,10 +41,11 @@ public class File {
     public File(){
     }
 
-    public File(Version version, String name, String formatFile, String hash, String location) {
+    public File(Version version, String name, String formatFile, Long size, String hash, String location) {
         this.version = version;
         this.name = name;
         this.formatFile = formatFile;
+        this.size = size;
         this.hash = hash;
         this.location = location;
     }
@@ -76,6 +80,14 @@ public class File {
 
     public void setFormatFile(String formatFile) {
         this.formatFile = formatFile;
+    }
+
+    public Long getSize() {
+        return size;
+    }
+
+    public void setSize(Long size) {
+        this.size = size;
     }
 
     public String getHash() {

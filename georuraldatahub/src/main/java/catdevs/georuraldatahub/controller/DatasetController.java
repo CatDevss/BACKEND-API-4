@@ -41,14 +41,23 @@ public class DatasetController {
             value = "/{id}/arquivos",
             consumes = MediaType.MULTIPART_FORM_DATA_VALUE
     )
-    public ResponseEntity<Void> uploadFile(
+    public ResponseEntity<FileResponseDTO> uploadFile(
             @PathVariable Long id,
             @RequestPart("file") MultipartFile file,
             @RequestParam("userId") Long userId
-    ) {
-        fileService.identifyUser(userId);
+    ) throws Exception {
+        FileResponseDTO response = fileService.uploadFile(file, id, userId);
 
-        return ResponseEntity.ok().build();
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(response);
+    }
+
+    @GetMapping("/{id}/arquivos")
+    public ResponseEntity<List<FileResponseDTO>> listFiles(
+            @PathVariable Long id
+    ) {
+        return ResponseEntity.ok(datasetService.listFiles(id));
     }
 
     @GetMapping("/{id}/arquivos")
