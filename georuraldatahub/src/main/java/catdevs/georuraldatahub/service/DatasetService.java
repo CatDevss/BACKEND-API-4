@@ -68,7 +68,6 @@ public class DatasetService {
     }
 
     public List<FileResponseDTO> listFiles(Long datasetId) {
-
         Dataset dataset = datasetRepository.findById(datasetId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
@@ -81,7 +80,6 @@ public class DatasetService {
                         file.getId(),
                         file.getName(),
                         file.getFormatFile(),
-                        file.getSize(),
                         file.getHash(),
                         file.getLocation(),
                         file.getVersion().getId(),
