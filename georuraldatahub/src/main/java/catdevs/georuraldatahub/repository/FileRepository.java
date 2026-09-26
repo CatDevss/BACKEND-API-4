@@ -17,6 +17,6 @@ public interface FileRepository extends JpaRepository<File, Long> {
     """)
     boolean existsByHashInDataset(@Param("datasetId") Long datasetId, @Param("hash") String hash);
 
-@org.springframework.data.jpa.repository.EntityGraph(attributePaths = "version")
-    List<File> findByVersion_Dataset_IdOrderByIdDesc(Long datasetId)
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = "version")
+    List<File> findByVersion_Dataset_IdOrderByIdDesc(Long datasetId);
 }
