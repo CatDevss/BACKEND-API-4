@@ -40,17 +40,16 @@ public class BucketService {
                 .getListObjects()
                 .getObjects()
                 .stream()
-                .map(objectSummary -> objectSummary.getName())
+                .map(ObjectSummary::getName)
                 .toList();
     }
 
     /**
      * Envia o arquivo para a zona bruta do bucket, no formato
-     * "bruta/{datasetId}/{hash}_{nomeSanitizado}", e retorna o nome do objeto salvo.
-     * O nome do arquivo já deve chegar sanitizado (sem espaços/acentos/caracteres especiais).
+     * "bruta/{datasetId}/{hash}_{nomeOriginal}", e retorna o nome do objeto salvo.
      */
-    public String uploadToRawZone(MultipartFile file, Long datasetId, String hash, String filename) throws IOException {
-        String objectName = "bruta/" + datasetId + "/" + hash + "_" + filename;
+    public String uploadToRawZone(MultipartFile file, Long datasetId, String hash) throws IOException {
+        String objectName = "bruta/" + datasetId + "/" + hash + "_" + file.getOriginalFilename();
 
         PutObjectRequest request = PutObjectRequest.builder()
                 .namespaceName(props.namespace())
