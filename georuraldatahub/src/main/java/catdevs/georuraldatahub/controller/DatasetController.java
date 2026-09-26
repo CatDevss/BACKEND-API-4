@@ -4,6 +4,7 @@ import catdevs.georuraldatahub.dto.DatasetCreateRequestDTO;
 import catdevs.georuraldatahub.dto.DatasetResponseDTO;
 import catdevs.georuraldatahub.dto.FileResponseDTO;
 import catdevs.georuraldatahub.service.DatasetService;
+import catdevs.georuraldatahub.service.FileService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -17,9 +18,14 @@ import java.util.List;
 public class DatasetController {
 
     private final DatasetService datasetService;
+    private final FileService fileService;
 
-    public DatasetController(DatasetService datasetService) {
+    public DatasetController(
+            DatasetService datasetService,
+            FileService fileService
+    ) {
         this.datasetService = datasetService;
+        this.fileService = fileService;
     }
 
     @PostMapping
@@ -37,8 +43,11 @@ public class DatasetController {
     )
     public ResponseEntity<Void> uploadFile(
             @PathVariable Long id,
-            @RequestPart("file") MultipartFile file
+            @RequestPart("file") MultipartFile file,
+            @RequestParam("userId") Long userId
     ) {
+        fileService.identifyUser(userId);
+
         return ResponseEntity.ok().build();
     }
 
