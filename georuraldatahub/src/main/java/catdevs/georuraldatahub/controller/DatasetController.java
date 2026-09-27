@@ -5,13 +5,14 @@ import catdevs.georuraldatahub.dto.DatasetResponseDTO;
 import catdevs.georuraldatahub.dto.FileResponseDTO;
 import catdevs.georuraldatahub.service.DatasetService;
 import catdevs.georuraldatahub.service.FileService;
+
+import jakarta.validation.Valid;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-
-import java.util.List;
 
 @RestController
 @RequestMapping("/conjuntos")
@@ -30,7 +31,7 @@ public class DatasetController {
 
     @PostMapping
     public ResponseEntity<DatasetResponseDTO> create(
-            @RequestBody DatasetCreateRequestDTO request
+            @Valid @RequestBody DatasetCreateRequestDTO request
     ) {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
@@ -44,19 +45,14 @@ public class DatasetController {
     public ResponseEntity<FileResponseDTO> uploadFile(
             @PathVariable Long id,
             @RequestPart("file") MultipartFile file,
-            @RequestParam("userId") Long userId
+            @RequestParam Long userId
     ) throws Exception {
-        FileResponseDTO response = fileService.uploadFile(file, id, userId);
+
+        FileResponseDTO response =
+                fileService.uploadFile(file, id, userId);
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(response);
-    }
-
-    @GetMapping("/{id}/arquivos")
-    public ResponseEntity<List<FileResponseDTO>> listFiles(
-            @PathVariable Long id
-    ) {
-        return ResponseEntity.ok(datasetService.listFiles(id));
     }
 }
