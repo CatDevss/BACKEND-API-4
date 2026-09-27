@@ -6,6 +6,7 @@ import catdevs.georuraldatahub.entity.Source;
 import catdevs.georuraldatahub.entity.User;
 import catdevs.georuraldatahub.repository.SourceRepository;
 import catdevs.georuraldatahub.repository.UserRepository;
+
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -30,27 +31,6 @@ public class SourceService {
 
     public SourceResponseDTO create(SourceCreateRequestDTO request) {
 
-        if (request.name() == null || request.name().isBlank()) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Nome da fonte é obrigatório"
-            );
-        }
-
-        if (request.url() == null || request.url().isBlank()) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "URL da fonte é obrigatória"
-            );
-        }
-
-        if (request.userId() == null) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Usuário é obrigatório"
-            );
-        }
-
         if (sourceRepository.existsByName(request.name().trim())) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
@@ -59,10 +39,12 @@ public class SourceService {
         }
 
         User user = userRepository.findById(request.userId())
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        "Usuário não encontrado"
-                ));
+                .orElseThrow(() ->
+                        new ResponseStatusException(
+                                HttpStatus.BAD_REQUEST,
+                                "Usuário não encontrado"
+                        )
+                );
 
         Source source = new Source(
                 request.name().trim(),
@@ -83,6 +65,7 @@ public class SourceService {
             );
 
         } catch (DataIntegrityViolationException e) {
+
             if (isUniqueConstraintViolation(e)) {
                 throw new ResponseStatusException(
                         HttpStatus.CONFLICT,
@@ -101,8 +84,10 @@ public class SourceService {
         Throwable cause = exception;
 
         while (cause != null) {
+
             if (cause instanceof SQLException sqlException
                     && sqlException.getErrorCode() == 1) {
+
                 return true;
             }
 

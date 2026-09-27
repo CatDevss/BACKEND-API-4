@@ -8,6 +8,7 @@ import catdevs.georuraldatahub.entity.Source;
 import catdevs.georuraldatahub.repository.DatasetRepository;
 import catdevs.georuraldatahub.repository.FileRepository;
 import catdevs.georuraldatahub.repository.SourceRepository;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,28 +33,16 @@ public class DatasetService {
         this.fileRepository = fileRepository;
     }
 
-    @Transactional 
+    @Transactional
     public DatasetResponseDTO create(DatasetCreateRequestDTO request) {
 
-        if (request.name() == null || request.name().isBlank()) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Nome do conjunto é obrigatório"
-            );
-        }
-
-        if (request.sourceId() == null) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Fonte é obrigatória"
-            );
-        }
-
         Source source = sourceRepository.findById(request.sourceId())
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        "Fonte não encontrada"
-                ));
+                .orElseThrow(() ->
+                        new ResponseStatusException(
+                                HttpStatus.BAD_REQUEST,
+                                "Fonte não encontrada"
+                        )
+                );
 
         Dataset dataset = new Dataset(
                 request.name().trim(),
@@ -70,13 +59,17 @@ public class DatasetService {
     }
 
     public List<FileResponseDTO> listFiles(Long datasetId) {
-        Dataset dataset = datasetRepository.findById(datasetId)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Conjunto não encontrado"
-                ));
 
-        return fileRepository.findByVersion_Dataset_IdOrderByIdDesc(dataset.getId())
+        Dataset dataset = datasetRepository.findById(datasetId)
+                .orElseThrow(() ->
+                        new ResponseStatusException(
+                                HttpStatus.NOT_FOUND,
+                                "Conjunto não encontrado"
+                        )
+                );
+
+        return fileRepository
+                .findByVersion_Dataset_IdOrderByIdDesc(dataset.getId())
                 .stream()
                 .map(file -> new FileResponseDTO(
                         file.getId(),

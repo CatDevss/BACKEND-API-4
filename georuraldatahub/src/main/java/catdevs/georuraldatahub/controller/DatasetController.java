@@ -5,6 +5,9 @@ import catdevs.georuraldatahub.dto.DatasetResponseDTO;
 import catdevs.georuraldatahub.dto.FileResponseDTO;
 import catdevs.georuraldatahub.service.DatasetService;
 import catdevs.georuraldatahub.service.FileService;
+
+import jakarta.validation.Valid;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -29,9 +32,9 @@ public class DatasetController {
         this.fileService = fileService;
     }
 
-    @PostMapping("/criar")
+    @PostMapping
     public ResponseEntity<DatasetResponseDTO> create(
-            @RequestBody DatasetCreateRequestDTO request
+            @Valid @RequestBody DatasetCreateRequestDTO request
     ) {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
@@ -47,7 +50,9 @@ public class DatasetController {
             @RequestPart("file") MultipartFile file,
             @RequestParam("userId") Long userId
     ) throws Exception {
-        FileResponseDTO response = fileService.uploadFile(file, id, userId);
+
+        FileResponseDTO response =
+                fileService.uploadFile(file, id, userId);
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)
