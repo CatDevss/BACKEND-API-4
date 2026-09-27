@@ -19,71 +19,71 @@ import java.util.List;
 @Service
 public class DatasetService {
 
-    private final DatasetRepository datasetRepository;
-    private final SourceRepository sourceRepository;
-    private final FileRepository fileRepository;
+        private final DatasetRepository datasetRepository;
+        private final SourceRepository sourceRepository;
+        private final FileRepository fileRepository;
 
-    public DatasetService(
-            DatasetRepository datasetRepository,
-            SourceRepository sourceRepository,
-            FileRepository fileRepository
-    ) {
-        this.datasetRepository = datasetRepository;
-        this.sourceRepository = sourceRepository;
-        this.fileRepository = fileRepository;
-    }
+        public DatasetService(
+                        DatasetRepository datasetRepository,
+                        SourceRepository sourceRepository,
+                        FileRepository fileRepository) {
+                this.datasetRepository = datasetRepository;
+                this.sourceRepository = sourceRepository;
+                this.fileRepository = fileRepository;
+        }
 
-    @Transactional
-    public DatasetResponseDTO create(DatasetCreateRequestDTO request) {
+        @Transactional
+        public DatasetResponseDTO create(DatasetCreateRequestDTO request) {
 
-        Source source = sourceRepository.findById(request.sourceId())
-                .orElseThrow(() ->
-                        new ResponseStatusException(
-                                HttpStatus.BAD_REQUEST,
-                                "Fonte não encontrada"
-                        )
-                );
+                Source source = sourceRepository.findById(request.sourceId())
+                                .orElseThrow(() -> new ResponseStatusException(
+                                                HttpStatus.BAD_REQUEST,
+                                                "Fonte não encontrada"));
 
-        Dataset dataset = new Dataset(
-                request.name().trim(),
-                source
-        );
+                Dataset dataset = new Dataset(
+                                request.name().trim(),
+                                source);
 
-        Dataset savedDataset = datasetRepository.save(dataset);
+                Dataset savedDataset = datasetRepository.save(dataset);
 
-        return new DatasetResponseDTO(
-                savedDataset.getId(),
-                savedDataset.getName(),
-                savedDataset.getSource().getId()
-        );
-    }
+                return new DatasetResponseDTO(
+                                savedDataset.getId(),
+                                savedDataset.getName(),
+                                savedDataset.getSource().getId());
+        }
 
-    public List<FileResponseDTO> listFiles(Long datasetId) {
+        public List<DatasetResponseDTO> listAll() {
+                return datasetRepository.findAll()
+                                .stream()
+                                .map(dataset -> new DatasetResponseDTO(
+                                                dataset.getId(),
+                                                dataset.getName(),
+                                                dataset.getSource().getId()))
+                                .toList();
+        }
 
-        Dataset dataset = datasetRepository.findById(datasetId)
-                .orElseThrow(() ->
-                        new ResponseStatusException(
-                                HttpStatus.NOT_FOUND,
-                                "Conjunto não encontrado"
-                        )
-                );
+        public List<FileResponseDTO> listFiles(Long datasetId) {
 
-        return fileRepository
-                .findByVersion_Dataset_IdOrderByIdDesc(dataset.getId())
-                .stream()
-                .map(file -> new FileResponseDTO(
-                        file.getId(),
-                        file.getName(),
-                        file.getFormatFile(),
-                        file.getSize(),
-                        file.getHash(),
-                        file.getLocation(),
-                        file.getVersion().getId(),
-                        file.getVersion().getDateCreation(),
-                        file.getVersion().getUser() != null
-                                ? file.getVersion().getUser().getId()
-                                : null
-                ))
-                .toList();
-    }
+                Dataset dataset = datasetRepository.findById(datasetId)
+                                .orElseThrow(() -> new ResponseStatusException(
+                                                HttpStatus.NOT_FOUND,
+                                                "Conjunto não encontrado"));
+
+                return fileRepository
+                                .findByVersion_Dataset_IdOrderByIdDesc(dataset.getId())
+                                .stream()
+                                .map(file -> new FileResponseDTO(
+                                                file.getId(),
+                                                file.getName(),
+                                                file.getFormatFile(),
+                                                file.getSize(),
+                                                file.getHash(),
+                                                file.getLocation(),
+                                                file.getVersion().getId(),
+                                                file.getVersion().getDateCreation(),
+                                                file.getVersion().getUser() != null
+                                                                ? file.getVersion().getUser().getId()
+                                                                : null))
+                                .toList();
+        }
 }
