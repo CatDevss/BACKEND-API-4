@@ -91,7 +91,7 @@ public class FileService {
         }
     }
 
-    private String calculateHash(MultipartFile file) throws IOException, NoSuchAlgorithmException {
+    String calculateHash(MultipartFile file) throws IOException, NoSuchAlgorithmException {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
 
         try (InputStream is = file.getInputStream();
