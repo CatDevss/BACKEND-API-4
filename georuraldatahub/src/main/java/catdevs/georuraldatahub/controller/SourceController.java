@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
+@CrossOrigin
 @RequestMapping("/fontes")
 public class SourceController {
 
@@ -17,7 +18,7 @@ public class SourceController {
         this.sourceService = sourceService;
     }
 
-    @PostMapping
+    @PostMapping("/criar")
     public ResponseEntity<SourceResponseDTO> create(
             @RequestBody SourceCreateRequestDTO request
     ) {

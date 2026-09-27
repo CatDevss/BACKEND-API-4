@@ -1,6 +1,8 @@
 package catdevs.georuraldatahub.service;
 
 import com.oracle.bmc.objectstorage.ObjectStorageClient;
+import com.oracle.bmc.objectstorage.model.ObjectSummary;
+import com.oracle.bmc.objectstorage.requests.DeleteObjectRequest;
 import com.oracle.bmc.objectstorage.requests.ListObjectsRequest;
 import com.oracle.bmc.objectstorage.requests.PutObjectRequest;
 import catdevs.georuraldatahub.config.ObjectStorageProperties;
@@ -11,19 +13,16 @@ import java.io.IOException;
 import java.util.List;
 
 /**
- * Responsável por conversar com o bucket:
- * listar e enviar arquivos.
+ * Responsável por conversar com o bucket: listar, enviar e baixar arquivos.
  */
+
 @Service
 public class BucketService {
 
     private final ObjectStorageClient client;
     private final ObjectStorageProperties props;
 
-    public BucketService(
-            ObjectStorageClient client,
-            ObjectStorageProperties props
-    ) {
+    public BucketService(ObjectStorageClient client, ObjectStorageProperties props) {
         this.client = client;
         this.props = props;
     }
@@ -31,8 +30,8 @@ public class BucketService {
     /**
      * Retorna os nomes de todos os arquivos que estão no bucket.
      */
-    public List<String> listObjectsBucket() {
 
+    public List<String> listObjectsBucket() {
         var request = ListObjectsRequest.builder()
                 .namespaceName(props.namespace())
                 .bucketName(props.bucketName())
@@ -42,32 +41,17 @@ public class BucketService {
                 .getListObjects()
                 .getObjects()
                 .stream()
-                .map(objectSummary -> objectSummary.getName())
+                .map(ObjectSummary::getName)
                 .toList();
     }
 
     /**
-     * Envia o arquivo para a zona bruta do bucket.
-     *
-     * Estrutura:
-     *
-     * bruta/{datasetId}/{hash}_{filename}
-     *
-     * Exemplo:
-     *
-     * bruta/15/a8f3c2..._imoveis_rurais.geojson
-     *
-     * O filename deve chegar previamente sanitizado.
+     * Envia o arquivo para a zona bruta do bucket, no formato
+     * "bruta/{datasetId}/{hash}_{nomeOriginal}", e retorna o nome do objeto salvo.
      */
-    public String uploadToRawZone(
-            MultipartFile file,
-            Long datasetId,
-            String hash,
-            String filename
-    ) throws IOException {
-
-        String objectName =
-                "bruta/" + datasetId + "/" + hash + "_" + filename;
+    public String uploadToRawZone(MultipartFile file, Long datasetId, String hash, String sanitizedFilename)
+            throws IOException {
+        String objectName = "bruta/" + datasetId + "/" + hash + "_" + sanitizedFilename;
 
         PutObjectRequest request = PutObjectRequest.builder()
                 .namespaceName(props.namespace())
@@ -78,7 +62,16 @@ public class BucketService {
                 .build();
 
         client.putObject(request);
-
         return objectName;
+    }
+
+    public void deleteObject(String objectName) {
+        var request = DeleteObjectRequest.builder()
+                .namespaceName(props.namespace())
+                .bucketName(props.bucketName())
+                .objectName(objectName)
+                .build();
+
+        client.deleteObject(request);
     }
 }
