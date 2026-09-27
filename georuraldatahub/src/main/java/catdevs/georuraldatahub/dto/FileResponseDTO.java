@@ -10,7 +10,7 @@ public record FileResponseDTO(
         String hash,
         String location,
         Long versionId,
-        LocalDateTime dateSent,
+        LocalDateTime dateCreation,
         Long userId
 ) {
 }

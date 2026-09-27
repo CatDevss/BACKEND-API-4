@@ -10,6 +10,7 @@ import catdevs.georuraldatahub.repository.FileRepository;
 import catdevs.georuraldatahub.repository.SourceRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
@@ -31,6 +32,7 @@ public class DatasetService {
         this.fileRepository = fileRepository;
     }
 
+    @Transactional 
     public DatasetResponseDTO create(DatasetCreateRequestDTO request) {
 
         if (request.name() == null || request.name().isBlank()) {

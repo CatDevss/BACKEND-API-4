@@ -2,6 +2,7 @@ package catdevs.georuraldatahub.service;
 
 import com.oracle.bmc.objectstorage.ObjectStorageClient;
 import com.oracle.bmc.objectstorage.model.ObjectSummary;
+import com.oracle.bmc.objectstorage.requests.DeleteObjectRequest;
 import com.oracle.bmc.objectstorage.requests.ListObjectsRequest;
 import com.oracle.bmc.objectstorage.requests.PutObjectRequest;
 import catdevs.georuraldatahub.config.ObjectStorageProperties;
@@ -48,8 +49,9 @@ public class BucketService {
      * Envia o arquivo para a zona bruta do bucket, no formato
      * "bruta/{datasetId}/{hash}_{nomeOriginal}", e retorna o nome do objeto salvo.
      */
-    public String uploadToRawZone(MultipartFile file, Long datasetId, String hash) throws IOException {
-        String objectName = "bruta/" + datasetId + "/" + hash + "_" + file.getOriginalFilename();
+    public String uploadToRawZone(MultipartFile file, Long datasetId, String hash, String sanitizedFilename)
+            throws IOException {
+        String objectName = "bruta/" + datasetId + "/" + hash + "_" + sanitizedFilename;
 
         PutObjectRequest request = PutObjectRequest.builder()
                 .namespaceName(props.namespace())
@@ -61,5 +63,15 @@ public class BucketService {
 
         client.putObject(request);
         return objectName;
+    }
+
+    public void deleteObject(String objectName) {
+        var request = DeleteObjectRequest.builder()
+                .namespaceName(props.namespace())
+                .bucketName(props.bucketName())
+                .objectName(objectName)
+                .build();
+
+        client.deleteObject(request);
     }
 }

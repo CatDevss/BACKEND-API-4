@@ -14,6 +14,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
 
 @RestController
+@CrossOrigin
 @RequestMapping("/conjuntos")
 public class DatasetController {
 
@@ -28,7 +29,7 @@ public class DatasetController {
         this.fileService = fileService;
     }
 
-    @PostMapping
+    @PostMapping("/criar")
     public ResponseEntity<DatasetResponseDTO> create(
             @RequestBody DatasetCreateRequestDTO request
     ) {
