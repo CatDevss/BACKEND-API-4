@@ -54,7 +54,6 @@ public class SourceService {
         );
 
         try {
-
             Source savedSource = sourceRepository.saveAndFlush(source);
 
             return new SourceResponseDTO(
@@ -82,7 +81,6 @@ public class SourceService {
     private boolean isUniqueConstraintViolation(
             DataIntegrityViolationException exception
     ) {
-
         Throwable cause = exception;
 
         while (cause != null) {

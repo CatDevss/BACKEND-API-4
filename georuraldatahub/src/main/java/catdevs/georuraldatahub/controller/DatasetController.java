@@ -14,7 +14,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
+
 @RestController
+@CrossOrigin
 @RequestMapping("/conjuntos")
 public class DatasetController {
 
@@ -45,7 +48,7 @@ public class DatasetController {
     public ResponseEntity<FileResponseDTO> uploadFile(
             @PathVariable Long id,
             @RequestPart("file") MultipartFile file,
-            @RequestParam Long userId
+            @RequestParam("userId") Long userId
     ) throws Exception {
 
         FileResponseDTO response =
@@ -54,5 +57,12 @@ public class DatasetController {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(response);
+    }
+
+    @GetMapping("/{id}/arquivos")
+    public ResponseEntity<List<FileResponseDTO>> listFiles(
+            @PathVariable Long id
+    ) {
+        return ResponseEntity.ok(datasetService.listFiles(id));
     }
 }
