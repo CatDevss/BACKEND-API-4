@@ -21,48 +21,45 @@ import java.util.List;
 @RequestMapping("/conjuntos")
 public class DatasetController {
 
-    private final DatasetService datasetService;
-    private final FileService fileService;
+        private final DatasetService datasetService;
+        private final FileService fileService;
 
-    public DatasetController(
-            DatasetService datasetService,
-            FileService fileService
-    ) {
-        this.datasetService = datasetService;
-        this.fileService = fileService;
-    }
+        public DatasetController(
+                        DatasetService datasetService,
+                        FileService fileService) {
+                this.datasetService = datasetService;
+                this.fileService = fileService;
+        }
 
-    @PostMapping
-    public ResponseEntity<DatasetResponseDTO> create(
-            @Valid @RequestBody DatasetCreateRequestDTO request
-    ) {
-        return ResponseEntity
-                .status(HttpStatus.CREATED)
-                .body(datasetService.create(request));
-    }
+        @PostMapping
+        public ResponseEntity<DatasetResponseDTO> create(
+                        @Valid @RequestBody DatasetCreateRequestDTO request) {
+                return ResponseEntity
+                                .status(HttpStatus.CREATED)
+                                .body(datasetService.create(request));
+        }
 
-    @PostMapping(
-            value = "/{id}/arquivos",
-            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
-    )
-    public ResponseEntity<FileResponseDTO> uploadFile(
-            @PathVariable Long id,
-            @RequestPart("file") MultipartFile file,
-            @RequestParam("userId") Long userId
-    ) throws Exception {
+        @GetMapping
+        public ResponseEntity<List<DatasetResponseDTO>> listAll() {
+                return ResponseEntity.ok(datasetService.listAll());
+        }
 
-        FileResponseDTO response =
-                fileService.uploadFile(file, id, userId);
+        @PostMapping(value = "/{id}/arquivos", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+        public ResponseEntity<FileResponseDTO> uploadFile(
+                        @PathVariable Long id,
+                        @RequestPart("file") MultipartFile file,
+                        @RequestParam("userId") Long userId) throws Exception {
 
-        return ResponseEntity
-                .status(HttpStatus.CREATED)
-                .body(response);
-    }
+                FileResponseDTO response = fileService.uploadFile(file, id, userId);
 
-    @GetMapping("/{id}/arquivos")
-    public ResponseEntity<List<FileResponseDTO>> listFiles(
-            @PathVariable Long id
-    ) {
-        return ResponseEntity.ok(datasetService.listFiles(id));
-    }
+                return ResponseEntity
+                                .status(HttpStatus.CREATED)
+                                .body(response);
+        }
+
+        @GetMapping("/{id}/arquivos")
+        public ResponseEntity<List<FileResponseDTO>> listFiles(
+                        @PathVariable Long id) {
+                return ResponseEntity.ok(datasetService.listFiles(id));
+        }
 }

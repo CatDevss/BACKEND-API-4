@@ -12,6 +12,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.List;
+
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 
@@ -23,8 +25,7 @@ public class SourceService {
 
     public SourceService(
             SourceRepository sourceRepository,
-            UserRepository userRepository
-    ) {
+            UserRepository userRepository) {
         this.sourceRepository = sourceRepository;
         this.userRepository = userRepository;
     }
@@ -34,24 +35,19 @@ public class SourceService {
         if (sourceRepository.existsByName(request.name().trim())) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
-                    "Já existe uma fonte com esse nome"
-            );
+                    "Já existe uma fonte com esse nome");
         }
 
         User user = userRepository.findById(request.userId())
-                .orElseThrow(() ->
-                        new ResponseStatusException(
-                                HttpStatus.BAD_REQUEST,
-                                "Usuário não encontrado"
-                        )
-                );
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "Usuário não encontrado"));
 
         Source source = new Source(
                 request.name().trim(),
                 LocalDateTime.now(),
                 request.url().trim(),
-                user
-        );
+                user);
 
         try {
             Source savedSource = sourceRepository.saveAndFlush(source);
@@ -61,8 +57,7 @@ public class SourceService {
                     savedSource.getName(),
                     savedSource.getDateCreation(),
                     savedSource.getUrl(),
-                    savedSource.getUser().getId()
-            );
+                    savedSource.getUser().getId());
 
         } catch (DataIntegrityViolationException e) {
 
@@ -70,17 +65,27 @@ public class SourceService {
                 throw new ResponseStatusException(
                         HttpStatus.CONFLICT,
                         "Já existe uma fonte com esse nome",
-                        e
-                );
+                        e);
             }
 
             throw e;
         }
     }
 
+    public List<SourceResponseDTO> listAll() {
+        return sourceRepository.findAll()
+                .stream()
+                .map(source -> new SourceResponseDTO(
+                        source.getId(),
+                        source.getName(),
+                        source.getDateCreation(),
+                        source.getUrl(),
+                        source.getUser().getId()))
+                .toList();
+    }
+
     private boolean isUniqueConstraintViolation(
-            DataIntegrityViolationException exception
-    ) {
+            DataIntegrityViolationException exception) {
         Throwable cause = exception;
 
         while (cause != null) {
