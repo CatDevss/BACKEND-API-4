@@ -3,6 +3,9 @@ package catdevs.georuraldatahub.controller;
 import catdevs.georuraldatahub.dto.SourceCreateRequestDTO;
 import catdevs.georuraldatahub.dto.SourceResponseDTO;
 import catdevs.georuraldatahub.service.SourceService;
+
+import jakarta.validation.Valid;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -19,7 +22,7 @@ public class SourceController {
 
     @PostMapping
     public ResponseEntity<SourceResponseDTO> create(
-            @RequestBody SourceCreateRequestDTO request
+            @Valid @RequestBody SourceCreateRequestDTO request
     ) {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
