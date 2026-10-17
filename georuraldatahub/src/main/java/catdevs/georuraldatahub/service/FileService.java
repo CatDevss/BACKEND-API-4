@@ -6,21 +6,28 @@ import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.text.Normalizer;
-import java.time.LocalDateTime;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import catdevs.georuraldatahub.dto.FileResponseDTO;
+import catdevs.georuraldatahub.entity.DataIngestion;
 import catdevs.georuraldatahub.entity.Dataset;
+import catdevs.georuraldatahub.entity.Dictionary;
 import catdevs.georuraldatahub.entity.File;
 import catdevs.georuraldatahub.entity.User;
 import catdevs.georuraldatahub.entity.Version;
+import catdevs.georuraldatahub.entity.enums.IngestionStatus;
+import catdevs.georuraldatahub.entity.enums.VersionStatus;
 import catdevs.georuraldatahub.exception.DataSetNotFoundException;
 import catdevs.georuraldatahub.exception.DuplicateFileException;
 import catdevs.georuraldatahub.exception.UserNotFoundException;
 import catdevs.georuraldatahub.repository.DatasetRepository;
+import catdevs.georuraldatahub.repository.DictionaryRepository;
+import catdevs.georuraldatahub.repository.IngestionRepository;
 import catdevs.georuraldatahub.repository.FileRepository;
 import catdevs.georuraldatahub.repository.UserRepository;
 import catdevs.georuraldatahub.repository.VersionRepository;
@@ -33,9 +40,14 @@ public class FileService {
     private DatasetRepository datasetRepository;
     private UserRepository userRepository;
     private BucketService bucketService;
+    private IngestionRepository ingestionRepository;
+    private DictionaryRepository dictionaryRepository;
 
     public FileService(FileRepository fileRepository, VersionRepository versionRepository,
-            DatasetRepository datasetRepository, UserRepository userRepository, BucketService bucketService) {
+            DatasetRepository datasetRepository, UserRepository userRepository, BucketService bucketService,
+            IngestionRepository ingestionRepository, DictionaryRepository dictionaryRepository) {
+        this.ingestionRepository = ingestionRepository;
+        this.dictionaryRepository = dictionaryRepository;
         this.fileRepository = fileRepository;
         this.versionRepository = versionRepository;
         this.datasetRepository = datasetRepository;
@@ -44,7 +56,8 @@ public class FileService {
     }
 
     @Transactional
-    public FileResponseDTO uploadFile(MultipartFile multipartFile, Long datasetId, Long userId) throws Exception {
+    public FileResponseDTO uploadFile(MultipartFile multipartFile, Long datasetId, Long userId, Long dictionaryId)
+            throws Exception {
 
         String hash = calculateHash(multipartFile);
 
@@ -56,23 +69,39 @@ public class FileService {
                 .orElseThrow(() -> new DataSetNotFoundException("Conjunto não encontrado."));
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException("Usuário não encontrado."));
+        Dictionary dictionary = dictionaryRepository.findById(dictionaryId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Dicionário não encontrado."));
 
         String sanitizedFilename = sanitizeFilename(multipartFile.getOriginalFilename());
 
-        // 1) sobe pro bucket primeiro — se falhar aqui, nenhuma versão é criada
+        // 1) sobe pro bucket primeiro — se falhar aqui, nada é gravado no banco
         String location = bucketService.uploadToRawZone(multipartFile, datasetId, hash, sanitizedFilename);
 
-        // 2) só grava versão + arquivo depois que o upload deu certo
+        // 2) grava ingestão -> arquivo -> versão bruta e vincula o arquivo ao conjunto
         try {
-            Version version = versionRepository.save(new Version(dataset, LocalDateTime.now(), user));
+            DataIngestion ingestion = new DataIngestion();
+            ingestion.setDictionary(dictionary);
+            ingestion.setUser(user);
+            ingestion.setIngStatus(IngestionStatus.CONCLUIDO);
+            ingestion = ingestionRepository.save(ingestion);
 
-            File file = fileRepository.save(new File(
-                    version,
-                    sanitizedFilename,
-                    extractFormat(sanitizedFilename),
-                    multipartFile.getSize(),
-                    hash,
-                    location));
+            File file = new File();
+            file.setIngestion(ingestion);
+            file.setName(sanitizedFilename);
+            file.setFormatFile(extractFormat(sanitizedFilename));
+            file.setSize(multipartFile.getSize());
+            file.setHash(hash);
+            file.setLocation(location);
+            file = fileRepository.save(file);
+
+            Version version = new Version();
+            version.setFile(file);
+            version.setVersionNumber(1);
+            version.setStatus(VersionStatus.BRUTA);
+            version.setLocation(location);
+            versionRepository.save(version);
+
+            dataset.getFiles().add(file);
 
             return new FileResponseDTO(
                     file.getId(),
@@ -81,8 +110,8 @@ public class FileService {
                     file.getSize(),
                     file.getHash(),
                     file.getLocation(),
-                    version.getId(),
-                    version.getDateCreation(),
+                    ingestion.getId(),
+                    file.getReceivedDate(),
                     user.getId());
         } catch (RuntimeException e) {
             // desfaz o upload pra não deixar arquivo órfão no bucket

@@ -11,12 +11,17 @@ public interface FileRepository extends JpaRepository<File, Long> {
 
     @Query("""
         SELECT CASE WHEN COUNT(f) > 0 THEN true ELSE false END
-        FROM File f
-        WHERE f.version.dataset.id = :datasetId
+        FROM Dataset d JOIN d.files f
+        WHERE d.id = :datasetId
         AND f.hash = :hash
     """)
     boolean existsByHashInDataset(@Param("datasetId") Long datasetId, @Param("hash") String hash);
 
-    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = "version")
-    List<File> findByVersion_Dataset_IdOrderByIdDesc(Long datasetId);
+    @Query("""
+        SELECT f
+        FROM Dataset d JOIN d.files f
+        WHERE d.id = :datasetId
+        ORDER BY f.id DESC
+    """)
+    List<File> findByDatasetId(@Param("datasetId") Long datasetId);
 }

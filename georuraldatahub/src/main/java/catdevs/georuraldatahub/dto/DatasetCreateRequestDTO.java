@@ -8,7 +8,7 @@ public record DatasetCreateRequestDTO(
     @NotBlank(message = "Nome do conjunto é obrigatório")
     String name,
 
-    @NotNull(message = "Fonte é obrigatória")
-    Long sourceId
+    @NotNull(message = "Usuário é obrigatório")
+    Long userId
 
 ) {}

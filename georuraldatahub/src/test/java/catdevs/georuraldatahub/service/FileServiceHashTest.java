@@ -14,7 +14,7 @@ import org.springframework.mock.web.MockMultipartFile;
  */
 class FileServiceHashTest {
 
-    private final FileService fileService = new FileService(null, null, null, null, null);
+    private final FileService fileService = new FileService(null, null, null, null, null,null, null) ;
 
 
         /**
@@ -37,8 +37,6 @@ class FileServiceHashTest {
 
         String hash1 = fileService.calculateHash(file1);
         String hash2 = fileService.calculateHash(file2);
-        System.out.println("Hash 1: " + hash1);
-        System.out.println("Hash 2: " + hash2);
 
         assertEquals(hash1, hash2);
     }

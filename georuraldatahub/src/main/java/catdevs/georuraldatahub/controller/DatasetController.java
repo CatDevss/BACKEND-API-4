@@ -48,9 +48,10 @@ public class DatasetController {
         public ResponseEntity<FileResponseDTO> uploadFile(
                         @PathVariable Long id,
                         @RequestPart("file") MultipartFile file,
-                        @RequestParam("userId") Long userId) throws Exception {
+                        @RequestParam("userId") Long userId,
+                        @RequestParam("dictionaryId") Long dictionaryId) throws Exception {
 
-                FileResponseDTO response = fileService.uploadFile(file, id, userId);
+                FileResponseDTO response = fileService.uploadFile(file, id, userId, dictionaryId);
 
                 return ResponseEntity
                                 .status(HttpStatus.CREATED)

@@ -1,6 +1,6 @@
 package catdevs.georuraldatahub.dto;
 
-import catdevs.georuraldatahub.entity.UserType;
+import catdevs.georuraldatahub.entity.enums.UserType;
 
 public record UserResponseDTO(
         Long id,
