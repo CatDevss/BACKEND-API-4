@@ -37,7 +37,18 @@ public class BucketController {
     public ResponseEntity<String> readGeoJson(@RequestParam String objectName) throws Exception {
         JsonNode geoJson = bucketService.readGeoJson(objectName);
         return ResponseEntity.ok()
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(geoJson.toString());
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(geoJson.toString());
+    }
+
+    @GetMapping(value = "/csv-geojson", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<String> readCsvAsGeoJson(
+            @RequestParam String objectName) throws Exception {
+
+        JsonNode geoJson = bucketService.readCsvAsGeoJson(objectName);
+
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(geoJson.toString());
     }
 }

@@ -2,6 +2,7 @@ package catdevs.georuraldatahub.controller;
 
 import catdevs.georuraldatahub.dto.DatasetCreateRequestDTO;
 import catdevs.georuraldatahub.dto.DatasetResponseDTO;
+import catdevs.georuraldatahub.dto.DatasetUpdateRequestDTO;
 import catdevs.georuraldatahub.dto.FileResponseDTO;
 import catdevs.georuraldatahub.service.DatasetService;
 import catdevs.georuraldatahub.service.FileService;
@@ -62,5 +63,22 @@ public class DatasetController {
         public ResponseEntity<List<FileResponseDTO>> listFiles(
                         @PathVariable Long id) {
                 return ResponseEntity.ok(datasetService.listFiles(id));
+        }
+
+        @GetMapping("/{id}")
+        public ResponseEntity<DatasetResponseDTO> findById(@PathVariable Long id) {
+                return ResponseEntity.ok(datasetService.findById(id));
+        }
+
+        @PutMapping("/{id}")
+        public ResponseEntity<DatasetResponseDTO> update(@PathVariable Long id,
+                        @Valid @RequestBody DatasetUpdateRequestDTO request) {
+                return ResponseEntity.ok(datasetService.update(id, request));
+        }
+
+        @DeleteMapping("/{id}")
+        public ResponseEntity<Void> delete(@PathVariable Long id) {
+                datasetService.delete(id);
+                return ResponseEntity.noContent().build();
         }
 }

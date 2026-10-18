@@ -2,6 +2,7 @@ package catdevs.georuraldatahub.service;
 
 import catdevs.georuraldatahub.dto.DatasetCreateRequestDTO;
 import catdevs.georuraldatahub.dto.DatasetResponseDTO;
+import catdevs.georuraldatahub.dto.DatasetUpdateRequestDTO;
 import catdevs.georuraldatahub.dto.FileResponseDTO;
 import catdevs.georuraldatahub.entity.Dataset;
 import catdevs.georuraldatahub.entity.File;
@@ -87,5 +88,37 @@ public class DatasetService {
                                 file.getIngestion().getId(),
                                 file.getReceivedDate(),
                                 file.getIngestion().getUser().getId());
+        }
+
+        private Dataset getOrThrow(Long id) {
+                return datasetRepository.findById(id).orElseThrow(
+                                () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conjunto não encontrado"));
+        }
+
+        @Transactional(readOnly = true)
+        public DatasetResponseDTO findById(Long id) {
+                return toDto(getOrThrow(id));
+        }
+
+        @Transactional
+        public DatasetResponseDTO update(Long id, DatasetUpdateRequestDTO request) {
+                Dataset dataset = getOrThrow(id);
+                dataset.setName(request.name().trim());
+                return toDto(dataset); // sem save(): a entidade é gerenciada e o commit grava a mudança
+        }
+
+        @Transactional
+        public void delete(Long id) {
+                Dataset dataset = getOrThrow(id);
+                if (!dataset.getFiles().isEmpty()) {
+                        throw new ResponseStatusException(HttpStatus.CONFLICT,
+                                        "Conjunto possui arquivos e não pode ser excluído.");
+                }
+                datasetRepository.delete(dataset);
+        }
+
+        private DatasetResponseDTO toDto(Dataset d) {
+                return new DatasetResponseDTO(d.getId(), d.getName(),
+                                d.getUser() != null ? d.getUser().getId() : null);
         }
 }

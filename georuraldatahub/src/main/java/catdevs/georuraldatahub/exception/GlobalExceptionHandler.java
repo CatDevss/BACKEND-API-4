@@ -31,17 +31,21 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<String> handleValidation(
-        MethodArgumentNotValidException ex
-    ) {
-    String message = ex.getBindingResult()
-            .getFieldErrors()
-            .stream()
-            .map(error -> error.getDefaultMessage())
-            .findFirst()
-            .orElse("Dados inválidos");
+            MethodArgumentNotValidException ex) {
+        String message = ex.getBindingResult()
+                .getFieldErrors()
+                .stream()
+                .map(error -> error.getDefaultMessage())
+                .findFirst()
+                .orElse("Dados inválidos");
 
-    return ResponseEntity
-            .status(HttpStatus.BAD_REQUEST)
-            .body(message);
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(message);
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<String> handleIllegalArgument(IllegalArgumentException ex) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_CONTENT).body(ex.getMessage());
     }
 }
