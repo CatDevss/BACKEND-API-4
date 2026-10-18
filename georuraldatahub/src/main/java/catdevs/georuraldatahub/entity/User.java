@@ -1,5 +1,6 @@
 package catdevs.georuraldatahub.entity;
 
+import catdevs.georuraldatahub.entity.enums.UserType;
 import jakarta.persistence.*;
 
 @Entity
@@ -11,31 +12,20 @@ public class User {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "usr_nome", nullable = false)
+    @Column(name = "usr_nome")
     private String name;
 
-    @Column(name = "usr_email", nullable = false, unique = true)
+    @Column(name = "usr_email")
     private String email;
 
-    @Column(name = "usr_senha", nullable = false)
-    private String password;
-
     @Enumerated(EnumType.STRING)
-    @Column(name = "usr_tipo", nullable = false)
+    @Column(name = "usr_tipo")
     private UserType userType;
 
-    @Column(name = "usr_status", nullable = false)
+    @Column(name = "usr_status")
     private int userStatus;
 
     public User() {
-    }
-
-    public User(String name, String email, String password, UserType userType, int userStatus) {
-        this.name = name;
-        this.email = email;
-        this.password = password;
-        this.userType = userType;
-        this.userStatus = userStatus;
     }
 
     public Long getId() {
@@ -62,14 +52,6 @@ public class User {
         this.email = email;
     }
 
-    public String getPassword() {
-        return password;
-    }
-
-    public void setPassword(String password) {
-        this.password = password;
-    }
-
     public UserType getUserType() {
         return userType;
     }
@@ -84,5 +66,5 @@ public class User {
 
     public void setUserStatus(int userStatus) {
         this.userStatus = userStatus;
-    }
+    }   
 }

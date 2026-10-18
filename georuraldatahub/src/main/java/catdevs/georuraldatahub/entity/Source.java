@@ -2,37 +2,37 @@ package catdevs.georuraldatahub.entity;
 
 import java.time.LocalDateTime;
 
+import org.hibernate.annotations.CreationTimestamp;
+
 import jakarta.persistence.*;
 
 @Entity
-@Table(name="fonte")
+@Table(name = "fonte")
 public class Source {
+
     @Id
     @Column(name = "fon_id")
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "fon_nome", nullable = false, unique = true)
+    @Column(name = "fon_nome")
     private String name;
 
-    @Column(name = "fon_data_criacao", nullable = false)
-    private LocalDateTime dateCreation;
-
-    @Column(name = "fon_url", nullable = false)
+    @Column(name = "fon_url")
     private String url;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "usr_id", nullable = false)
+    @Column(name = "fon_descricao")
+    private String description;
+
+    @CreationTimestamp 
+    @Column(name = "fon_data_criacao")
+    private LocalDateTime dateCreation;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "usr_id", referencedColumnName = "usr_id")
     private User user;
 
-    public Source(){
-    }
-
-    public Source(String name, LocalDateTime dateCreation, String url, User user) {
-        this.name = name;
-        this.dateCreation = dateCreation;
-        this.url = url;
-        this.user = user;
+    public Source() {
     }
 
     public Long getId() {
@@ -51,20 +51,28 @@ public class Source {
         this.name = name;
     }
 
-    public LocalDateTime getDateCreation() {
-        return dateCreation;
-    }
-
-    public void setDateCreation(LocalDateTime dateCreation) {
-        this.dateCreation = dateCreation;
-    }
-
     public String getUrl() {
         return url;
     }
 
     public void setUrl(String url) {
         this.url = url;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public LocalDateTime getDateCreation() {
+        return dateCreation;
+    }
+
+    public void setDateCreation(LocalDateTime dateCreation) {
+        this.dateCreation = dateCreation;
     }
 
     public User getUser() {
