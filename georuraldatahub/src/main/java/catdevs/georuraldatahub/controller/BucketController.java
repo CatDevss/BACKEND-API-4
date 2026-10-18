@@ -2,16 +2,21 @@ package catdevs.georuraldatahub.controller;
 
 import java.util.List;
 
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import com.fasterxml.jackson.databind.JsonNode;
 
 import catdevs.georuraldatahub.service.BucketService;
 
-@RestController 
+@RestController
 @CrossOrigin
-@RequestMapping ("/bucket")
+@RequestMapping("/bucket")
 public class BucketController {
 
     private final BucketService bucketService;
@@ -20,8 +25,17 @@ public class BucketController {
         this.bucketService = bucketService;
     }
 
-    @GetMapping 
+    /**
+     * Lista os objetos armazenados no bucket.
+     */
+    @GetMapping
     public List<String> listObjects() {
         return bucketService.listObjectsBucket();
+    }
+
+    @GetMapping(value = "/geojson", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<JsonNode> readGeoJson(@RequestParam String objectName) throws Exception {
+        JsonNode geoJson = bucketService.readGeoJson(objectName);
+        return ResponseEntity.ok(geoJson);
     }
 }
