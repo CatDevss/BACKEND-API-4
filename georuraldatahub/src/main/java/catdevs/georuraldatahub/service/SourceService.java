@@ -15,7 +15,6 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.List;
 
 import java.sql.SQLException;
-import java.time.LocalDateTime;
 
 @Service
 public class SourceService {
@@ -43,11 +42,10 @@ public class SourceService {
                         HttpStatus.BAD_REQUEST,
                         "Usuário não encontrado"));
 
-        Source source = new Source(
-                request.name().trim(),
-                LocalDateTime.now(),
-                request.url().trim(),
-                user);
+        Source source = new Source();
+        source.setName(request.name().trim());
+        source.setUrl(request.url().trim());
+        source.setUser(user);
 
         try {
             Source savedSource = sourceRepository.saveAndFlush(source);

@@ -9,8 +9,8 @@ public record FileResponseDTO(
         Long size,
         String hash,
         String location,
-        Long versionId,
-        LocalDateTime dateCreation,
+        Long ingestionId,
+        LocalDateTime receivedDate,
         Long userId
 ) {
 }
