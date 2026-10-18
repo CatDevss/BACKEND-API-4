@@ -34,8 +34,10 @@ public class BucketController {
     }
 
     @GetMapping(value = "/geojson", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<JsonNode> readGeoJson(@RequestParam String objectName) throws Exception {
+    public ResponseEntity<String> readGeoJson(@RequestParam String objectName) throws Exception {
         JsonNode geoJson = bucketService.readGeoJson(objectName);
-        return ResponseEntity.ok(geoJson);
+        return ResponseEntity.ok()
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(geoJson.toString());
     }
 }
