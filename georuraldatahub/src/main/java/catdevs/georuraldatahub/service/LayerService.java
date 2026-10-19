@@ -17,12 +17,10 @@ import catdevs.georuraldatahub.entity.File;
 import catdevs.georuraldatahub.repository.DatasetRepository;
 import catdevs.georuraldatahub.repository.FileRepository;
 
-
 @Service
 public class LayerService {
 
     private static final Set<String> RENDERABLE = Set.of("geojson", "json", "csv");
-    private static final long MAX_RENDER_BYTES = 50L * 1024 * 1024; // proteção do mapa e da memória
 
     private final FileRepository fileRepository;
     private final DatasetRepository datasetRepository;
@@ -55,10 +53,6 @@ public class LayerService {
         if (!isRenderable(file.getFormatFile())) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT,
                     "Formato não suportado para visualização: " + file.getFormatFile());
-        }
-        if (file.getSize() != null && file.getSize() > MAX_RENDER_BYTES) {
-            throw new ResponseStatusException(HttpStatus.CONTENT_TOO_LARGE,
-                    "Arquivo grande demais para visualizar no mapa.");
         }
 
         return "csv".equalsIgnoreCase(file.getFormatFile())
