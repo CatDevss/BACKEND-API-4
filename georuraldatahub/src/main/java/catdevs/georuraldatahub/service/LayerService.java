@@ -1,5 +1,7 @@
 package catdevs.georuraldatahub.service;
 
+import catdevs.georuraldatahub.repository.VersionRepository;
+import catdevs.georuraldatahub.entity.enums.VersionStatus;
 import java.io.IOException;
 import java.util.List;
 import java.util.Locale;
@@ -25,12 +27,14 @@ public class LayerService {
     private final FileRepository fileRepository;
     private final DatasetRepository datasetRepository;
     private final BucketService bucketService;
+    private final VersionRepository versionRepository;
 
     public LayerService(FileRepository fileRepository, DatasetRepository datasetRepository,
-            BucketService bucketService) {
+            BucketService bucketService, VersionRepository versionRepository) {
         this.fileRepository = fileRepository;
         this.datasetRepository = datasetRepository;
         this.bucketService = bucketService;
+        this.versionRepository = versionRepository;
     }
 
     @Transactional(readOnly = true)
@@ -40,6 +44,8 @@ public class LayerService {
         }
         return fileRepository.findByDatasetId(datasetId).stream()
                 .filter(f -> isRenderable(f.getFormatFile()))
+                .filter(f -> versionRepository.findFirstByFile_IdAndStatusAndLocationStartingWithOrderByVersionNumberDesc(
+                        f.getId(), VersionStatus.BRUTA, "validada/").isPresent())
                 .map(f -> new LayerInfoDTO(f.getId(), f.getName(), f.getFormatFile(),
                         f.getSize(), f.getReceivedDate()))
                 .toList();
@@ -55,9 +61,13 @@ public class LayerService {
                     "Formato não suportado para visualização: " + file.getFormatFile());
         }
 
+        String location = versionRepository.findFirstByFile_IdAndStatusAndLocationStartingWithOrderByVersionNumberDesc(
+                fileId, VersionStatus.BRUTA, "validada/")
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Arquivo sem registros aprovados para visualização.")).getLocation();
         return "csv".equalsIgnoreCase(file.getFormatFile())
-                ? bucketService.readCsvAsGeoJson(file.getLocation())
-                : bucketService.readGeoJson(file.getLocation());
+                ? bucketService.readCsvAsGeoJson(location)
+                : bucketService.readGeoJson(location);
     }
 
     private boolean isRenderable(String format) {

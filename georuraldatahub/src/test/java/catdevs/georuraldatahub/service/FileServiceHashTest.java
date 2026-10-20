@@ -14,7 +14,7 @@ import org.springframework.mock.web.MockMultipartFile;
  */
 class FileServiceHashTest {
 
-    private final FileService fileService = new FileService(null, null, null, null, null,null, null) ;
+    private final FileService fileService = new FileService(null, null, null, null, null, null, null, null, null) ;
 
 
         /**
@@ -28,7 +28,7 @@ class FileServiceHashTest {
      * arquivos duplicados.
      */
 
-    @Test 
+    @Test
     void sameContentMustReturnSameHash() throws Exception {
         byte[] content = "conteudo de teste para o hash".getBytes();
 

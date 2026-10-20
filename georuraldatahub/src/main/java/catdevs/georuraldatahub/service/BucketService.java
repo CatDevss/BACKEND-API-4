@@ -81,6 +81,41 @@ public class BucketService {
                 return objectName;
         }
 
+        public String uploadValidatedContent(byte[] content, Long datasetId, String hash, String filename) {
+                String key = "validada/" + datasetId + "/" + hash + "_" + filename;
+                try (var input = new java.io.ByteArrayInputStream(content)) {
+                        client.putObject(PutObjectRequest.builder()
+                                .namespaceName(props.namespace()).bucketName(props.bucketName())
+                                .objectName(key).putObjectBody(input).contentLength((long) content.length).build());
+                } catch (IOException e) { throw new java.io.UncheckedIOException(e); }
+                return key;
+        }
+
+        public String uploadValidationReport(String rawLocation, String json) {
+                String key = rawLocation + ".validation.json";
+                byte[] content = json.getBytes(StandardCharsets.UTF_8);
+                try (var input = new java.io.ByteArrayInputStream(content)) {
+                        client.putObject(PutObjectRequest.builder()
+                                .namespaceName(props.namespace()).bucketName(props.bucketName())
+                                .objectName(key).putObjectBody(input).contentLength((long) content.length)
+                                .contentType("application/json").build());
+                } catch (IOException e) { throw new java.io.UncheckedIOException(e); }
+                return key;
+        }
+
+        public String readValidationReport(String rawLocation) throws IOException {
+                var request = GetObjectRequest.builder().namespaceName(props.namespace())
+                        .bucketName(props.bucketName()).objectName(rawLocation + ".validation.json").build();
+                try (InputStream input = client.getObject(request).getInputStream()) {
+                        return new String(input.readAllBytes(), StandardCharsets.UTF_8);
+                } catch (com.oracle.bmc.model.BmcException e) {
+                        if (e.getStatusCode() == 404) throw new org.springframework.web.server.ResponseStatusException(
+                                org.springframework.http.HttpStatus.NOT_FOUND,
+                                "Arquivo ainda não possui relatório de validação.");
+                        throw e;
+                }
+        }
+
         public void deleteObject(String objectName) {
                 var request = DeleteObjectRequest.builder()
                                 .namespaceName(props.namespace())
