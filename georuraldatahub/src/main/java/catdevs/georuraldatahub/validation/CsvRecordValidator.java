@@ -48,16 +48,16 @@ public class CsvRecordValidator {
     private List<RecordValidationResult> fileError(String error) {
         return List.of(RecordValidationResult.invalid(-1, "", List.of(error)));
     }
-    static void skipBom(PushbackReader reader) throws IOException {
+    public static void skipBom(PushbackReader reader) throws IOException {
         int first = reader.read();
         if (first != -1 && first != '\uFEFF') reader.unread(first);
     }
-    static String encode(List<String> fields) {
+    public static String encode(List<String> fields) {
         return fields.stream().map(v -> "\"" + v.replace("\"", "\"\"") + "\"")
                 .collect(java.util.stream.Collectors.joining(","));
     }
     // RFC 4180: escaped quotes and multiline fields. Ambiguous framing rejects the whole file.
-    static List<String> readRecord(PushbackReader reader) throws IOException {
+    public static List<String> readRecord(PushbackReader reader) throws IOException {
         List<String> fields = new ArrayList<>();
         StringBuilder field = new StringBuilder();
         boolean quoted = false, closed = false, any = false;
