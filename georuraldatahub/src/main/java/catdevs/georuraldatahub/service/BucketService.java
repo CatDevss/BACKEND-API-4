@@ -67,7 +67,17 @@ public class BucketService {
          */
         public String uploadToRawZone(MultipartFile file, Long datasetId, String hash, String sanitizedFilename)
                         throws IOException {
-                String objectName = "bruta/" + datasetId + "/" + hash + "_" + sanitizedFilename;
+                return uploadToRawScope(file, datasetId.toString(), hash, sanitizedFilename);
+        }
+
+        public String uploadToSourceRawZone(MultipartFile file, Long sourceId, String hash, String filename)
+                        throws IOException {
+                return uploadToRawScope(file, "fontes/" + sourceId, hash, filename);
+        }
+
+        private String uploadToRawScope(MultipartFile file, String scope, String hash, String sanitizedFilename)
+                        throws IOException {
+                String objectName = "bruta/" + scope + "/" + hash + "_" + sanitizedFilename;
 
                 PutObjectRequest request = PutObjectRequest.builder()
                                 .namespaceName(props.namespace())
@@ -82,7 +92,15 @@ public class BucketService {
         }
 
         public String uploadValidatedContent(byte[] content, Long datasetId, String hash, String filename) {
-                String key = "validada/" + datasetId + "/" + hash + "_" + filename;
+                return uploadValidatedScope(content, datasetId.toString(), hash, filename);
+        }
+
+        public String uploadSourceValidatedContent(byte[] content, Long sourceId, String hash, String filename) {
+                return uploadValidatedScope(content, "fontes/" + sourceId, hash, filename);
+        }
+
+        private String uploadValidatedScope(byte[] content, String scope, String hash, String filename) {
+                String key = "validada/" + scope + "/" + hash + "_" + filename;
                 try (var input = new java.io.ByteArrayInputStream(content)) {
                         client.putObject(PutObjectRequest.builder()
                                 .namespaceName(props.namespace()).bucketName(props.bucketName())

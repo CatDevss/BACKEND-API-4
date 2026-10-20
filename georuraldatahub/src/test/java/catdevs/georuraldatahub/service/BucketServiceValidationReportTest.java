@@ -17,6 +17,14 @@ class BucketServiceValidationReportTest {
     private final ObjectStorageClient client = mock(ObjectStorageClient.class);
     private final BucketService service = new BucketService(client, new ObjectStorageProperties("namespace", "bucket", "compartment"));
 
+    @Test void newFilesUseSourcePathsWithoutCollidingWithHistoricalDatasetPaths() throws Exception {
+        var file = new org.springframework.mock.web.MockMultipartFile("file", "test.csv", "text/csv", new byte[]{1});
+        assertEquals("bruta/fontes/4/hash_test.csv", service.uploadToSourceRawZone(file, 4L, "hash", "test.csv"));
+        assertEquals("validada/fontes/4/hash_test.csv", service.uploadSourceValidatedContent(new byte[]{1}, 4L, "hash", "test.csv"));
+        assertEquals("bruta/fontes/5/hash_test.csv", service.uploadToSourceRawZone(file, 5L, "hash", "test.csv"));
+        assertEquals("bruta/4/hash_test.csv", service.uploadToRawZone(file, 4L, "hash", "test.csv"));
+        verify(client, times(4)).putObject(any(PutObjectRequest.class));
+    }
     @Test void reportIsStoredAlongsideRawObjectWithUtf8AndJsonContentType() throws Exception {
         String json = "{\"erro\":\"Campo obrigatório\"}";
         assertEquals("bruta/test.csv.validation.json", service.uploadValidationReport("bruta/test.csv", json));

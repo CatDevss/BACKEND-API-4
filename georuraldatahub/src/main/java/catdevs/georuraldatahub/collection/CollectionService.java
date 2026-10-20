@@ -25,12 +25,12 @@ public class CollectionService {
 
     // Network transfers happen before FileService starts its database transaction/locks.
     public Result collect(Long sourceId, CollectionRequest request) throws Exception {
-        if (sourceId == null || request == null || request.product() == null || request.datasetId() == null
-                || request.userId() == null) throw new IllegalArgumentException("Fonte, produto, conjunto e usuário são obrigatórios.");
+        if (sourceId == null || request == null || request.product() == null
+                || request.userId() == null) throw new IllegalArgumentException("Fonte, produto e usuário são obrigatórios.");
         var source = sources.findEntityById(sourceId);
         if (!matchesAgency(source.getUrl(), request.product())) throw new IllegalArgumentException(
                 "A URL da fonte cadastrada não corresponde ao órgão do conector. Use o CRUD de fontes existente.");
-        datasets.findEntityById(request.datasetId());
+        if (request.datasetId() != null) datasets.findEntityById(request.datasetId());
         users.findEntityById(request.userId());
         dictionaries.rules(dictionaries.findLatestBySourceId(sourceId));
         CollectedData data;

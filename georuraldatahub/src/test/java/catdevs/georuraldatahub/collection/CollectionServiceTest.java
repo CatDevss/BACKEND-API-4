@@ -32,6 +32,19 @@ class CollectionServiceTest {
         verify(dictionaries).findLatestBySourceId(3L);
         verify(files).uploadCollectedFile(data,1L,2L,3L);
     }
+    @Test void collectsWithoutDatasetAndPassesNullOnlyToOptionalAssociation() throws Exception {
+        source("https://www.ibge.gov.br/");
+        var request = new CollectionRequest(Product.IBGE_MUNICIPIOS, null, 2L, "2022", "4106902", null, null);
+        var data = new CollectedData("file.geojson", "geojson", new byte[]{1}, List.of(), null);
+        when(connectors.collect(request)).thenReturn(data);
+        service.collect(3L, request);
+        verifyNoInteractions(datasets);
+        verify(files).uploadCollectedFile(data, null, 2L, 3L);
+    }
+    @Test void scheduledDailyRequestCanOmitDataset() {
+        var daily = new CollectionRequest(Product.INPE_QUEIMADAS, null, 2L, "D-1", null, null, null);
+        assertNull(CollectionScheduler.resolved(daily).datasetId());
+    }
     @Test void rejectsWrongAgencyBeforeNetworkOrUpload() {
         source("https://www.inpe.br/");
         assertThrows(IllegalArgumentException.class, () -> service.collect(3L,request));
