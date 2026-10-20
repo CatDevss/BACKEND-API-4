@@ -7,6 +7,7 @@ import java.net.*;
 import java.net.http.*;
 import java.util.*;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentMatchers;
 import org.springframework.web.server.ResponseStatusException;
 
 class OfficialDataClientTest {
@@ -30,26 +31,26 @@ class OfficialDataClientTest {
     }
     @Test void rejectsRedirectOutsideOfficialHosts() throws Exception {
         var reply = response(302,"",Map.of("Location",List.of("https://localhost/secrets")));
-        when(transport.send(any(), any(HttpResponse.BodyHandler.class))).thenReturn(reply);
+        when(transport.send(any(), ArgumentMatchers.<HttpResponse.BodyHandler<InputStream>>any())).thenReturn(reply);
         assertThrows(IllegalArgumentException.class, () -> client.download(official));
-        verify(transport, times(1)).send(any(), any(HttpResponse.BodyHandler.class));
+        verify(transport, times(1)).send(any(), ArgumentMatchers.<HttpResponse.BodyHandler<InputStream>>any());
     }
     @Test void rejectsOversizedStreamEvenWithoutContentLength() throws Exception {
         limits.setMaxDownloadBytes(3);
         var reply = response(200,"1234",Map.of());
-        when(transport.send(any(), any(HttpResponse.BodyHandler.class))).thenReturn(reply);
+        when(transport.send(any(), ArgumentMatchers.<HttpResponse.BodyHandler<InputStream>>any())).thenReturn(reply);
         assertThrows(ResponseStatusException.class, () -> client.download(official));
     }
     @Test void returnsNotFoundForUnpublishedCompetence() throws Exception {
         var reply = response(404,"missing",Map.of());
-        when(transport.send(any(), any(HttpResponse.BodyHandler.class))).thenReturn(reply);
+        when(transport.send(any(), ArgumentMatchers.<HttpResponse.BodyHandler<InputStream>>any())).thenReturn(reply);
         assertEquals(404, assertThrows(ResponseStatusException.class, () -> client.download(official)).getStatusCode().value());
     }
     @Test void followsOfficialRelativeRedirectAndPreservesResponseBytes() throws Exception {
         var redirect = response(302,"",Map.of("Location",List.of("/api/data")));
         var success = response(200,"data",Map.of());
-        when(transport.send(any(), any(HttpResponse.BodyHandler.class))).thenReturn(redirect,success);
+        when(transport.send(any(), ArgumentMatchers.<HttpResponse.BodyHandler<InputStream>>any())).thenReturn(redirect).thenReturn(success);
         assertEquals("data",new String(client.download(official),java.nio.charset.StandardCharsets.UTF_8));
-        verify(transport,times(2)).send(any(),any(HttpResponse.BodyHandler.class));
+        verify(transport,times(2)).send(any(),ArgumentMatchers.<HttpResponse.BodyHandler<InputStream>>any());
     }
 }
