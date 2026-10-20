@@ -26,7 +26,7 @@ public class GeoJsonRecordValidator {
                 errors.add("INVALID_RECORD_STRUCTURE");
             if (!GeometryValidation.valid(feature.get("geometry"))) errors.add("INVALID_GEOMETRY");
             Map<String, JsonNode> row = new TreeMap<>();
-            feature.path("properties").fields().forEachRemaining(e -> row.put(e.getKey(), e.getValue()));
+            feature.path("properties").properties().forEach(e -> row.put(e.getKey(), e.getValue()));
             // A geometry rule refers to the standard Feature geometry rather than a duplicate property.
             for (FieldRule r : rules) if (r.type() == FieldType.GEOMETRY && r.name().equals("geometry"))
                 row.put("geometry", feature.get("geometry"));
