@@ -1,0 +1,57 @@
+package catdevs.georuraldatahub.collection;
+
+import java.io.IOException;
+import java.net.URI;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
+import catdevs.georuraldatahub.dto.FileResponseDTO;
+import catdevs.georuraldatahub.service.*;
+
+@Service
+public class CollectionService {
+    private final SourceService sources;
+    private final DatasetService datasets;
+    private final UserService users;
+    private final DictionaryService dictionaries;
+    private final PublicDataConnectors connectors;
+    private final FileService files;
+    public CollectionService(SourceService sources, DatasetService datasets, UserService users,
+            DictionaryService dictionaries, PublicDataConnectors connectors, FileService files) {
+        this.sources = sources; this.datasets = datasets; this.users = users;
+        this.dictionaries = dictionaries; this.connectors = connectors; this.files = files;
+    }
+    public record Result(FileResponseDTO file, CollectedData.Metadata collection) {}
+
+    // Network transfers happen before FileService starts its database transaction/locks.
+    public Result collect(Long sourceId, CollectionRequest request) throws Exception {
+        if (sourceId == null || request == null || request.product() == null || request.datasetId() == null
+                || request.userId() == null) throw new IllegalArgumentException("Fonte, produto, conjunto e usuário são obrigatórios.");
+        var source = sources.findEntityById(sourceId);
+        if (!matchesAgency(source.getUrl(), request.product())) throw new IllegalArgumentException(
+                "A URL da fonte cadastrada não corresponde ao órgão do conector. Use o CRUD de fontes existente.");
+        datasets.findEntityById(request.datasetId());
+        users.findEntityById(request.userId());
+        dictionaries.rules(dictionaries.findLatestBySourceId(sourceId));
+        CollectedData data;
+        try { data = connectors.collect(request); }
+        catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Coleta interrompida.", e);
+        } catch (IOException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Falha ao baixar dados do canal oficial.", e);
+        }
+        return new Result(files.uploadCollectedFile(data, request.datasetId(), request.userId(), sourceId), data.metadata());
+    }
+    static boolean matchesAgency(String value, CollectionRequest.Product product) {
+        try {
+            URI uri = URI.create(value);
+            String host = uri.getHost();
+            if (host == null || uri.getUserInfo() != null || !("https".equals(uri.getScheme()) || "http".equals(uri.getScheme()))) return false;
+            boolean ibge = product == CollectionRequest.Product.IBGE_BIOMAS || product == CollectionRequest.Product.IBGE_MUNICIPIOS;
+            String agency = ibge ? "ibge.gov.br" : "inpe.br";
+            if (host.equals(agency) || host.endsWith("." + agency)) return true;
+            return !ibge && host.equals("www.gov.br") && (uri.getPath().equals("/inpe") || uri.getPath().startsWith("/inpe/"));
+        } catch (IllegalArgumentException | NullPointerException e) { return false; }
+    }
+}

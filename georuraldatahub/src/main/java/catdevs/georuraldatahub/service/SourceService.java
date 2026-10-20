@@ -64,6 +64,11 @@ public class SourceService {
         }
     }
 
+    public Source findEntityById(Long id) {
+        return sourceRepository.findById(id).orElseThrow(() -> new ResponseStatusException(
+                HttpStatus.NOT_FOUND, "Fonte não encontrada."));
+    }
+
     public List<SourceResponseDTO> listAll() {
         return sourceRepository.findAll()
                 .stream()

@@ -1,5 +1,8 @@
 package catdevs.georuraldatahub.service;
 
+import catdevs.georuraldatahub.collection.CollectedData;
+import catdevs.georuraldatahub.collection.DownloadedMultipartFile;
+
 import catdevs.georuraldatahub.validation.FileValidationService;
 import catdevs.georuraldatahub.repository.QuarantineRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -78,7 +81,19 @@ public class FileService {
     @Transactional(rollbackFor = Exception.class)
     public FileResponseDTO uploadFile(MultipartFile multipartFile, Long datasetId, Long userId, Long sourceId)
             throws Exception {
+        return ingest(multipartFile, datasetId, userId, sourceId, null);
+    }
 
+    @Transactional(rollbackFor = Exception.class)
+    public FileResponseDTO uploadCollectedFile(CollectedData collected,
+            Long datasetId, Long userId, Long sourceId) throws Exception {
+        var file = new DownloadedMultipartFile(collected.filename(),
+                collected.format().equals("csv") ? "text/csv" : "application/geo+json", collected.content());
+        return ingest(file, datasetId, userId, sourceId, collected);
+    }
+
+    private FileResponseDTO ingest(MultipartFile multipartFile, Long datasetId, Long userId, Long sourceId,
+            CollectedData collected) throws Exception {
         String hash = calculateHash(multipartFile);
 
         if (fileRepository.existsByHashInDataset(datasetId, hash)) {
@@ -130,6 +145,17 @@ public class FileService {
             });
         String reportLocation = bucketService.uploadValidationReport(location, reportJson);
         uploaded.add(reportLocation);
+
+        if (collected != null) {
+            int index = 0;
+            for (var original : collected.originals()) {
+                String key = location + ".originals/" + String.format(java.util.Locale.ROOT, "%05d_", index++)
+                        + sanitizeFilename(original.filename());
+                uploaded.add(bucketService.uploadCollectionArtifact(key, original.content(), original.contentType()));
+            }
+            uploaded.add(bucketService.uploadCollectionArtifact(location + ".collection.json",
+                    mapper.writeValueAsBytes(collected.metadata()), "application/json"));
+        }
 
         DataIngestion ingestion = new DataIngestion();
         ingestion.setDictionary(dictionary);
@@ -241,6 +267,14 @@ public class FileService {
         File file = fileRepository.findById(fileId).orElseThrow(() -> new ResponseStatusException(
                 HttpStatus.NOT_FOUND, "Arquivo não encontrado."));
         return mapper.readValue(bucketService.readValidationReport(file.getLocation()), FileValidationReport.class);
+    }
+
+    @Transactional(readOnly = true)
+    public CollectedData.Metadata collectionMetadata(Long fileId) throws Exception {
+        File file = fileRepository.findById(fileId).orElseThrow(() -> new ResponseStatusException(
+                HttpStatus.NOT_FOUND, "Arquivo não encontrado."));
+        return mapper.readValue(bucketService.readCollectionMetadata(file.getLocation()),
+                CollectedData.Metadata.class);
     }
 
     @Transactional(readOnly = true)
