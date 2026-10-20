@@ -116,6 +116,27 @@ public class BucketService {
                 }
         }
 
+        public String uploadCollectionArtifact(String key, byte[] bytes, String contentType) {
+                try (InputStream input = new java.io.ByteArrayInputStream(bytes)) {
+                        client.putObject(PutObjectRequest.builder().namespaceName(props.namespace())
+                                .bucketName(props.bucketName()).objectName(key).putObjectBody(input)
+                                .contentLength((long) bytes.length).contentType(contentType).build());
+                } catch (IOException e) { throw new java.io.UncheckedIOException(e); }
+                return key;
+        }
+
+        public String readCollectionMetadata(String rawLocation) throws IOException {
+                var request = GetObjectRequest.builder().namespaceName(props.namespace()).bucketName(props.bucketName())
+                        .objectName(rawLocation + ".collection.json").build();
+                try (InputStream input = client.getObject(request).getInputStream()) {
+                        return new String(input.readAllBytes(), StandardCharsets.UTF_8);
+                } catch (com.oracle.bmc.model.BmcException e) {
+                        if (e.getStatusCode() == 404) throw new org.springframework.web.server.ResponseStatusException(
+                                org.springframework.http.HttpStatus.NOT_FOUND, "Arquivo não possui metadados de coleta automática.");
+                        throw e;
+                }
+        }
+
         public void deleteObject(String objectName) {
                 var request = DeleteObjectRequest.builder()
                                 .namespaceName(props.namespace())

@@ -45,6 +45,41 @@ class FileServiceValidationTest {
     @AfterEach void cleanup() { TransactionSynchronizationManager.clearSynchronization(); }
     private MockMultipartFile csv(String text) { return new MockMultipartFile("file", "test.csv", "text/csv", text.getBytes(StandardCharsets.UTF_8)); }
 
+    @Test void collectedUploadPreservesRawResponseAndMetadataAndUsesManualValidation() throws Exception {
+        byte[] csv = "id\n1\nx".getBytes(StandardCharsets.UTF_8);
+        var original = new catdevs.georuraldatahub.collection.CollectedData.Original(
+                "original.csv", "https://dataserver-coids.inpe.br/example.csv", "text/csv", csv);
+        var metadata = new catdevs.georuraldatahub.collection.CollectedData.Metadata(
+                "INPE_QUEIMADAS", "2026-10-18", "csv", "csv", "Brasil", "2026-10-20T00:00:00Z",
+                "https://dataserver-coids.inpe.br/", List.of("Todos os satélites"), List.of(
+                    new catdevs.georuraldatahub.collection.CollectedData.OriginalMetadata(
+                        original.filename(), original.origin(), original.contentType(), csv.length, original.sha256())));
+        var data = new catdevs.georuraldatahub.collection.CollectedData("test.csv", "csv", csv, List.of(original), metadata);
+        when(bucket.uploadCollectionArtifact(any(), any(), any())).thenAnswer(inv -> inv.getArgument(0));
+        var response = service.uploadCollectedFile(data, 1L, 2L, 4L);
+        assertEquals("PARCIAL", response.validation().status());
+        verify(bucket).uploadCollectionArtifact(eq("bruta/test.csv.originals/00000_original.csv"), eq(csv), eq("text/csv"));
+        var json = ArgumentCaptor.forClass(byte[].class);
+        verify(bucket).uploadCollectionArtifact(eq("bruta/test.csv.collection.json"), json.capture(), eq("application/json"));
+        String stored = new String(json.getValue(), StandardCharsets.UTF_8);
+        assertTrue(stored.contains(original.sha256())); assertTrue(stored.contains("INPE_QUEIMADAS"));
+        when(files.findById(6L)).thenReturn(Optional.of(dataset.getFiles().getFirst()));
+        when(bucket.readCollectionMetadata("bruta/test.csv")).thenReturn(stored);
+        assertEquals(metadata, service.collectionMetadata(6L));
+        for (var sync : TransactionSynchronizationManager.getSynchronizations()) sync.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+        verify(bucket).deleteObject("bruta/test.csv.originals/00000_original.csv");
+        verify(bucket).deleteObject("bruta/test.csv.collection.json");
+    }
+    @Test void failedProvenanceUploadDoesNotPersistAnIngestion() throws Exception {
+        byte[] csv = "id\n1".getBytes(StandardCharsets.UTF_8);
+        var data = new catdevs.georuraldatahub.collection.CollectedData("test.csv","csv",csv,List.of(),null);
+        when(bucket.uploadCollectionArtifact(any(), any(), any())).thenThrow(new IllegalStateException("offline"));
+        assertThrows(IllegalStateException.class, () -> service.uploadCollectedFile(data,1L,2L,4L));
+        verifyNoInteractions(ingestions,versions);
+        for (var sync : TransactionSynchronizationManager.getSynchronizations()) sync.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+        verify(bucket).deleteObject("bruta/test.csv");
+        verify(bucket).deleteObject("bruta/test.csv.validation.json");
+    }
     @Test void uploadsOnlyValidRowsAndPersistsPartialReport() throws Exception {
         var response = service.uploadFile(csv("id\n1\nx\n2"), 1L, 2L, 4L);
         assertEquals("PARCIAL", response.validation().status()); assertEquals(2, response.validation().validRecords());
