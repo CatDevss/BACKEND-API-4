@@ -1,5 +1,17 @@
 package catdevs.georuraldatahub.service;
 
+import catdevs.georuraldatahub.validation.FileValidationService;
+import catdevs.georuraldatahub.repository.QuarantineRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import catdevs.georuraldatahub.validation.RecordValidationResult;
+import catdevs.georuraldatahub.validation.FileValidationReport;
+import java.util.ArrayList;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.slf4j.LoggerFactory;
+import catdevs.georuraldatahub.entity.Quarantine;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.DigestInputStream;
@@ -37,6 +49,9 @@ public class FileService {
     private final UserService userService;
     private final DictionaryService dictionaryService;
     private final BucketService bucketService;
+    private final FileValidationService validationService;
+    private final QuarantineRepository quarantineRepository;
+    private final ObjectMapper mapper = new ObjectMapper();
 
     public FileService(
             FileRepository fileRepository,
@@ -45,7 +60,9 @@ public class FileService {
             DatasetService datasetService,
             UserService userService,
             DictionaryService dictionaryService,
-            BucketService bucketService) {
+            BucketService bucketService,
+            FileValidationService validationService,
+            QuarantineRepository quarantineRepository) {
 
         this.fileRepository = fileRepository;
         this.versionRepository = versionRepository;
@@ -54,9 +71,11 @@ public class FileService {
         this.userService = userService;
         this.dictionaryService = dictionaryService;
         this.bucketService = bucketService;
+        this.validationService = validationService;
+        this.quarantineRepository = quarantineRepository;
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public FileResponseDTO uploadFile(MultipartFile multipartFile, Long datasetId, Long userId, Long sourceId)
             throws Exception {
 
@@ -72,54 +91,99 @@ public class FileService {
         // O usuário informa só a fonte; o backend escolhe o dicionário (versão mais
         // recente da fonte)
         // e o registra na ingestão (dic_id).
-        Dictionary dictionary = dictionaryService.findLatestBySourceId(sourceId);
+        Dictionary dictionary = dictionaryService.acquireForValidation(sourceId);
 
         String sanitizedFilename = sanitizeFilename(multipartFile.getOriginalFilename());
+        String format = extractFormat(sanitizedFilename);
+        if (sanitizedFilename.length() > 200) throw new IllegalArgumentException("Nome do arquivo excede 200 caracteres.");
+        if (format == null || format.isBlank() || format.length() > 10)
+            throw new IllegalArgumentException("Informe um arquivo com extensão de até 10 caracteres.");
 
-        // 1) sobe pro bucket primeiro — se falhar aqui, nada é gravado no banco
+        var rules = dictionaryService.rules(dictionary);
+        List<RecordValidationResult> records;
+        try (InputStream input = multipartFile.getInputStream()) {
+            records = validationService.validate(input, format, rules);
+        }
+        var report = FileValidationReport.of(
+                dictionary.getId(), dictionary.getVersion(), records);
+        String reportJson = mapper.writeValueAsString(report);
+        byte[] accepted;
+        try (InputStream input = multipartFile.getInputStream()) {
+            accepted = validationService.acceptedContent(input, format, records);
+        }
+        // Raw content is retained for audit. Only the filtered artifact is eligible for treatment.
         String location = bucketService.uploadToRawZone(multipartFile, datasetId, hash, sanitizedFilename);
 
-        // 2) grava ingestão -> arquivo -> versão bruta e vincula o arquivo ao conjunto
-        try {
-            DataIngestion ingestion = new DataIngestion();
-            ingestion.setDictionary(dictionary);
-            ingestion.setUser(user);
-            ingestion.setIngStatus(IngestionStatus.CONCLUIDO);
-            ingestion = ingestionRepository.save(ingestion);
+        List<String> uploaded = new ArrayList<>();
+        uploaded.add(location);
+        // Includes failures raised during transaction commit, not just repository.save().
+        TransactionSynchronizationManager.registerSynchronization(
+            new TransactionSynchronization() {
+                @Override public void afterCompletion(int status) {
+                    if (status == STATUS_ROLLED_BACK) for (String key : uploaded) {
+                        try { bucketService.deleteObject(key); }
+                        catch (RuntimeException cleanupError) {
+                            LoggerFactory.getLogger(FileService.class).error("Falha ao remover objeto {}", key, cleanupError);
+                        }
+                    }
+                }
+            });
+        String reportLocation = bucketService.uploadValidationReport(location, reportJson);
+        uploaded.add(reportLocation);
 
-            File file = new File();
-            file.setIngestion(ingestion);
-            file.setName(sanitizedFilename);
-            file.setFormatFile(extractFormat(sanitizedFilename));
-            file.setSize(multipartFile.getSize());
-            file.setHash(hash);
-            file.setLocation(location);
-            file = fileRepository.save(file);
+        DataIngestion ingestion = new DataIngestion();
+        ingestion.setDictionary(dictionary);
+        ingestion.setUser(user);
+        ingestion.setIngStatus(report.status().equals("REJEITADO") ? IngestionStatus.ERRO : IngestionStatus.CONCLUIDO);
+        ingestion = ingestionRepository.save(ingestion);
 
-            Version version = new Version();
-            version.setFile(file);
-            version.setVersionNumber(1);
-            version.setStatus(VersionStatus.BRUTA);
-            version.setLocation(location);
-            versionRepository.save(version);
+        File file = new File();
+        file.setIngestion(ingestion);
+        file.setName(sanitizedFilename);
+        file.setFormatFile(format);
+        file.setSize(multipartFile.getSize());
+        file.setHash(hash);
+        file.setLocation(location);
+        file = fileRepository.save(file);
 
-            dataset.getFiles().add(file);
+        Version version = new Version();
+        version.setFile(file);
+        version.setVersionNumber(1);
+        version.setStatus(VersionStatus.BRUTA);
+        version.setLocation(location);
+        versionRepository.save(version);
 
-            return new FileResponseDTO(
-                    file.getId(),
-                    file.getName(),
-                    file.getFormatFile(),
-                    file.getSize(),
-                    file.getHash(),
-                    file.getLocation(),
-                    ingestion.getId(),
-                    file.getReceivedDate(),
-                    user.getId());
-        } catch (RuntimeException e) {
-            // desfaz o upload pra não deixar arquivo órfão no bucket
-            bucketService.deleteObject(location);
-            throw e;
+        if (!report.status().equals("VALIDO")) {
+            var quarantine = new Quarantine();
+            quarantine.setIngestion(ingestion);
+            quarantine.setFile(file);
+            quarantine.setStatus(report.status().equals("REJEITADO") ? "ARQUIVO_REJEITADO" : "REGISTROS_REJEITADOS");
+            quarantine.setReason(quarantineSummary(report));
+            quarantineRepository.save(quarantine);
         }
+        if (accepted.length > 0) {
+            String acceptedLocation = bucketService.uploadValidatedContent(accepted, datasetId, hash, sanitizedFilename);
+            uploaded.add(acceptedLocation);
+            Version validated = new Version();
+            validated.setFile(file);
+            validated.setVersionNumber(2);
+            // Filtering validates the subset; it does not mark it as treated or published.
+            validated.setStatus(VersionStatus.BRUTA);
+            validated.setLocation(acceptedLocation);
+            versionRepository.save(validated);
+        }
+        dataset.getFiles().add(file);
+
+        return new FileResponseDTO(
+                file.getId(),
+                file.getName(),
+                file.getFormatFile(),
+                file.getSize(),
+                file.getHash(),
+                file.getLocation(),
+                ingestion.getId(),
+                file.getReceivedDate(),
+                user.getId(), report);
     }
 
     String calculateHash(MultipartFile file) throws IOException, NoSuchAlgorithmException {
@@ -159,6 +223,24 @@ public class FileService {
         String semAcento = Normalizer.normalize(filename, Normalizer.Form.NFD)
                 .replaceAll("\\p{M}", "");
         return semAcento.replaceAll("[^a-zA-Z0-9._-]", "_");
+    }
+
+    // ASCII-only summary fits VARCHAR2(500 BYTE), including the existing audit trigger.
+    private String quarantineSummary(FileValidationReport report) {
+        String codes = report.records().stream().flatMap(r -> r.errors().stream())
+                .map(error -> error.split(":", 2)[0].replaceAll("[^A-Z_]", ""))
+                .filter(code -> !code.isEmpty()).distinct().sorted()
+                .collect(java.util.stream.Collectors.joining(","));
+        String summary = report.status() + "; validos=" + report.validRecords()
+                + "; rejeitados=" + report.rejectedRecords() + "; codigos=" + codes;
+        return summary.substring(0, Math.min(summary.length(), 500));
+    }
+
+    @Transactional(readOnly = true)
+    public FileValidationReport validationReport(Long fileId) throws Exception {
+        File file = fileRepository.findById(fileId).orElseThrow(() -> new ResponseStatusException(
+                HttpStatus.NOT_FOUND, "Arquivo não encontrado."));
+        return mapper.readValue(bucketService.readValidationReport(file.getLocation()), FileValidationReport.class);
     }
 
     @Transactional(readOnly = true)
