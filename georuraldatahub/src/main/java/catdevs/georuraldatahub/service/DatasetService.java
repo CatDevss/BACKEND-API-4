@@ -60,6 +60,12 @@ public class DatasetService {
                                                 "Conjunto não encontrado."));
         }
 
+        @Transactional
+        public Dataset findLockedEntityById(Long id) {
+                return datasetRepository.findLockedById(id)
+                                .orElseThrow(() -> new DataSetNotFoundException("Conjunto não encontrado."));
+        }
+
         @Transactional(readOnly = true)
         public DatasetResponseDTO findById(Long id) {
 
@@ -81,7 +87,7 @@ public class DatasetService {
         @Transactional
         public void delete(Long id) {
 
-                Dataset dataset = findEntityById(id);
+                Dataset dataset = findLockedEntityById(id);
 
                 if (!dataset.getFiles().isEmpty()) {
                         throw new ResponseStatusException(

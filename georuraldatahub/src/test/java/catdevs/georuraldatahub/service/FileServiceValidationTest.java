@@ -31,20 +31,48 @@ class FileServiceValidationTest {
     @BeforeEach void setup() throws Exception {
         TransactionSynchronizationManager.initSynchronization();
         dataset.setFiles(new ArrayList<>());
-        when(datasets.findEntityById(1L)).thenReturn(dataset);
+        when(datasets.findLockedEntityById(1L)).thenReturn(dataset);
         var user = new User(); user.setId(2L); when(users.findEntityById(2L)).thenReturn(user);
         var dictionary = new Dictionary(); dictionary.setId(3L); dictionary.setVersion(2);
         when(dictionaries.acquireForValidation(4L)).thenReturn(dictionary);
         when(dictionaries.rules(dictionary)).thenReturn(List.of(FieldRule.required("id", FieldType.INTEGER)));
-        when(bucket.uploadToRawZone(any(), eq(1L), any(), any())).thenReturn("bruta/test.csv");
+        when(bucket.uploadToSourceRawZone(any(), eq(4L), any(), any())).thenReturn("bruta/test.csv");
         when(bucket.uploadValidationReport(eq("bruta/test.csv"), any())).thenReturn("bruta/test.csv.validation.json");
-        when(bucket.uploadValidatedContent(any(), eq(1L), any(), any())).thenReturn("validada/test.csv");
+        when(bucket.uploadSourceValidatedContent(any(), eq(4L), any(), any())).thenReturn("validada/test.csv");
         when(ingestions.save(any())).thenAnswer(inv -> { DataIngestion i = inv.getArgument(0); i.setId(5L); return i; });
         when(files.save(any())).thenAnswer(inv -> { File f = inv.getArgument(0); f.setId(6L); return f; });
     }
     @AfterEach void cleanup() { TransactionSynchronizationManager.clearSynchronization(); }
     private MockMultipartFile csv(String text) { return new MockMultipartFile("file", "test.csv", "text/csv", text.getBytes(StandardCharsets.UTF_8)); }
 
+    @Test void sourceUploadValidatesAndStoresWithoutLookingUpOrAssociatingDataset() throws Exception {
+        var response = service.uploadToSource(csv("id\n1"), 4L, 2L);
+        assertEquals("VALIDO", response.validation().status());
+        assertEquals(6L, response.id());
+        verifyNoInteractions(datasets);
+        assertTrue(dataset.getFiles().isEmpty());
+        verify(files).save(argThat(file -> file.getIngestion().getDictionary().getId().equals(3L)));
+        verify(bucket).uploadToSourceRawZone(any(), eq(4L), any(), eq("test.csv"));
+        verify(bucket).uploadSourceValidatedContent(any(), eq(4L), any(), eq("test.csv"));
+    }
+    @Test void sourceCollectionValidatesAndStoresWithoutDataset() throws Exception {
+        var data = new catdevs.georuraldatahub.collection.CollectedData("test.csv", "csv",
+                "id\n1".getBytes(StandardCharsets.UTF_8), List.of(), null);
+        assertEquals("VALIDO", service.uploadCollectedFile(data, null, 2L, 4L).validation().status());
+        verifyNoInteractions(datasets);
+        assertTrue(dataset.getFiles().isEmpty());
+        verify(bucket).uploadCollectionArtifact(eq("bruta/test.csv.collection.json"), any(), eq("application/json"));
+    }
+    @Test void sourceListingIncludesFilesWithoutAnyDataset() {
+        var user = new User(); user.setId(2L);
+        var ingestion = new DataIngestion(); ingestion.setId(5L); ingestion.setUser(user);
+        var file = new File(); file.setId(6L); file.setIngestion(ingestion); file.setName("test.csv");
+        when(files.findByIngestion_Dictionary_Source_IdOrderByIdDesc(4L)).thenReturn(List.of(file));
+        var result = service.findBySourceId(4L);
+        assertEquals(6L, result.getFirst().id());
+        assertEquals(5L, result.getFirst().ingestionId());
+        verifyNoInteractions(datasets);
+    }
     @Test void collectedUploadPreservesRawResponseAndMetadataAndUsesManualValidation() throws Exception {
         byte[] csv = "id\n1\nx".getBytes(StandardCharsets.UTF_8);
         var original = new catdevs.georuraldatahub.collection.CollectedData.Original(
@@ -85,7 +113,7 @@ class FileServiceValidationTest {
         assertEquals("PARCIAL", response.validation().status()); assertEquals(2, response.validation().validRecords());
         assertEquals(3L, response.validation().dictionaryId()); assertEquals(2, response.validation().dictionaryVersion());
         var accepted = ArgumentCaptor.forClass(byte[].class);
-        verify(bucket).uploadValidatedContent(accepted.capture(), eq(1L), any(), any());
+        verify(bucket).uploadSourceValidatedContent(accepted.capture(), eq(4L), any(), any());
         assertFalse(new String(accepted.getValue(), StandardCharsets.UTF_8).contains("x"));
         var capturedVersions = ArgumentCaptor.forClass(Version.class);
         verify(versions, times(2)).save(capturedVersions.capture());
@@ -101,7 +129,7 @@ class FileServiceValidationTest {
     @Test void entirelyRejectedFileNeverProducesValidatedVersion() throws Exception {
         var response = service.uploadFile(csv("id\nx"), 1L, 2L, 4L);
         assertEquals("REJEITADO", response.validation().status());
-        verify(bucket, never()).uploadValidatedContent(any(), any(), any(), any());
+        verify(bucket, never()).uploadSourceValidatedContent(any(), any(), any(), any());
         verify(versions).save(argThat(v -> v.getStatus() == VersionStatus.BRUTA));
         verify(quarantine).save(argThat(q -> q.getStatus().equals("ARQUIVO_REJEITADO")));
         assertEquals(IngestionStatus.ERRO, dataset.getFiles().getFirst().getIngestion().getIngStatus());
@@ -120,12 +148,13 @@ class FileServiceValidationTest {
     @Test void malformedFileRejectsAllRows() throws Exception {
         var report = service.uploadFile(csv("id\n1\n\"unterminated"), 1L, 2L, 4L).validation();
         assertEquals("REJEITADO", report.status()); assertEquals(0, report.validRecords());
-        verify(bucket, never()).uploadValidatedContent(any(), any(), any(), any());
+        verify(bucket, never()).uploadSourceValidatedContent(any(), any(), any(), any());
     }
     @Test void duplicateUploadFailsBeforeStorageAndValidation() throws Exception {
-        when(files.existsByHashInDataset(eq(1L), any())).thenReturn(true);
+        when(files.existsByHashAndIngestion_Dictionary_Source_Id(any(), eq(4L))).thenReturn(true);
         assertThrows(DuplicateFileException.class, () -> service.uploadFile(csv("id\n1"), 1L, 2L, 4L));
-        verifyNoInteractions(bucket, dictionaries);
+        verifyNoInteractions(bucket);
+        verify(dictionaries).acquireForValidation(4L);
     }
     @Test void transactionRollbackCleansBothArtifacts() throws Exception {
         service.uploadFile(csv("id\n1"), 1L, 2L, 4L);
@@ -134,7 +163,7 @@ class FileServiceValidationTest {
         verify(bucket).deleteObject("bruta/test.csv.validation.json");
     }
     @Test void failedValidatedUploadLeavesNoApprovedVersion() throws Exception {
-        when(bucket.uploadValidatedContent(any(), any(), any(), any())).thenThrow(new IllegalStateException("storage offline"));
+        when(bucket.uploadSourceValidatedContent(any(), any(), any(), any())).thenThrow(new IllegalStateException("storage offline"));
         assertThrows(IllegalStateException.class, () -> service.uploadFile(csv("id\n1"), 1L, 2L, 4L));
         for (var sync : TransactionSynchronizationManager.getSynchronizations()) sync.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
         verify(bucket).deleteObject("bruta/test.csv");

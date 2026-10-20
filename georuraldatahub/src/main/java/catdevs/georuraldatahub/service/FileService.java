@@ -78,6 +78,13 @@ public class FileService {
         this.quarantineRepository = quarantineRepository;
     }
 
+    /** Upload into a source without creating any dataset membership. */
+    @Transactional(rollbackFor = Exception.class)
+    public FileResponseDTO uploadToSource(MultipartFile file, Long sourceId, Long userId) throws Exception {
+        return ingest(file, null, userId, sourceId, null);
+    }
+
+    /** Compatibility endpoint: ingest into the source and immediately associate the dataset. */
     @Transactional(rollbackFor = Exception.class)
     public FileResponseDTO uploadFile(MultipartFile multipartFile, Long datasetId, Long userId, Long sourceId)
             throws Exception {
@@ -96,17 +103,16 @@ public class FileService {
             CollectedData collected) throws Exception {
         String hash = calculateHash(multipartFile);
 
-        if (fileRepository.existsByHashInDataset(datasetId, hash)) {
-            throw new DuplicateFileException("Este arquivo já foi enviado anteriormente para este conjunto.");
-        }
-
-        Dataset dataset = datasetService.findEntityById(datasetId);
-
         User user = userService.findEntityById(userId);
         // O usuário informa só a fonte; o backend escolhe o dicionário (versão mais
         // recente da fonte)
         // e o registra na ingestão (dic_id).
         Dictionary dictionary = dictionaryService.acquireForValidation(sourceId);
+        // The source lock also serializes hash checks for uploads and scheduled collections.
+        if (fileRepository.existsByHashAndIngestion_Dictionary_Source_Id(hash, sourceId)) {
+            throw new DuplicateFileException("Este conteúdo já foi enviado para esta fonte. Selecione o arquivo existente para compor o conjunto.");
+        }
+        Dataset dataset = datasetId == null ? null : datasetService.findLockedEntityById(datasetId);
 
         String sanitizedFilename = sanitizeFilename(multipartFile.getOriginalFilename());
         String format = extractFormat(sanitizedFilename);
@@ -127,7 +133,7 @@ public class FileService {
             accepted = validationService.acceptedContent(input, format, records);
         }
         // Raw content is retained for audit. Only the filtered artifact is eligible for treatment.
-        String location = bucketService.uploadToRawZone(multipartFile, datasetId, hash, sanitizedFilename);
+        String location = bucketService.uploadToSourceRawZone(multipartFile, sourceId, hash, sanitizedFilename);
 
         List<String> uploaded = new ArrayList<>();
         uploaded.add(location);
@@ -188,7 +194,7 @@ public class FileService {
             quarantineRepository.save(quarantine);
         }
         if (accepted.length > 0) {
-            String acceptedLocation = bucketService.uploadValidatedContent(accepted, datasetId, hash, sanitizedFilename);
+            String acceptedLocation = bucketService.uploadSourceValidatedContent(accepted, sourceId, hash, sanitizedFilename);
             uploaded.add(acceptedLocation);
             Version validated = new Version();
             validated.setFile(file);
@@ -198,7 +204,7 @@ public class FileService {
             validated.setLocation(acceptedLocation);
             versionRepository.save(validated);
         }
-        dataset.getFiles().add(file);
+        if (dataset != null) dataset.getFiles().add(file);
 
         return new FileResponseDTO(
                 file.getId(),
@@ -275,6 +281,15 @@ public class FileService {
                 HttpStatus.NOT_FOUND, "Arquivo não encontrado."));
         return mapper.readValue(bucketService.readCollectionMetadata(file.getLocation()),
                 CollectedData.Metadata.class);
+    }
+
+    @Transactional(readOnly = true)
+    public List<FileResponseDTO> findBySourceId(Long sourceId) {
+        return fileRepository.findByIngestion_Dictionary_Source_IdOrderByIdDesc(sourceId).stream()
+                .map(file -> new FileResponseDTO(file.getId(), file.getName(), file.getFormatFile(),
+                        file.getSize(), file.getHash(), file.getLocation(), file.getIngestion().getId(),
+                        file.getReceivedDate(), file.getIngestion().getUser().getId()))
+                .toList();
     }
 
     @Transactional(readOnly = true)
