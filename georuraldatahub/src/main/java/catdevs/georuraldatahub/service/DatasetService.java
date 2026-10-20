@@ -35,7 +35,7 @@ public class DatasetService {
                 User user = userService.findEntityById(request.userId());
 
                 Dataset dataset = new Dataset();
-                dataset.setName(request.name().trim());
+                dataset.setName(validName(request.name()));
                 dataset.setUser(user);
 
                 Dataset saved = datasetRepository.save(dataset);
@@ -78,7 +78,7 @@ public class DatasetService {
                         DatasetUpdateRequestDTO request) {
 
                 Dataset dataset = findEntityById(id);
-                dataset.setName(request.name().trim());
+                dataset.setName(validName(request.name()));
 
                 // A entidade gerenciada é atualizada no commit da transação.
                 return toDto(dataset);
@@ -96,6 +96,14 @@ public class DatasetService {
                 }
 
                 datasetRepository.delete(dataset);
+        }
+
+        private String validName(String value) {
+                if (value == null || value.isBlank()) throw new IllegalArgumentException("Nome do conjunto é obrigatório.");
+                String name = value.trim();
+                if (name.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 100)
+                        throw new IllegalArgumentException("Nome do conjunto excede o limite de 100 bytes do banco atual.");
+                return name;
         }
 
         private DatasetResponseDTO toDto(Dataset dataset) {

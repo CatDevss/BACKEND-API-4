@@ -24,6 +24,7 @@ public interface FileRepository extends JpaRepository<File, Long> {
     """)
     boolean existsByHashInDataset(@Param("datasetId") Long datasetId, @Param("hash") String hash);
 
+    @EntityGraph(attributePaths = {"ingestion.dictionary.source", "ingestion.user"})
     @Query("""
         SELECT f
         FROM Dataset d JOIN d.files f
