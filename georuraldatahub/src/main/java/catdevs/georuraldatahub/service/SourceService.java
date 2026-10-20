@@ -5,7 +5,6 @@ import catdevs.georuraldatahub.dto.SourceResponseDTO;
 import catdevs.georuraldatahub.entity.Source;
 import catdevs.georuraldatahub.entity.User;
 import catdevs.georuraldatahub.repository.SourceRepository;
-import catdevs.georuraldatahub.repository.UserRepository;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -20,13 +19,11 @@ import java.sql.SQLException;
 public class SourceService {
 
     private final SourceRepository sourceRepository;
-    private final UserRepository userRepository;
+    private final UserService userService;
 
-    public SourceService(
-            SourceRepository sourceRepository,
-            UserRepository userRepository) {
+    public SourceService(SourceRepository sourceRepository, UserService userService) {
         this.sourceRepository = sourceRepository;
-        this.userRepository = userRepository;
+        this.userService = userService;
     }
 
     public SourceResponseDTO create(SourceCreateRequestDTO request) {
@@ -37,10 +34,7 @@ public class SourceService {
                     "Já existe uma fonte com esse nome");
         }
 
-        User user = userRepository.findById(request.userId())
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        "Usuário não encontrado"));
+        User user = userService.findEntityById(request.userId());
 
         Source source = new Source();
         source.setName(request.name().trim());

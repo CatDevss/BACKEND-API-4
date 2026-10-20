@@ -6,12 +6,11 @@ import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.text.Normalizer;
+import java.util.List;
 
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.server.ResponseStatusException;
 
 import catdevs.georuraldatahub.dto.FileResponseDTO;
 import catdevs.georuraldatahub.entity.DataIngestion;
@@ -22,36 +21,38 @@ import catdevs.georuraldatahub.entity.User;
 import catdevs.georuraldatahub.entity.Version;
 import catdevs.georuraldatahub.entity.enums.IngestionStatus;
 import catdevs.georuraldatahub.entity.enums.VersionStatus;
-import catdevs.georuraldatahub.exception.DataSetNotFoundException;
 import catdevs.georuraldatahub.exception.DuplicateFileException;
-import catdevs.georuraldatahub.exception.UserNotFoundException;
-import catdevs.georuraldatahub.repository.DatasetRepository;
-import catdevs.georuraldatahub.repository.DictionaryRepository;
-import catdevs.georuraldatahub.repository.IngestionRepository;
 import catdevs.georuraldatahub.repository.FileRepository;
-import catdevs.georuraldatahub.repository.UserRepository;
+import catdevs.georuraldatahub.repository.IngestionRepository;
 import catdevs.georuraldatahub.repository.VersionRepository;
 
 @Service
 public class FileService {
 
-    private FileRepository fileRepository;
-    private VersionRepository versionRepository;
-    private DatasetRepository datasetRepository;
-    private UserRepository userRepository;
-    private BucketService bucketService;
-    private IngestionRepository ingestionRepository;
-    private DictionaryRepository dictionaryRepository;
+    private final FileRepository fileRepository;
+    private final VersionRepository versionRepository;
+    private final IngestionRepository ingestionRepository;
 
-    public FileService(FileRepository fileRepository, VersionRepository versionRepository,
-            DatasetRepository datasetRepository, UserRepository userRepository, BucketService bucketService,
-            IngestionRepository ingestionRepository, DictionaryRepository dictionaryRepository) {
-        this.ingestionRepository = ingestionRepository;
-        this.dictionaryRepository = dictionaryRepository;
+    private final DatasetService datasetService;
+    private final UserService userService;
+    private final DictionaryService dictionaryService;
+    private final BucketService bucketService;
+
+    public FileService(
+            FileRepository fileRepository,
+            VersionRepository versionRepository,
+            IngestionRepository ingestionRepository,
+            DatasetService datasetService,
+            UserService userService,
+            DictionaryService dictionaryService,
+            BucketService bucketService) {
+
         this.fileRepository = fileRepository;
         this.versionRepository = versionRepository;
-        this.datasetRepository = datasetRepository;
-        this.userRepository = userRepository;
+        this.ingestionRepository = ingestionRepository;
+        this.datasetService = datasetService;
+        this.userService = userService;
+        this.dictionaryService = dictionaryService;
         this.bucketService = bucketService;
     }
 
@@ -65,16 +66,13 @@ public class FileService {
             throw new DuplicateFileException("Este arquivo já foi enviado anteriormente para este conjunto.");
         }
 
-        Dataset dataset = datasetRepository.findById(datasetId)
-                .orElseThrow(() -> new DataSetNotFoundException("Conjunto não encontrado."));
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new UserNotFoundException("Usuário não encontrado."));
+        Dataset dataset = datasetService.findEntityById(datasetId);
+
+        User user = userService.findEntityById(userId);
         // O usuário informa só a fonte; o backend escolhe o dicionário (versão mais
         // recente da fonte)
         // e o registra na ingestão (dic_id).
-        Dictionary dictionary = dictionaryRepository.findFirstBySource_IdOrderByVersionDesc(sourceId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
-                        "Esta fonte não possui dicionário de dados cadastrado."));
+        Dictionary dictionary = dictionaryService.findLatestBySourceId(sourceId);
 
         String sanitizedFilename = sanitizeFilename(multipartFile.getOriginalFilename());
 
@@ -161,5 +159,25 @@ public class FileService {
         String semAcento = Normalizer.normalize(filename, Normalizer.Form.NFD)
                 .replaceAll("\\p{M}", "");
         return semAcento.replaceAll("[^a-zA-Z0-9._-]", "_");
+    }
+
+    @Transactional(readOnly = true)
+    public List<FileResponseDTO> findByDatasetId(Long datasetId) {
+
+        Dataset dataset = datasetService.findEntityById(datasetId);
+
+        return dataset.getFiles()
+                .stream()
+                .map(file -> new FileResponseDTO(
+                        file.getId(),
+                        file.getName(),
+                        file.getFormatFile(),
+                        file.getSize(),
+                        file.getHash(),
+                        file.getLocation(),
+                        file.getIngestion().getId(),
+                        file.getReceivedDate(),
+                        file.getIngestion().getUser().getId()))
+                .toList();
     }
 }
