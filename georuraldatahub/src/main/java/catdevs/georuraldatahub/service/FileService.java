@@ -56,7 +56,7 @@ public class FileService {
     }
 
     @Transactional
-    public FileResponseDTO uploadFile(MultipartFile multipartFile, Long datasetId, Long userId, Long dictionaryId)
+    public FileResponseDTO uploadFile(MultipartFile multipartFile, Long datasetId, Long userId, Long sourceId)
             throws Exception {
 
         String hash = calculateHash(multipartFile);
@@ -69,8 +69,12 @@ public class FileService {
                 .orElseThrow(() -> new DataSetNotFoundException("Conjunto não encontrado."));
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException("Usuário não encontrado."));
-        Dictionary dictionary = dictionaryRepository.findById(dictionaryId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Dicionário não encontrado."));
+        // O usuário informa só a fonte; o backend escolhe o dicionário (versão mais
+        // recente da fonte)
+        // e o registra na ingestão (dic_id).
+        Dictionary dictionary = dictionaryRepository.findFirstBySource_IdOrderByVersionDesc(sourceId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Esta fonte não possui dicionário de dados cadastrado."));
 
         String sanitizedFilename = sanitizeFilename(multipartFile.getOriginalFilename());
 
