@@ -1,7 +1,5 @@
 package catdevs.georuraldatahub.validation;
 
 public enum FieldType {
-    STRING,
-    NUMBER,
-    GEOMETRY
+    STRING, NUMBER, INTEGER, BOOLEAN, DATE, LATITUDE, LONGITUDE, GEOMETRY
 }

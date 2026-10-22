@@ -1,3 +1,4 @@
+
 package catdevs.georuraldatahub.service;
 
 import catdevs.georuraldatahub.dto.SourceCreateRequestDTO;
@@ -25,13 +26,25 @@ public class SourceService {
 
     @Transactional
     public SourceResponseDTO create(SourceCreateRequestDTO request) {
+        if (request.name() == null || request.name().isBlank()) {
+            throw new IllegalArgumentException(
+                    "Nome da fonte é obrigatório."
+            );
+        }
+
+        if (request.url() == null || request.url().isBlank()) {
+            throw new IllegalArgumentException(
+                    "URL da fonte é obrigatória."
+            );
+        }
 
         String name = request.name().trim();
+        String url = request.url().trim();
 
         if (existsByName(name)) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
-                    "Já existe uma fonte com esse nome"
+                    "Já existe uma fonte com esse nome."
             );
         }
 
@@ -40,33 +53,26 @@ public class SourceService {
         if (user == null) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "Usuário não encontrado"
+                    "Usuário não encontrado."
             );
         }
 
         Source source = new Source();
         source.setName(name);
-        source.setUrl(request.url().trim());
+        source.setUrl(url);
         source.setUser(user);
 
         try {
             entityManager.persist(source);
             entityManager.flush();
 
-            return new SourceResponseDTO(
-                    source.getId(),
-                    source.getName(),
-                    source.getDateCreation(),
-                    source.getUrl(),
-                    source.getUser().getId()
-            );
+            return toDto(source);
 
         } catch (DataIntegrityViolationException e) {
-
             if (isUniqueConstraintViolation(e)) {
                 throw new ResponseStatusException(
                         HttpStatus.CONFLICT,
-                        "Já existe uma fonte com esse nome",
+                        "Já existe uma fonte com esse nome.",
                         e
                 );
             }
@@ -76,8 +82,26 @@ public class SourceService {
     }
 
     @Transactional(readOnly = true)
-    public List<SourceResponseDTO> listAll() {
+    public Source findEntityById(Long id) {
+        Source source = entityManager.find(Source.class, id);
 
+        if (source == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Fonte não encontrada."
+            );
+        }
+
+        return source;
+    }
+
+    @Transactional(readOnly = true)
+    public SourceResponseDTO findById(Long id) {
+        return toDto(findEntityById(id));
+    }
+
+    @Transactional(readOnly = true)
+    public List<SourceResponseDTO> listAll() {
         return entityManager.createQuery(
                 """
                 SELECT s
@@ -88,20 +112,11 @@ public class SourceService {
         )
         .getResultList()
         .stream()
-        .map(source -> new SourceResponseDTO(
-                source.getId(),
-                source.getName(),
-                source.getDateCreation(),
-                source.getUrl(),
-                source.getUser() != null
-                        ? source.getUser().getId()
-                        : null
-        ))
+        .map(this::toDto)
         .toList();
     }
 
     private boolean existsByName(String name) {
-
         Long quantity = entityManager.createQuery(
                 """
                 SELECT COUNT(s)
@@ -116,13 +131,24 @@ public class SourceService {
         return quantity > 0;
     }
 
+    private SourceResponseDTO toDto(Source source) {
+        return new SourceResponseDTO(
+                source.getId(),
+                source.getName(),
+                source.getDateCreation(),
+                source.getUrl(),
+                source.getUser() != null
+                        ? source.getUser().getId()
+                        : null
+        );
+    }
+
     private boolean isUniqueConstraintViolation(
             DataIntegrityViolationException exception) {
 
         Throwable cause = exception;
 
         while (cause != null) {
-
             if (cause instanceof SQLException sqlException
                     && sqlException.getErrorCode() == 1) {
                 return true;

@@ -1,3 +1,4 @@
+
 package catdevs.georuraldatahub.service;
 
 import catdevs.georuraldatahub.dto.DatasetCreateRequestDTO;
@@ -7,8 +8,10 @@ import catdevs.georuraldatahub.dto.FileResponseDTO;
 import catdevs.georuraldatahub.entity.Dataset;
 import catdevs.georuraldatahub.entity.File;
 import catdevs.georuraldatahub.entity.User;
+import catdevs.georuraldatahub.exception.DataSetNotFoundException;
 
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import jakarta.persistence.PersistenceContext;
 
 import org.springframework.http.HttpStatus;
@@ -16,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 @Service
@@ -32,12 +36,12 @@ public class DatasetService {
         if (user == null) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "Usuário não encontrado"
+                    "Usuário não encontrado."
             );
         }
 
         Dataset dataset = new Dataset();
-        dataset.setName(request.name().trim());
+        dataset.setName(validName(request.name()));
         dataset.setUser(user);
 
         entityManager.persist(dataset);
@@ -69,9 +73,26 @@ public class DatasetService {
         Dataset dataset = entityManager.find(Dataset.class, id);
 
         if (dataset == null) {
-            throw new ResponseStatusException(
-                    HttpStatus.NOT_FOUND,
-                    "Conjunto não encontrado"
+            throw new DataSetNotFoundException(
+                    "Conjunto não encontrado."
+            );
+        }
+
+        return dataset;
+    }
+
+    @Transactional
+    public Dataset findLockedEntityById(Long id) {
+
+        Dataset dataset = entityManager.find(
+                Dataset.class,
+                id,
+                LockModeType.PESSIMISTIC_WRITE
+        );
+
+        if (dataset == null) {
+            throw new DataSetNotFoundException(
+                    "Conjunto não encontrado."
             );
         }
 
@@ -88,9 +109,8 @@ public class DatasetService {
             Long id,
             DatasetUpdateRequestDTO request) {
 
-        Dataset dataset = findEntityById(id);
-
-        dataset.setName(request.name().trim());
+        Dataset dataset = findLockedEntityById(id);
+        dataset.setName(validName(request.name()));
 
         return toDto(dataset);
     }
@@ -98,7 +118,7 @@ public class DatasetService {
     @Transactional
     public void delete(Long id) {
 
-        Dataset dataset = findEntityById(id);
+        Dataset dataset = findLockedEntityById(id);
 
         if (dataset.getFiles() != null && !dataset.getFiles().isEmpty()) {
             throw new ResponseStatusException(
@@ -113,16 +133,9 @@ public class DatasetService {
     @Transactional(readOnly = true)
     public List<FileResponseDTO> listFiles(Long datasetId) {
 
-        Dataset dataset = entityManager.find(Dataset.class, datasetId);
+        findEntityById(datasetId);
 
-        if (dataset == null) {
-            throw new ResponseStatusException(
-                    HttpStatus.NOT_FOUND,
-                    "Conjunto não encontrado"
-            );
-        }
-
-        return buscarArquivosPorDataset(dataset.getId())
+        return buscarArquivosPorDataset(datasetId)
                 .stream()
                 .map(this::toDto)
                 .toList();
@@ -141,6 +154,25 @@ public class DatasetService {
         )
         .setParameter("datasetId", datasetId)
         .getResultList();
+    }
+
+    private String validName(String value) {
+
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Nome do conjunto é obrigatório."
+            );
+        }
+
+        String name = value.trim();
+
+        if (name.getBytes(StandardCharsets.UTF_8).length > 100) {
+            throw new IllegalArgumentException(
+                    "Nome do conjunto excede o limite de 100 bytes do banco atual."
+            );
+        }
+
+        return name;
     }
 
     private DatasetResponseDTO toDto(Dataset dataset) {

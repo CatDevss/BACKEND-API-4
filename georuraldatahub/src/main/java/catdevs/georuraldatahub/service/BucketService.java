@@ -67,7 +67,17 @@ public class BucketService {
          */
         public String uploadToRawZone(MultipartFile file, Long datasetId, String hash, String sanitizedFilename)
                         throws IOException {
-                String objectName = "bruta/" + datasetId + "/" + hash + "_" + sanitizedFilename;
+                return uploadToRawScope(file, datasetId.toString(), hash, sanitizedFilename);
+        }
+
+        public String uploadToSourceRawZone(MultipartFile file, Long sourceId, String hash, String filename)
+                        throws IOException {
+                return uploadToRawScope(file, "fontes/" + sourceId, hash, filename);
+        }
+
+        private String uploadToRawScope(MultipartFile file, String scope, String hash, String sanitizedFilename)
+                        throws IOException {
+                String objectName = "bruta/" + scope + "/" + hash + "_" + sanitizedFilename;
 
                 PutObjectRequest request = PutObjectRequest.builder()
                                 .namespaceName(props.namespace())
@@ -79,6 +89,70 @@ public class BucketService {
 
                 client.putObject(request);
                 return objectName;
+        }
+
+        public String uploadValidatedContent(byte[] content, Long datasetId, String hash, String filename) {
+                return uploadValidatedScope(content, datasetId.toString(), hash, filename);
+        }
+
+        public String uploadSourceValidatedContent(byte[] content, Long sourceId, String hash, String filename) {
+                return uploadValidatedScope(content, "fontes/" + sourceId, hash, filename);
+        }
+
+        private String uploadValidatedScope(byte[] content, String scope, String hash, String filename) {
+                String key = "validada/" + scope + "/" + hash + "_" + filename;
+                try (var input = new java.io.ByteArrayInputStream(content)) {
+                        client.putObject(PutObjectRequest.builder()
+                                .namespaceName(props.namespace()).bucketName(props.bucketName())
+                                .objectName(key).putObjectBody(input).contentLength((long) content.length).build());
+                } catch (IOException e) { throw new java.io.UncheckedIOException(e); }
+                return key;
+        }
+
+        public String uploadValidationReport(String rawLocation, String json) {
+                String key = rawLocation + ".validation.json";
+                byte[] content = json.getBytes(StandardCharsets.UTF_8);
+                try (var input = new java.io.ByteArrayInputStream(content)) {
+                        client.putObject(PutObjectRequest.builder()
+                                .namespaceName(props.namespace()).bucketName(props.bucketName())
+                                .objectName(key).putObjectBody(input).contentLength((long) content.length)
+                                .contentType("application/json").build());
+                } catch (IOException e) { throw new java.io.UncheckedIOException(e); }
+                return key;
+        }
+
+        public String readValidationReport(String rawLocation) throws IOException {
+                var request = GetObjectRequest.builder().namespaceName(props.namespace())
+                        .bucketName(props.bucketName()).objectName(rawLocation + ".validation.json").build();
+                try (InputStream input = client.getObject(request).getInputStream()) {
+                        return new String(input.readAllBytes(), StandardCharsets.UTF_8);
+                } catch (com.oracle.bmc.model.BmcException e) {
+                        if (e.getStatusCode() == 404) throw new org.springframework.web.server.ResponseStatusException(
+                                org.springframework.http.HttpStatus.NOT_FOUND,
+                                "Arquivo ainda não possui relatório de validação.");
+                        throw e;
+                }
+        }
+
+        public String uploadCollectionArtifact(String key, byte[] bytes, String contentType) {
+                try (InputStream input = new java.io.ByteArrayInputStream(bytes)) {
+                        client.putObject(PutObjectRequest.builder().namespaceName(props.namespace())
+                                .bucketName(props.bucketName()).objectName(key).putObjectBody(input)
+                                .contentLength((long) bytes.length).contentType(contentType).build());
+                } catch (IOException e) { throw new java.io.UncheckedIOException(e); }
+                return key;
+        }
+
+        public String readCollectionMetadata(String rawLocation) throws IOException {
+                var request = GetObjectRequest.builder().namespaceName(props.namespace()).bucketName(props.bucketName())
+                        .objectName(rawLocation + ".collection.json").build();
+                try (InputStream input = client.getObject(request).getInputStream()) {
+                        return new String(input.readAllBytes(), StandardCharsets.UTF_8);
+                } catch (com.oracle.bmc.model.BmcException e) {
+                        if (e.getStatusCode() == 404) throw new org.springframework.web.server.ResponseStatusException(
+                                org.springframework.http.HttpStatus.NOT_FOUND, "Arquivo não possui metadados de coleta automática.");
+                        throw e;
+                }
         }
 
         public void deleteObject(String objectName) {
