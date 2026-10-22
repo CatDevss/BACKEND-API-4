@@ -22,6 +22,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.text.Normalizer;
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,6 +55,7 @@ public class FileService {
     private final BucketService bucketService;
     private final FileValidationService validationService;
     private final QuarantineRepository quarantineRepository;
+    private final Optional<OccurrenceService> occurrenceService;
     private final ObjectMapper mapper = new ObjectMapper();
 
     public FileService(
@@ -65,7 +67,7 @@ public class FileService {
             DictionaryService dictionaryService,
             BucketService bucketService,
             FileValidationService validationService,
-            QuarantineRepository quarantineRepository) {
+            QuarantineRepository quarantineRepository, Optional<OccurrenceService> occurrenceService) {
 
         this.fileRepository = fileRepository;
         this.versionRepository = versionRepository;
@@ -76,6 +78,7 @@ public class FileService {
         this.bucketService = bucketService;
         this.validationService = validationService;
         this.quarantineRepository = quarantineRepository;
+        this.occurrenceService = occurrenceService;
     }
 
     /** Upload into a source without creating any dataset membership. */
@@ -177,6 +180,10 @@ public class FileService {
         file.setHash(hash);
         file.setLocation(location);
         file = fileRepository.save(file);
+        if (!report.status().equals("VALIDO")) {
+            Long fileId = file.getId();
+            occurrenceService.ifPresent(service -> service.registerValidation(fileId, records));
+        }
 
         Version version = new Version();
         version.setFile(file);
@@ -241,7 +248,7 @@ public class FileService {
         if (filename == null || !filename.contains(".")) {
             return null;
         }
-        return filename.substring(filename.lastIndexOf(".") + 1);
+        return filename.substring(filename.lastIndexOf(".") + 1).toLowerCase(java.util.Locale.ROOT);
     }
 
     /**

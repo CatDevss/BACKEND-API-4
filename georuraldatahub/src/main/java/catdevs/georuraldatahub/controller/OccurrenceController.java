@@ -1,5 +1,6 @@
 package catdevs.georuraldatahub.controller;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
@@ -16,6 +17,8 @@ import jakarta.validation.Valid;
 import java.util.List;
 
 @RestController
+@ConditionalOnProperty(name = "features.occurrences.enabled", havingValue = "true", matchIfMissing = true)
+@CrossOrigin
 @RequestMapping("/ocorrencias")
 public class OccurrenceController {
 
