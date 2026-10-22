@@ -1,89 +1,112 @@
 package catdevs.georuraldatahub.validation;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
 import org.springframework.stereotype.Component;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.TextNode;
 
 @Component
 public class CsvRecordValidator {
+
     public List<RecordValidationResult> validate(InputStream inputStream, List<FieldRule> rules) throws IOException {
         List<RecordValidationResult> results = new ArrayList<>();
-        RuleValidationState state = new RuleValidationState();
-        try (PushbackReader reader = new PushbackReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8), 1)) {
-            skipBom(reader);
-            List<String> headers = readRecord(reader);
-            if (headers == null) return fileError("EMPTY_FILE");
-            headers.set(0, headers.get(0).replaceFirst("^\uFEFF", ""));
-            headers = headers.stream().map(String::trim).toList();
-            if (headers.stream().anyMatch(String::isBlank) || new HashSet<>(headers).size() != headers.size())
-                return fileError("INVALID_HEADER");
-            Set<String> known = new HashSet<>();
-            for (FieldRule r : rules) known.add(r.name());
-            List<String> headerErrors = new ArrayList<>();
-            for (String h : headers) if (!known.contains(h)) headerErrors.add("UNKNOWN_FIELD: " + h);
-            for (FieldRule r : rules) if (r.required() && !headers.contains(r.name())) headerErrors.add("REQUIRED_FIELD: " + r.name());
-            if (!headerErrors.isEmpty()) return List.of(RecordValidationResult.invalid(-1, "", headerErrors));
-            List<String> values;
+
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
+
+            String headerLine = reader.readLine();
+            if (headerLine == null) {
+                return results;
+            }
+
+            String[] headers = splitCsvLine(headerLine);
+
+            String line;
             int index = 0;
-            while ((values = readRecord(reader)) != null) {
-                if (values.size() == 1 && values.get(0).isBlank()) continue;
-                String raw = encode(values);
-                if (values.size() != headers.size()) {
-                    results.add(RecordValidationResult.invalid(index++, raw, List.of("INVALID_COLUMN_COUNT")));
+            while ((line = reader.readLine()) != null) {
+                if (line.isBlank()) {
                     continue;
                 }
-                Map<String, JsonNode> row = new LinkedHashMap<>();
-                for (int i = 0; i < headers.size(); i++) row.put(headers.get(i), TextNode.valueOf(values.get(i).trim()));
-                List<String> errors = state.validate(row, rules, true);
-                results.add(errors.isEmpty() ? RecordValidationResult.ok(index, raw)
-                        : RecordValidationResult.invalid(index, raw, errors));
+                String[] values = splitCsvLine(line);
+                Map<String, String> row = toRowMap(headers, values);
+
+                List<String> errors = validateRow(row, rules);
+
+                results.add(errors.isEmpty()
+                        ? RecordValidationResult.ok(index, line)
+                        : RecordValidationResult.invalid(index, line, errors));
+
                 index++;
             }
-            return results.isEmpty() ? fileError("EMPTY_FILE") : results;
-        } catch (IllegalArgumentException e) { return fileError("MALFORMED_FILE: " + e.getMessage()); }
+        }
+
+        return results;
     }
-    private List<RecordValidationResult> fileError(String error) {
-        return List.of(RecordValidationResult.invalid(-1, "", List.of(error)));
+
+    private Map<String, String> toRowMap(String[] headers, String[] values) {
+        Map<String, String> row = new LinkedHashMap<>();
+        for (int i = 0; i < headers.length; i++) {
+            String value = i < values.length ? values[i].trim() : "";
+            row.put(headers[i].trim(), value);
+        }
+        return row;
     }
-    public static void skipBom(PushbackReader reader) throws IOException {
-        int first = reader.read();
-        if (first != -1 && first != '\uFEFF') reader.unread(first);
-    }
-    public static String encode(List<String> fields) {
-        return fields.stream().map(v -> "\"" + v.replace("\"", "\"\"") + "\"")
-                .collect(java.util.stream.Collectors.joining(","));
-    }
-    // RFC 4180: escaped quotes and multiline fields. Ambiguous framing rejects the whole file.
-    public static List<String> readRecord(PushbackReader reader) throws IOException {
-        List<String> fields = new ArrayList<>();
-        StringBuilder field = new StringBuilder();
-        boolean quoted = false, closed = false, any = false;
-        int ch;
-        while ((ch = reader.read()) != -1) {
-            any = true;
-            char c = (char) ch;
-            if (quoted) {
-                if (c == '"') {
-                    int next = reader.read();
-                    if (next == '"') field.append('"');
-                    else { quoted = false; closed = true; if (next != -1) reader.unread(next); }
-                } else field.append(c);
-            } else if (c == ',') {
-                fields.add(field.toString()); field.setLength(0); closed = false;
-            } else if (c == '\n' || c == '\r') {
-                if (c == '\r') { int next = reader.read(); if (next != '\n' && next != -1) reader.unread(next); }
-                fields.add(field.toString()); return fields;
-            } else if (c == '"' && field.isEmpty() && !closed) quoted = true;
-            else {
-                if (closed || c == '"') throw new IllegalArgumentException("Aspas CSV inválidas.");
-                field.append(c);
+
+    private List<String> validateRow(Map<String, String> row, List<FieldRule> rules) {
+        List<String> errors = new ArrayList<>();
+
+        for (FieldRule rule : rules) {
+            String value = row.get(rule.name());
+
+            if (rule.required() && (value == null || value.isBlank())) {
+                errors.add("Campo obrigatório ausente: " + rule.name());
+                continue;
+            }
+
+            if (value == null || value.isBlank()) {
+                continue;
+            }
+
+            if (rule.type() == FieldType.NUMBER && !isNumeric(value)) {
+                errors.add("Campo '" + rule.name() + "' deveria ser numérico, veio: '" + value + "'");
             }
         }
-        if (quoted) throw new IllegalArgumentException("Campo CSV sem fechamento de aspas.");
-        if (!any) return null;
-        fields.add(field.toString()); return fields;
+
+        return errors;
+    }
+
+    private boolean isNumeric(String value) {
+        try {
+            Double.parseDouble(value.replace(",", "."));
+            return true;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
+    private String[] splitCsvLine(String line) {
+        List<String> fields = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean insideQuotes = false;
+
+        for (char c : line.toCharArray()) {
+            if (c == '"') {
+                insideQuotes = !insideQuotes;
+            } else if (c == ',' && !insideQuotes) {
+                fields.add(current.toString());
+                current.setLength(0);
+            } else {
+                current.append(c);
+            }
+        }
+        fields.add(current.toString());
+        return fields.toArray(new String[0]);
     }
 }

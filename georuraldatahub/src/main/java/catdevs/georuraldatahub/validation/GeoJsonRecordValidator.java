@@ -1,45 +1,90 @@
 package catdevs.georuraldatahub.validation;
 
 import java.io.InputStream;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+
 import org.springframework.stereotype.Component;
-import com.fasterxml.jackson.databind.*;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Component
 public class GeoJsonRecordValidator {
-    private final ObjectMapper mapper = new ObjectMapper().enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
-            .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
 
-    public List<RecordValidationResult> validate(InputStream input, List<FieldRule> rules) throws Exception {
-        JsonNode root;
-        try { root = mapper.readTree(input); }
-        catch (com.fasterxml.jackson.core.JsonProcessingException e) { return fileError("MALFORMED_FILE"); }
-        if (root == null || !"FeatureCollection".equals(root.path("type").asText()) || !root.path("features").isArray())
-            return fileError("INVALID_FILE_STRUCTURE");
-        if (root.path("features").isEmpty()) return fileError("EMPTY_FILE");
+    private static final Set<String> VALID_GEOMETRY_TYPES = Set.of(
+            "Point", "MultiPoint", "LineString", "MultiLineString", "Polygon", "MultiPolygon"
+    );
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    public List<RecordValidationResult> validate(InputStream inputStream, List<FieldRule> rules) throws Exception {
         List<RecordValidationResult> results = new ArrayList<>();
-        RuleValidationState state = new RuleValidationState();
+
+        JsonNode root = objectMapper.readTree(inputStream);
+
+        if (!root.has("features") || !root.get("features").isArray()) {
+            results.add(RecordValidationResult.invalid(
+                    0, root.toString(), List.of("GeoJSON inválido: não é um FeatureCollection com 'features'.")
+            ));
+            return results;
+        }
+
         int index = 0;
         for (JsonNode feature : root.get("features")) {
             List<String> errors = new ArrayList<>();
-            if (!"Feature".equals(feature.path("type").asText()) || !feature.path("properties").isObject())
-                errors.add("INVALID_RECORD_STRUCTURE");
-            if (!GeometryValidation.valid(feature.get("geometry"))) errors.add("INVALID_GEOMETRY");
-            Map<String, JsonNode> row = new TreeMap<>();
-            feature.path("properties").properties().forEach(e -> row.put(e.getKey(), e.getValue()));
-            // A geometry rule refers to the standard Feature geometry rather than a duplicate property.
-            for (FieldRule r : rules) if (r.type() == FieldType.GEOMETRY && r.name().equals("geometry"))
-                row.put("geometry", feature.get("geometry"));
-            // Reserve uniqueness only when the feature envelope and geometry are valid.
-            List<String> fieldErrors = (errors.isEmpty() ? state : new RuleValidationState()).validate(row, rules, false, feature.path("geometry").toString());
-            errors.addAll(fieldErrors);
-            String raw = feature.toString();
-            results.add(errors.isEmpty() ? RecordValidationResult.ok(index, raw) : RecordValidationResult.invalid(index, raw, errors));
+
+            JsonNode geometry = feature.get("geometry");
+            if (geometry == null || geometry.isNull()) {
+                errors.add("Geometria ausente.");
+            } else {
+                JsonNode typeNode = geometry.get("type");
+                if (typeNode == null || !VALID_GEOMETRY_TYPES.contains(typeNode.asText())) {
+                    errors.add("Tipo de geometria inválido ou ausente: "
+                            + (typeNode != null ? typeNode.asText() : "null"));
+                }
+                JsonNode coordinates = geometry.get("coordinates");
+                if (coordinates == null || !coordinates.isArray() || coordinates.isEmpty()) {
+                    errors.add("Coordenadas ausentes ou vazias.");
+                }
+            }
+
+            JsonNode properties = feature.get("properties");
+            for (FieldRule rule : rules) {
+                JsonNode value = properties != null ? properties.get(rule.name()) : null;
+
+                if (rule.required() && (value == null || value.isNull()
+                        || (value.isTextual() && value.asText().isBlank()))) {
+                    errors.add("Campo obrigatório ausente: " + rule.name());
+                    continue;
+                }
+
+                if (value == null || value.isNull()) {
+                    continue;
+                }
+
+                if (rule.type() == FieldType.NUMBER && !value.isNumber() && !isNumericText(value.asText())) {
+                    errors.add("Campo '" + rule.name() + "' deveria ser numérico, veio: '" + value.asText() + "'");
+                }
+            }
+
+            results.add(errors.isEmpty()
+                    ? RecordValidationResult.ok(index, feature.toString())
+                    : RecordValidationResult.invalid(index, feature.toString(), errors));
+
             index++;
         }
+
         return results;
     }
-    private List<RecordValidationResult> fileError(String code) {
-        return List.of(RecordValidationResult.invalid(-1, "", List.of(code)));
+
+    private boolean isNumericText(String value) {
+        try {
+            Double.parseDouble(value.replace(",", "."));
+            return true;
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 }

@@ -8,17 +8,9 @@ import org.springframework.mock.web.MockMultipartFile;
 
 class FileServiceHashTest {
 
-    private final FileService fileService = new FileService(
-            null,
-            null,
-            null,
-            null
-    );
+    private final FileService fileService =
+            new FileService(null, null);
 
-    /**
-     * Verifica que dois arquivos com o mesmo conteúdo, mas nomes
-     * diferentes, geram exatamente o mesmo hash SHA-256.
-     */
     @Test
     void sameContentMustReturnSameHash() throws Exception {
 

@@ -5,6 +5,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,19 +18,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 import catdevs.georuraldatahub.dto.LayerInfoDTO;
 import catdevs.georuraldatahub.entity.Dataset;
 import catdevs.georuraldatahub.entity.File;
-import catdevs.georuraldatahub.entity.Version;
-import catdevs.georuraldatahub.entity.enums.VersionStatus;
-
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 
 @Service
 public class LayerService {
 
-    private static final Set<String> RENDERABLE_FORMATS =
+    private static final Set<String> RENDERABLE =
             Set.of("geojson", "json", "csv");
-
-    private static final String VALIDATED_LOCATION_PREFIX = "validada/";
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -40,20 +36,20 @@ public class LayerService {
 
     @Transactional(readOnly = true)
     public List<LayerInfoDTO> listLayers(Long datasetId) {
+
         Dataset dataset = entityManager.find(Dataset.class, datasetId);
 
         if (dataset == null) {
             throw new ResponseStatusException(
                     HttpStatus.NOT_FOUND,
-                    "Dataset não encontrado."
+                    "Conjunto não encontrado"
             );
         }
 
         return entityManager.createQuery(
                 """
                 SELECT f
-                FROM Dataset d
-                JOIN d.files f
+                FROM Dataset d JOIN d.files f
                 WHERE d.id = :datasetId
                 ORDER BY f.id DESC
                 """,
@@ -63,7 +59,6 @@ public class LayerService {
         .getResultList()
         .stream()
         .filter(file -> isRenderable(file.getFormatFile()))
-        .filter(this::hasValidatedVersion)
         .map(file -> new LayerInfoDTO(
                 file.getId(),
                 file.getName(),
@@ -74,31 +69,9 @@ public class LayerService {
         .toList();
     }
 
-    private boolean hasValidatedVersion(File file) {
-        return findValidatedVersion(file.getId()) != null;
-    }
-
-    private Version findValidatedVersion(Long fileId) {
-        List<Version> versions = entityManager.createQuery(
-                """
-                SELECT v
-                FROM Version v
-                WHERE v.file.id = :fileId
-                  AND v.location LIKE :location
-                ORDER BY v.versionNumber DESC
-                """,
-                Version.class
-        )
-        .setParameter("fileId", fileId)
-        .setParameter("location", VALIDATED_LOCATION_PREFIX + "%")
-        .setMaxResults(1)
-        .getResultList();
-
-        return versions.isEmpty() ? null : versions.get(0);
-    }
-
     @Transactional(readOnly = true)
     public JsonNode getFileLayer(Long fileId) throws IOException {
+
         File file = entityManager.find(File.class, fileId);
 
         if (file == null) {
@@ -108,54 +81,21 @@ public class LayerService {
             );
         }
 
-        String format = file.getFormatFile();
-
-        if (format == null || format.isBlank()) {
+        if (!isRenderable(file.getFormatFile())) {
             throw new ResponseStatusException(
-                    HttpStatus.UNSUPPORTED_MEDIA_TYPE,
-                    "Formato de arquivo não informado."
+                    HttpStatus.UNPROCESSABLE_CONTENT,
+                    "Formato não suportado para visualização: "
+                            + file.getFormatFile()
             );
         }
 
-        if (!isRenderable(format)) {
-            throw new ResponseStatusException(
-                    HttpStatus.UNSUPPORTED_MEDIA_TYPE,
-                    "Formato de arquivo não suportado para visualização."
-            );
-        }
-
-        Version version = findValidatedVersion(fileId);
-
-        if (version == null) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "O arquivo não possui uma versão validada para visualização."
-            );
-        }
-
-        String location = version.getLocation();
-
-        if (location == null || location.isBlank()) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "A versão validada não possui localização no bucket."
-            );
-        }
-
-        return switch (format.toLowerCase(Locale.ROOT)) {
-            case "geojson", "json" -> bucketService.readGeoJson(location);
-            case "csv" -> bucketService.readCsvAsGeoJson(location);
-            default -> throw new ResponseStatusException(
-                    HttpStatus.UNSUPPORTED_MEDIA_TYPE,
-                    "Formato de arquivo não suportado para visualização."
-            );
-        };
+        return "csv".equalsIgnoreCase(file.getFormatFile())
+                ? bucketService.readCsvAsGeoJson(file.getLocation())
+                : bucketService.readGeoJson(file.getLocation());
     }
 
     private boolean isRenderable(String format) {
         return format != null
-                && RENDERABLE_FORMATS.contains(
-                        format.toLowerCase(Locale.ROOT)
-                );
+                && RENDERABLE.contains(format.toLowerCase(Locale.ROOT));
     }
 }
