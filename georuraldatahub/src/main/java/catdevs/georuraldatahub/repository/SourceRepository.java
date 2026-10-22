@@ -12,6 +12,8 @@ public interface SourceRepository extends JpaRepository<Source, Long> {
 
     boolean existsByName(String name);
 
+    @org.springframework.data.jpa.repository.QueryHints(
+            @jakarta.persistence.QueryHint(name = "jakarta.persistence.lock.timeout", value = "10000"))
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select s from Source s where s.id = :id")
     Optional<Source> findLockedById(@Param("id") Long id);

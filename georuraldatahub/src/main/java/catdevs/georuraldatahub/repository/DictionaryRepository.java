@@ -20,6 +20,8 @@ public interface DictionaryRepository extends JpaRepository<Dictionary, Long> {
     @Query("select d.source.id from Dictionary d where d.id = :id")
     Optional<Long> findSourceIdById(@Param("id") Long id);
 
+    @org.springframework.data.jpa.repository.QueryHints(
+            @jakarta.persistence.QueryHint(name = "jakarta.persistence.lock.timeout", value = "10000"))
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select d from Dictionary d where d.id = :id")
     Optional<Dictionary> findLockedById(@Param("id") Long id);

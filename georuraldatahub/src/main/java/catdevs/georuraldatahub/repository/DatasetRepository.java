@@ -9,6 +9,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface DatasetRepository extends JpaRepository<Dataset, Long> {
+    @org.springframework.data.jpa.repository.QueryHints(
+            @jakarta.persistence.QueryHint(name = "jakarta.persistence.lock.timeout", value = "10000"))
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select d from Dataset d where d.id = :id")
     Optional<Dataset> findLockedById(@Param("id") Long id);
