@@ -12,9 +12,8 @@ public class CsvRecordValidator {
     public List<RecordValidationResult> validate(InputStream inputStream, List<FieldRule> rules) throws IOException {
         List<RecordValidationResult> results = new ArrayList<>();
         RuleValidationState state = new RuleValidationState();
-        try (PushbackReader reader = new PushbackReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8), 1)) {
-            skipBom(reader);
-            List<String> headers = readRecord(reader);
+        try (var reader = new TableReader(inputStream)) {
+            List<String> headers = reader.readRecord();
             if (headers == null) return fileError("EMPTY_FILE");
             headers.set(0, headers.get(0).replaceFirst("^\uFEFF", ""));
             headers = headers.stream().map(String::trim).toList();
@@ -28,7 +27,7 @@ public class CsvRecordValidator {
             if (!headerErrors.isEmpty()) return List.of(RecordValidationResult.invalid(-1, "", headerErrors));
             List<String> values;
             int index = 0;
-            while ((values = readRecord(reader)) != null) {
+            while ((values = reader.readRecord()) != null) {
                 if (values.size() == 1 && values.get(0).isBlank()) continue;
                 String raw = encode(values);
                 if (values.size() != headers.size()) {
@@ -56,8 +55,48 @@ public class CsvRecordValidator {
         return fields.stream().map(v -> "\"" + v.replace("\"", "\"\"") + "\"")
                 .collect(java.util.stream.Collectors.joining(","));
     }
+    /** One parser for validation, filtering and map conversion. Output is always comma-separated. */
+    public static final class TableReader implements AutoCloseable {
+        private final PushbackReader reader;
+        private final char delimiter;
+        public TableReader(InputStream input) throws IOException {
+            reader = new PushbackReader(new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8)), 64 * 1024);
+            skipBom(reader);
+            StringBuilder header = new StringBuilder();
+            boolean quoted = false;
+            int next;
+            while ((next = reader.read()) != -1) {
+                char value = (char) next;
+                header.append(value);
+                if (value == '"') quoted = !quoted;
+                if (!quoted && (value == '\n' || value == '\r')) break;
+                if (header.length() >= 64 * 1024) throw new IllegalArgumentException("Cabeçalho CSV excede 64 KiB.");
+            }
+            reader.unread(header.toString().toCharArray());
+            delimiter = delimiter(header.toString());
+        }
+        public List<String> readRecord() throws IOException { return CsvRecordValidator.readRecord(reader, delimiter); }
+        @Override public void close() throws IOException { reader.close(); }
+        private static char delimiter(String header) {
+            int commas = 0, semicolons = 0, tabs = 0;
+            boolean quoted = false;
+            for (int i = 0; i < header.length(); i++) {
+                char c = header.charAt(i);
+                if (c == '"') quoted = !quoted;
+                else if (!quoted) {
+                    if (c == ',') commas++;
+                    else if (c == ';') semicolons++;
+                    else if (c == '\t') tabs++;
+                }
+            }
+            return semicolons > commas && semicolons >= tabs ? ';' : tabs > commas ? '\t' : ',';
+        }
+    }
     // RFC 4180: escaped quotes and multiline fields. Ambiguous framing rejects the whole file.
     public static List<String> readRecord(PushbackReader reader) throws IOException {
+        return readRecord(reader, ',');
+    }
+    private static List<String> readRecord(PushbackReader reader, char delimiter) throws IOException {
         List<String> fields = new ArrayList<>();
         StringBuilder field = new StringBuilder();
         boolean quoted = false, closed = false, any = false;
@@ -71,7 +110,7 @@ public class CsvRecordValidator {
                     if (next == '"') field.append('"');
                     else { quoted = false; closed = true; if (next != -1) reader.unread(next); }
                 } else field.append(c);
-            } else if (c == ',') {
+            } else if (c == delimiter) {
                 fields.add(field.toString()); field.setLength(0); closed = false;
             } else if (c == '\n' || c == '\r') {
                 if (c == '\r') { int next = reader.read(); if (next != '\n' && next != -1) reader.unread(next); }
