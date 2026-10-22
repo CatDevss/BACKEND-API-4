@@ -9,6 +9,8 @@ import java.text.Normalizer;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -163,21 +165,37 @@ public class FileService {
 
     @Transactional(readOnly = true)
     public List<FileResponseDTO> findByDatasetId(Long datasetId) {
+        datasetService.findEntityById(datasetId);
 
-        Dataset dataset = datasetService.findEntityById(datasetId);
-
-        return dataset.getFiles()
+        return fileRepository.findByDatasetId(datasetId)
                 .stream()
-                .map(file -> new FileResponseDTO(
-                        file.getId(),
-                        file.getName(),
-                        file.getFormatFile(),
-                        file.getSize(),
-                        file.getHash(),
-                        file.getLocation(),
-                        file.getIngestion().getId(),
-                        file.getReceivedDate(),
-                        file.getIngestion().getUser().getId()))
+                .map(this::toResponseDTO)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<File> findEntitiesByDatasetId(Long datasetId) {
+        datasetService.findEntityById(datasetId);
+        return fileRepository.findByDatasetId(datasetId);
+    }
+
+    @Transactional(readOnly = true)
+    public File findEntityById(Long fileId) {
+        return fileRepository.findById(fileId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Arquivo não encontrado."));
+    }
+
+    private FileResponseDTO toResponseDTO(File file) {
+        return new FileResponseDTO(
+                file.getId(),
+                file.getName(),
+                file.getFormatFile(),
+                file.getSize(),
+                file.getHash(),
+                file.getLocation(),
+                file.getIngestion().getId(),
+                file.getReceivedDate(),
+                file.getIngestion().getUser().getId());
     }
 }

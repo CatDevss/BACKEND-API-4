@@ -83,7 +83,7 @@ public class DatasetService {
 
                 Dataset dataset = findEntityById(id);
 
-                if (!dataset.getFiles().isEmpty()) {
+                if (datasetRepository.hasFiles(id)) {
                         throw new ResponseStatusException(
                                         HttpStatus.CONFLICT,
                                         "Conjunto possui arquivos e não pode ser excluído.");
