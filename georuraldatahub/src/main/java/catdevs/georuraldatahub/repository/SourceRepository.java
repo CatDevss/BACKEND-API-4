@@ -4,5 +4,6 @@ import catdevs.georuraldatahub.entity.Source;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface SourceRepository extends JpaRepository<Source, Long> {
-     boolean existsByName(String name); boolean existsByNameAndIdNot(String name, Long id); 
+
+    boolean existsByName(String name);
 }
