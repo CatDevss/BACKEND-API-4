@@ -8,7 +8,15 @@ import jakarta.validation.Valid;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
@@ -23,6 +31,7 @@ public class SourceController {
         this.sourceService = sourceService;
     }
 
+    // Criar uma fonte
     @PostMapping
     public ResponseEntity<SourceResponseDTO> create(
             @Valid @RequestBody SourceCreateRequestDTO request) {
@@ -31,8 +40,32 @@ public class SourceController {
                 .body(sourceService.create(request));
     }
 
+    // Listar todas as fontes
     @GetMapping
     public ResponseEntity<List<SourceResponseDTO>> listAll() {
         return ResponseEntity.ok(sourceService.listAll());
+    }
+
+    // Buscar uma fonte pelo ID
+    @GetMapping("/{id}")
+    public ResponseEntity<SourceResponseDTO> getById(
+            @PathVariable Long id) {
+        return ResponseEntity.ok(sourceService.getById(id));
+    }
+
+    // Atualizar uma fonte
+    @PutMapping("/{id}")
+    public ResponseEntity<SourceResponseDTO> update(
+            @PathVariable Long id,
+            @Valid @RequestBody SourceCreateRequestDTO request) {
+        return ResponseEntity.ok(sourceService.update(id, request));
+    }
+
+    // Excluir uma fonte
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(
+            @PathVariable Long id) {
+        sourceService.delete(id);
+        return ResponseEntity.noContent().build();
     }
 }
