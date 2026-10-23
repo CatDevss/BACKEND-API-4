@@ -31,41 +31,47 @@ public class SourceController {
         this.sourceService = sourceService;
     }
 
-    // Criar uma fonte
+    // CREATE: cadastrar uma fonte
     @PostMapping
     public ResponseEntity<SourceResponseDTO> create(
             @Valid @RequestBody SourceCreateRequestDTO request) {
+
+        SourceResponseDTO response = sourceService.create(request);
+
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(sourceService.create(request));
+                .body(response);
     }
 
-    // Listar todas as fontes
+    // READ: listar todas as fontes
     @GetMapping
     public ResponseEntity<List<SourceResponseDTO>> listAll() {
         return ResponseEntity.ok(sourceService.listAll());
     }
 
-    // Buscar uma fonte pelo ID
+    // READ: buscar uma fonte pelo ID
     @GetMapping("/{id}")
-    public ResponseEntity<SourceResponseDTO> getById(
+    public ResponseEntity<SourceResponseDTO> findById(
             @PathVariable Long id) {
-        return ResponseEntity.ok(sourceService.getById(id));
+
+        return ResponseEntity.ok(sourceService.findById(id));
     }
 
-    // Atualizar uma fonte
+    // UPDATE: atualizar uma fonte
     @PutMapping("/{id}")
     public ResponseEntity<SourceResponseDTO> update(
             @PathVariable Long id,
             @Valid @RequestBody SourceCreateRequestDTO request) {
+
         return ResponseEntity.ok(sourceService.update(id, request));
     }
 
-    // Excluir uma fonte
+    // DELETE: excluir uma fonte
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(
-            @PathVariable Long id) {
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+
         sourceService.delete(id);
+
         return ResponseEntity.noContent().build();
     }
 }

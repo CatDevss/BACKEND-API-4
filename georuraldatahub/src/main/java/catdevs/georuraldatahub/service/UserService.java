@@ -2,9 +2,12 @@ package catdevs.georuraldatahub.service;
 
 import java.util.List;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import catdevs.georuraldatahub.dto.UserResponseDTO;
+import catdevs.georuraldatahub.entity.User;
 import catdevs.georuraldatahub.repository.UserRepository;
 
 @Service
@@ -26,5 +29,12 @@ public class UserService {
                         user.getUserType(),
                         user.getUserStatus()))
                 .toList();
+    }
+
+    public User findEntityById(Long id) {
+        return userRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "Usuário não encontrado"));
     }
 }

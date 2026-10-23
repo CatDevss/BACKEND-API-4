@@ -9,4 +9,5 @@ import java.util.Optional;
 public interface IngestionRepository extends JpaRepository<DataIngestion, Long> {
     List<DataIngestion> findByDictionarySourceIdOrderByStartTimeDesc(Long sourceId);
     Optional<DataIngestion> findByIdAndDictionarySourceId(Long id, Long sourceId);
+    boolean existsByDictionary_Id(Long dictionaryId);
 }

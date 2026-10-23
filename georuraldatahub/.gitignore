@@ -36,3 +36,6 @@ build/
 .env
 wallet
 .oci/
+
+### Testes locais Bruno ###
+/bruno/

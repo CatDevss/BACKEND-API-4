@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
          https://maven.apache.org/xsd/maven-4.0.0.xsd">
 
     <modelVersion>4.0.0</modelVersion>
@@ -47,7 +46,7 @@
         <!-- Validação dos campos das requisições -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-             <artifactId>spring-boot-starter-validation</artifactId>
+            <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
         <!-- DevTools -->
@@ -83,6 +82,19 @@
             <groupId>com.oracle.oci.sdk</groupId>
             <artifactId>oci-java-sdk-common-httpclient-jersey3</artifactId>
             <version>3.95.0</version>
+        </dependency>
+
+        <!-- Validação topológica das geometrias -->
+        <dependency>
+            <groupId>org.locationtech.jts</groupId>
+            <artifactId>jts-core</artifactId>
+            <version>1.20.0</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.locationtech.jts.io</groupId>
+            <artifactId>jts-io-common</artifactId>
+            <version>1.20.0</version>
         </dependency>
 
         <!-- Lombok -->
@@ -135,7 +147,6 @@
             <version>1.21.3</version>
             <scope>test</scope>
         </dependency>
-
     </dependencies>
 
     <build>

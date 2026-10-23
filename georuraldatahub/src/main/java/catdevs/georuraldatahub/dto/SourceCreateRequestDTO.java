@@ -11,6 +11,8 @@ public record SourceCreateRequestDTO(
     @NotBlank(message = "URL da fonte é obrigatória")
     String url,
 
+    String description,
+
     @NotNull(message = "Usuário é obrigatório")
     Long userId
 

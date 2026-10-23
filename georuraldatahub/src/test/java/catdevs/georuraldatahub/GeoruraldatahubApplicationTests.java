@@ -9,5 +9,4 @@ class GeoruraldatahubApplicationTests {
 	@Test
 	void contextLoads() {
 	}
-
 }

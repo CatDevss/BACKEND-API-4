@@ -1,13 +1,7 @@
-
 package catdevs.georuraldatahub.service;
 
-import catdevs.georuraldatahub.dto.SourceCreateRequestDTO;
-import catdevs.georuraldatahub.dto.SourceResponseDTO;
-import catdevs.georuraldatahub.entity.Source;
-import catdevs.georuraldatahub.entity.User;
-import catdevs.georuraldatahub.repository.DictionaryRepository;
-import catdevs.georuraldatahub.repository.SourceRepository;
-import catdevs.georuraldatahub.repository.UserRepository;
+import java.sql.SQLException;
+import java.util.List;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -15,212 +9,214 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.net.InetAddress;
-import java.net.URI;
-import java.sql.SQLException;
-import java.util.List;
-import java.util.Locale;
+import catdevs.georuraldatahub.dto.SourceCreateRequestDTO;
+import catdevs.georuraldatahub.dto.SourceResponseDTO;
+import catdevs.georuraldatahub.entity.Source;
+import catdevs.georuraldatahub.entity.User;
+import catdevs.georuraldatahub.repository.DictionaryRepository;
+import catdevs.georuraldatahub.repository.SourceRepository;
 
 @Service
 public class SourceService {
 
     private final SourceRepository sourceRepository;
-    private final UserRepository userRepository;
     private final DictionaryRepository dictionaryRepository;
+    private final UserService userService;
 
     public SourceService(
             SourceRepository sourceRepository,
-            UserRepository userRepository,
-            DictionaryRepository dictionaryRepository) {
+            DictionaryRepository dictionaryRepository,
+            UserService userService) {
         this.sourceRepository = sourceRepository;
-        this.userRepository = userRepository;
         this.dictionaryRepository = dictionaryRepository;
+        this.userService = userService;
     }
 
+    // CREATE
     @Transactional
     public SourceResponseDTO create(SourceCreateRequestDTO request) {
-        validateSourceRequest(request);
+        validateRequest(request);
 
         String name = request.name().trim();
+        String url = request.url().trim();
 
         if (sourceRepository.existsByName(name)) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
-                    "Já existe uma fonte com esse nome");
+                    "Já existe uma fonte com esse nome.");
         }
 
-        User user = userRepository.findById(request.userId())
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        "Usuário não encontrado"));
+        User user = userService.findEntityById(request.userId());
 
         Source source = new Source();
         source.setName(name);
-        source.setUrl(request.url().trim());
+        source.setUrl(url);
+        source.setDescription(normalizeDescription(request.description()));
         source.setUser(user);
 
         try {
-            return toDTO(sourceRepository.saveAndFlush(source));
+            Source savedSource = sourceRepository.saveAndFlush(source);
+            return toResponseDTO(savedSource);
+
         } catch (DataIntegrityViolationException e) {
             if (isUniqueConstraintViolation(e)) {
                 throw new ResponseStatusException(
                         HttpStatus.CONFLICT,
-                        "Já existe uma fonte com esse nome",
+                        "Já existe uma fonte com esse nome.",
                         e);
             }
+
             throw e;
         }
     }
 
+    // READ: buscar por ID
     @Transactional(readOnly = true)
-    public List<SourceResponseDTO> listAll() {
-        return sourceRepository.findAll()
-                .stream()
-                .map(this::toDTO)
-                .toList();
+    public SourceResponseDTO findById(Long id) {
+        return toResponseDTO(findEntityById(id));
     }
 
+    // Busca a entidade para uso interno
     @Transactional(readOnly = true)
-    public SourceResponseDTO getById(Long id) {
-        return toDTO(findSource(id));
-    }
-
-    @Transactional
-    public SourceResponseDTO update(Long id, SourceCreateRequestDTO request) {
-        validateSourceRequest(request);
-
-        Source source = findSource(id);
-        String name = request.name().trim();
-
-        boolean nameUsedByAnother = sourceRepository.findAll().stream()
-                .anyMatch(other ->
-                        !other.getId().equals(id)
-                                && other.getName() != null
-                                && other.getName().equalsIgnoreCase(name));
-
-        if (nameUsedByAnother) {
+    public Source findEntityById(Long id) {
+        if (id == null || id <= 0) {
             throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "Já existe uma fonte com esse nome");
+                    HttpStatus.BAD_REQUEST,
+                    "O ID da fonte deve ser válido.");
         }
 
-        User user = userRepository.findById(request.userId())
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        "Usuário não encontrado"));
-
-        source.setName(name);
-        source.setUrl(request.url().trim());
-        source.setUser(user);
-
-        try {
-            return toDTO(sourceRepository.saveAndFlush(source));
-        } catch (DataIntegrityViolationException e) {
-            if (isUniqueConstraintViolation(e)) {
-                throw new ResponseStatusException(
-                        HttpStatus.CONFLICT,
-                        "Já existe uma fonte com esse nome",
-                        e);
-            }
-            throw e;
-        }
-    }
-
-    @Transactional
-    public void delete(Long id) {
-        Source source = findSource(id);
-
-        if (dictionaryRepository.existsBySourceId(id)) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "A fonte possui dicionários associados e não pode ser excluída para preservar o histórico.");
-        }
-
-        sourceRepository.delete(source);
-    }
-
-    private Source findSource(Long id) {
         return sourceRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         "Fonte não encontrada."));
     }
 
-    private void validateSourceRequest(SourceCreateRequestDTO request) {
-        if (request == null
-                || request.name() == null
-                || request.name().isBlank()
-                || request.url() == null
-                || request.url().isBlank()
-                || request.userId() == null) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Nome, URL e usuário são obrigatórios.");
-        }
-
-        validateSourceUri(request.url().trim());
+    // READ: listar todas
+    @Transactional(readOnly = true)
+    public List<SourceResponseDTO> listAll() {
+        return sourceRepository.findAll()
+                .stream()
+                .map(this::toResponseDTO)
+                .toList();
     }
 
-    private URI validateSourceUri(String url) {
-        try {
-            URI uri = URI.create(url);
-            String scheme = uri.getScheme();
-            String host = uri.getHost();
+    // UPDATE
+    @Transactional
+    public SourceResponseDTO update(
+            Long id,
+            SourceCreateRequestDTO request) {
 
-            if (scheme == null
-                    || host == null
-                    || !(scheme.equalsIgnoreCase("http")
-                    || scheme.equalsIgnoreCase("https"))
-                    || uri.getUserInfo() != null) {
-                throw new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        "A URL deve ser HTTP ou HTTPS válida.");
-            }
+        validateRequest(request);
 
-            String normalizedHost = host.toLowerCase(Locale.ROOT);
+        Source source = findEntityById(id);
 
-            if (normalizedHost.equals("localhost")
-                    || normalizedHost.endsWith(".localhost")
-                    || normalizedHost.endsWith(".local")) {
-                throw new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        "A URL aponta para um host local.");
-            }
+        String name = request.name().trim();
+        String url = request.url().trim();
 
-            for (InetAddress address : InetAddress.getAllByName(host)) {
-                if (address.isAnyLocalAddress()
-                        || address.isLoopbackAddress()
-                        || address.isLinkLocalAddress()
-                        || address.isSiteLocalAddress()
-                        || address.isMulticastAddress()) {
-                    throw new ResponseStatusException(
-                            HttpStatus.BAD_REQUEST,
-                            "A URL não pode apontar para um endereço de rede privado.");
-                }
-            }
+        boolean nameChanged =
+                !source.getName().equalsIgnoreCase(name);
 
-            return uri;
-        } catch (ResponseStatusException e) {
-            throw e;
-        } catch (Exception e) {
+        if (nameChanged && sourceRepository.existsByName(name)) {
             throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "URL inválida ou host não resolvido.",
+                    HttpStatus.CONFLICT,
+                    "Já existe uma fonte com esse nome.");
+        }
+
+        User user = userService.findEntityById(request.userId());
+
+        source.setName(name);
+        source.setUrl(url);
+        source.setDescription(normalizeDescription(request.description()));
+        source.setUser(user);
+
+        try {
+            Source updatedSource = sourceRepository.saveAndFlush(source);
+            return toResponseDTO(updatedSource);
+
+        } catch (DataIntegrityViolationException e) {
+            if (isUniqueConstraintViolation(e)) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "Já existe uma fonte com esse nome.",
+                        e);
+            }
+
+            throw e;
+        }
+    }
+
+    // DELETE
+    @Transactional
+    public void delete(Long id) {
+        Source source = findEntityById(id);
+
+        try {
+            sourceRepository.delete(source);
+            sourceRepository.flush();
+
+        } catch (DataIntegrityViolationException e) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Não foi possível excluir a fonte porque existem "
+                            + "registros relacionados a ela.",
                     e);
         }
     }
 
-    private SourceResponseDTO toDTO(Source source) {
+    // Validação dos dados recebidos
+    private void validateRequest(SourceCreateRequestDTO request) {
+        if (request == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Os dados da fonte são obrigatórios.");
+        }
+
+        if (request.name() == null || request.name().isBlank()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "O nome da fonte é obrigatório.");
+        }
+
+        if (request.url() == null || request.url().isBlank()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "A URL da fonte é obrigatória.");
+        }
+
+        if (request.userId() == null || request.userId() <= 0) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "O ID do usuário deve ser válido.");
+        }
+    }
+
+    // Converte a entidade para o DTO de resposta
+    private SourceResponseDTO toResponseDTO(Source source) {
+        Long userId = source.getUser() != null
+                ? source.getUser().getId()
+                : null;
+
         return new SourceResponseDTO(
                 source.getId(),
                 source.getName(),
                 source.getDateCreation(),
                 source.getUrl(),
-                source.getUser() == null ? null : source.getUser().getId());
+                source.getDescription(),
+                userId);
     }
 
+    private String normalizeDescription(String description) {
+        if (description == null || description.isBlank()) {
+            return null;
+        }
+
+        return description.trim();
+    }
+
+    // Identifica violação de restrição única no Oracle
     private boolean isUniqueConstraintViolation(
             DataIntegrityViolationException exception) {
+
         Throwable cause = exception;
 
         while (cause != null) {
@@ -228,6 +224,7 @@ public class SourceService {
                     && sqlException.getErrorCode() == 1) {
                 return true;
             }
+
             cause = cause.getCause();
         }
 
