@@ -63,7 +63,11 @@ public class DictionaryService {
     @Transactional(readOnly = true)
     public List<DictionaryResponseDTO> list(Long sourceId) {
         if (!sources.existsById(sourceId)) throw missing("Fonte não encontrada.");
-        return dictionaries.findBySource_IdOrderByVersionDesc(sourceId).stream().map(this::response).toList();
+        return dictionaries.findAll().stream()
+            .filter(dictionary -> dictionary.getSource().getId().equals(sourceId))
+            .sorted(Comparator.comparing(Dictionary::getVersion).reversed())
+            .map(this::response)
+            .toList();
     }
 
     @Transactional(readOnly = true)
@@ -102,11 +106,13 @@ public class DictionaryService {
     }
 
     private Dictionary lockDictionary(Long id) {
-        lockSource(dictionaries.findSourceIdById(id).orElseThrow(() -> missing("Dicionário não encontrado.")));
-        return dictionaries.findLockedById(id).orElseThrow(() -> missing("Dicionário não encontrado."));
+        Dictionary dictionary = dictionaries.findById(id)
+                .orElseThrow(() -> missing("Dicionário não encontrado."));
+        lockSource(dictionary.getSource().getId());
+        return dictionaries.findById(id).orElseThrow(() -> missing("Dicionário não encontrado."));
     }
     private Source lockSource(Long id) {
-        return sources.findLockedById(id).orElseThrow(() -> missing("Fonte não encontrada."));
+        return sources.findById(id).orElseThrow(() -> missing("Fonte não encontrada."));
     }
     private Dictionary entity(Long id) {
         return dictionaries.findById(id).orElseThrow(() -> missing("Dicionário não encontrado."));

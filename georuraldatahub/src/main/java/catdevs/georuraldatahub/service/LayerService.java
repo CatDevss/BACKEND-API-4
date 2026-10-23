@@ -1,7 +1,5 @@
 package catdevs.georuraldatahub.service;
 
-import catdevs.georuraldatahub.repository.VersionRepository;
-import catdevs.georuraldatahub.entity.enums.VersionStatus;
 import java.io.IOException;
 import java.util.List;
 import java.util.Locale;
@@ -16,58 +14,41 @@ import com.fasterxml.jackson.databind.JsonNode;
 
 import catdevs.georuraldatahub.dto.LayerInfoDTO;
 import catdevs.georuraldatahub.entity.File;
-import catdevs.georuraldatahub.repository.DatasetRepository;
-import catdevs.georuraldatahub.repository.FileRepository;
 
 @Service
 public class LayerService {
 
     private static final Set<String> RENDERABLE = Set.of("geojson", "json", "csv");
 
-    private final FileRepository fileRepository;
-    private final DatasetRepository datasetRepository;
+    private final FileService fileService;
     private final BucketService bucketService;
-    private final VersionRepository versionRepository;
 
-    public LayerService(FileRepository fileRepository, DatasetRepository datasetRepository,
-            BucketService bucketService, VersionRepository versionRepository) {
-        this.fileRepository = fileRepository;
-        this.datasetRepository = datasetRepository;
+    public LayerService(FileService fileService, BucketService bucketService) {
+        this.fileService = fileService;
         this.bucketService = bucketService;
-        this.versionRepository = versionRepository;
     }
 
     @Transactional(readOnly = true)
     public List<LayerInfoDTO> listLayers(Long datasetId) {
-        if (!datasetRepository.existsById(datasetId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Conjunto não encontrado");
-        }
-        return fileRepository.findByDatasetId(datasetId).stream()
-                .filter(f -> isRenderable(f.getFormatFile()))
-                .filter(f -> versionRepository.findFirstByFile_IdAndStatusAndLocationStartingWithOrderByVersionNumberDesc(
-                        f.getId(), VersionStatus.BRUTA, "validada/").isPresent())
-                .map(f -> new LayerInfoDTO(f.getId(), f.getName(), f.getFormatFile(),
-                        f.getSize(), f.getReceivedDate()))
+        return fileService.findEntitiesByDatasetId(datasetId).stream()
+                .filter(file -> isRenderable(file.getFormatFile()))
+                .map(file -> new LayerInfoDTO(file.getId(), file.getName(), file.getFormatFile(),
+                        file.getSize(), file.getReceivedDate()))
                 .toList();
     }
 
     @Transactional(readOnly = true)
     public JsonNode getFileLayer(Long fileId) throws IOException {
-        File file = fileRepository.findById(fileId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Arquivo não encontrado."));
+        File file = fileService.findEntityById(fileId);
 
         if (!isRenderable(file.getFormatFile())) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT,
                     "Formato não suportado para visualização: " + file.getFormatFile());
         }
 
-        String location = versionRepository.findFirstByFile_IdAndStatusAndLocationStartingWithOrderByVersionNumberDesc(
-                fileId, VersionStatus.BRUTA, "validada/")
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT,
-                        "Arquivo sem registros aprovados para visualização.")).getLocation();
         return "csv".equalsIgnoreCase(file.getFormatFile())
-                ? bucketService.readCsvAsGeoJson(location)
-                : bucketService.readGeoJson(location);
+                ? bucketService.readCsvAsGeoJson(file.getLocation())
+                : bucketService.readGeoJson(file.getLocation());
     }
 
     private boolean isRenderable(String format) {

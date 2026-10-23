@@ -35,7 +35,7 @@ public class DatasetService {
                 User user = userService.findEntityById(request.userId());
 
                 Dataset dataset = new Dataset();
-                dataset.setName(validName(request.name()));
+                dataset.setName(request.name().trim());
                 dataset.setUser(user);
 
                 Dataset saved = datasetRepository.save(dataset);
@@ -60,12 +60,6 @@ public class DatasetService {
                                                 "Conjunto não encontrado."));
         }
 
-        @Transactional
-        public Dataset findLockedEntityById(Long id) {
-                return datasetRepository.findLockedById(id)
-                                .orElseThrow(() -> new DataSetNotFoundException("Conjunto não encontrado."));
-        }
-
         @Transactional(readOnly = true)
         public DatasetResponseDTO findById(Long id) {
 
@@ -78,7 +72,7 @@ public class DatasetService {
                         DatasetUpdateRequestDTO request) {
 
                 Dataset dataset = findEntityById(id);
-                dataset.setName(validName(request.name()));
+                dataset.setName(request.name().trim());
 
                 // A entidade gerenciada é atualizada no commit da transação.
                 return toDto(dataset);
@@ -87,23 +81,15 @@ public class DatasetService {
         @Transactional
         public void delete(Long id) {
 
-                Dataset dataset = findLockedEntityById(id);
+                Dataset dataset = findEntityById(id);
 
-                if (!dataset.getFiles().isEmpty()) {
+                if (datasetRepository.hasFiles(id)) {
                         throw new ResponseStatusException(
                                         HttpStatus.CONFLICT,
                                         "Conjunto possui arquivos e não pode ser excluído.");
                 }
 
                 datasetRepository.delete(dataset);
-        }
-
-        private String validName(String value) {
-                if (value == null || value.isBlank()) throw new IllegalArgumentException("Nome do conjunto é obrigatório.");
-                String name = value.trim();
-                if (name.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 100)
-                        throw new IllegalArgumentException("Nome do conjunto excede o limite de 100 bytes do banco atual.");
-                return name;
         }
 
         private DatasetResponseDTO toDto(Dataset dataset) {
