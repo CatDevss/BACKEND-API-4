@@ -24,9 +24,6 @@ public class Source {
     @Column(name = "fon_descricao")
     private String description;
 
-    @Column(name = "fon_ativa", nullable = false)
-    private boolean active = true;
-
     @CreationTimestamp 
     @Column(name = "fon_data_criacao")
     private LocalDateTime dateCreation;
@@ -77,10 +74,6 @@ public class Source {
     public void setDateCreation(LocalDateTime dateCreation) {
         this.dateCreation = dateCreation;
     }
-
-    public boolean isActive() { return active; }
-
-    public void setActive(boolean active) { this.active = active; }
 
     public User getUser() {
         return user;
