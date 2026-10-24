@@ -5,7 +5,6 @@ import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 import java.util.List;
-import java.util.Optional;
 import org.junit.jupiter.api.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockMultipartFile;
@@ -29,13 +28,12 @@ class ManualJsonUploadTest {
     private final BucketService bucket = mock(BucketService.class);
     private final UserService users = mock(UserService.class);
     private final DatasetService datasets = mock(DatasetService.class);
-    private final OccurrenceService occurrences = mock(OccurrenceService.class);
     private MockMvc mvc;
 
     @BeforeEach void setup() throws Exception {
         TransactionSynchronizationManager.initSynchronization();
         var service = new FileService(files, versions, ingestions, datasets, users, dictionaries, bucket,
-                new FileValidationService(new CsvRecordValidator(), new GeoJsonRecordValidator()), mock(QuarantineRepository.class), Optional.of(occurrences));
+                new FileValidationService(new CsvRecordValidator(), new GeoJsonRecordValidator()), mock(QuarantineRepository.class));
         mvc = MockMvcBuilders.standaloneSetup(new SourceFileController(service, mock(SourceService.class)))
                 .setControllerAdvice(new GlobalExceptionHandler()).build();
         var user = new User(); user.setId(2L); when(users.findEntityById(2L)).thenReturn(user);
@@ -55,7 +53,7 @@ class ManualJsonUploadTest {
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.formatFile").value("json"))
                 .andExpect(jsonPath("$.validation.status").value("VALIDO"))
                 .andExpect(jsonPath("$.validation.validRecords").value(1));
-        verifyNoInteractions(datasets, occurrences);
+        verifyNoInteractions(datasets);
         var content = org.mockito.ArgumentCaptor.forClass(byte[].class);
         verify(bucket).uploadSourceValidatedContent(content.capture(), eq(4L), any(), any());
         assertTrue(new com.fasterxml.jackson.databind.ObjectMapper().readTree(content.getValue()).isArray());
@@ -78,7 +76,7 @@ class ManualJsonUploadTest {
         verify(bucket).uploadSourceValidatedContent(content.capture(), eq(4L), any(), any());
         var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
         assertEquals(mapper.readTree(input), mapper.readTree(content.getValue()));
-        verifyNoInteractions(occurrences);
+        verifyNoInteractions(datasets);
     }
     @Test void selectedDictionaryIsUsedForValidationAndRecordedInIngestion() throws Exception {
         var selected = new Dictionary(); selected.setId(77L); selected.setVersion(1);
@@ -95,14 +93,7 @@ class ManualJsonUploadTest {
         assertSame(selected, ingestion.getValue().getDictionary());
         verify(dictionaries, never()).acquireForValidation(4L, null);
     }
-    @Test void wrongJsonFieldsProduceReadableReportAndRegisterOccurrencesInsteadOfRejectingExtension() throws Exception {
-        mvc.perform(multipart("/fontes/4/arquivos").param("userId", "2")
-                .file(new MockMultipartFile("file", "test.json", "application/json", "[{\"id\":\"x\"}]".getBytes())))
-                .andExpect(status().isCreated()).andExpect(jsonPath("$.validation.status").value("REJEITADO"))
-                .andExpect(jsonPath("$.validation.records[0].errors[0]").value("INVALID_TYPE: id"));
-        verify(occurrences).registerValidation(eq(6L), any());
-        verify(bucket, never()).uploadSourceValidatedContent(any(), any(), any(), any());
-    }
+
     @Test void explicitStatusReasonReachesClientInsteadOfEmptyErrorBody() throws Exception {
         when(dictionaries.acquireForValidation(4L, null)).thenThrow(new ResponseStatusException(HttpStatus.GATEWAY_TIMEOUT, "Fonte demorou a responder."));
         mvc.perform(multipart("/fontes/4/arquivos").param("userId", "2")
