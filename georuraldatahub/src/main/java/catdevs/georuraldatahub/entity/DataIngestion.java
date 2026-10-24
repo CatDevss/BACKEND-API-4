@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 
 import org.hibernate.annotations.CreationTimestamp;
 
+import catdevs.georuraldatahub.entity.enums.DataIngestionType;
 import catdevs.georuraldatahub.entity.enums.IngestionStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -34,9 +35,17 @@ public class DataIngestion {
     @JoinColumn (name = "usr_id", referencedColumnName = "usr_id")
     private User user;
 
+     @Enumerated( EnumType.STRING)
+    @Column (name = "ing_tipo")
+    private DataIngestionType type;
+
+
     @Enumerated( EnumType.STRING)
     @Column (name = "ing_status")
     private IngestionStatus ingStatus;
+
+    @Column(name = "ing_conector")
+    private String connector;
 
     @CreationTimestamp 
     @Column (name = "ing_inicio")
@@ -69,12 +78,28 @@ public class DataIngestion {
         this.user = user;
     }
 
+    public DataIngestionType getType() {
+        return type;
+    }
+
+    public void setType(DataIngestionType type) {
+        this.type = type;
+    }
+
     public IngestionStatus getIngStatus() {
         return ingStatus;
     }
 
     public void setIngStatus(IngestionStatus ingStatus) {
         this.ingStatus = ingStatus;
+    }
+
+    public String getConnector() {
+        return connector;
+    }
+
+    public void setConnector(String connector) {
+        this.connector = connector;
     }
 
     public LocalDateTime getStartTime() {
@@ -84,4 +109,5 @@ public class DataIngestion {
     public void setStartTime(LocalDateTime startTime) {
         this.startTime = startTime;
     }
+
 }
