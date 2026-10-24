@@ -1,5 +1,7 @@
 package catdevs.georuraldatahub.service;
 
+import java.util.Objects;
+
 import catdevs.georuraldatahub.exception.DataSetNotFoundException;
 import catdevs.georuraldatahub.entity.Dataset;
 import catdevs.georuraldatahub.entity.File;
@@ -22,27 +24,28 @@ public class DatasetFileService {
 
     @Transactional
     public void associate(Long datasetId, Long fileId) {
-        var dataset = dataset(datasetId);
-        var file = file(fileId);
-        // The existing JPA relationship owns conjunto_arquivo; no file or bucket object is copied.
-        if (dataset.getFiles().stream().noneMatch(existing -> existing.getId().equals(fileId))) {
+        Dataset dataset = findLockedDataset(datasetId);
+        File file = findFile(fileId);
+        boolean alreadyAssociated = dataset.getFiles().stream()
+                .anyMatch(existing -> Objects.equals(existing.getId(), fileId));
+        if (!alreadyAssociated) {
             dataset.getFiles().add(file);
         }
     }
 
     @Transactional
     public void dissociate(Long datasetId, Long fileId) {
-        var dataset = dataset(datasetId);
-        file(fileId);
-        dataset.getFiles().removeIf(existing -> existing.getId().equals(fileId));
+        Dataset dataset = findLockedDataset(datasetId);
+        findFile(fileId);
+        dataset.getFiles().removeIf(existing -> Objects.equals(existing.getId(), fileId));
     }
 
-    private Dataset dataset(Long datasetId) {
-        return datasets.findById(datasetId)
+    private Dataset findLockedDataset(Long datasetId) {
+        return datasets.findLockedById(datasetId)
                 .orElseThrow(() -> new DataSetNotFoundException("Conjunto não encontrado."));
     }
 
-    private File file(Long fileId) {
+    private File findFile(Long fileId) {
         return files.findById(fileId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Arquivo não encontrado."));
     }

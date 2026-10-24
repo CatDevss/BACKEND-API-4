@@ -4,17 +4,22 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import java.util.*;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.server.ResponseStatusException;
 import catdevs.georuraldatahub.entity.*;
 import catdevs.georuraldatahub.entity.enums.VersionStatus;
 import catdevs.georuraldatahub.repository.*;
 
+@ExtendWith(MockitoExtension.class)
 class LayerServiceValidationTest {
-    private final FileRepository files = mock(FileRepository.class);
-    private final DatasetRepository datasets = mock(DatasetRepository.class);
-    private final BucketService bucket = mock(BucketService.class);
-    private final VersionRepository versions = mock(VersionRepository.class);
-    private final LayerService service = new LayerService(files, datasets, bucket, versions);
+    @Mock private FileRepository files;
+    @Mock private DatasetRepository datasets;
+    @Mock private BucketService bucket;
+    @Mock private VersionRepository versions;
+    @InjectMocks private LayerService service;
     private File file(Long id) {
         File file = new File(); file.setId(id); file.setName("test.csv"); file.setFormatFile("csv");
         file.setLocation("bruta/original.csv"); return file;
