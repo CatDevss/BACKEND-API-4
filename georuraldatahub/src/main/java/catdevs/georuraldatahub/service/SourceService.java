@@ -1,19 +1,19 @@
 package catdevs.georuraldatahub.service;
 
-import catdevs.georuraldatahub.dto.SourceCreateRequestDTO;
-import catdevs.georuraldatahub.dto.SourceResponseDTO;
-import catdevs.georuraldatahub.entity.Source;
-import catdevs.georuraldatahub.entity.User;
-import catdevs.georuraldatahub.repository.SourceRepository;
+import java.sql.SQLException;
+import java.util.List;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.List;
-
-import java.sql.SQLException;
+import catdevs.georuraldatahub.dto.SourceCreateRequestDTO;
+import catdevs.georuraldatahub.dto.SourceResponseDTO;
+import catdevs.georuraldatahub.dto.SourceUpdateRequestDTO;
+import catdevs.georuraldatahub.entity.Source;
+import catdevs.georuraldatahub.entity.User;
+import catdevs.georuraldatahub.repository.SourceRepository;
 
 @Service
 public class SourceService {
@@ -26,6 +26,7 @@ public class SourceService {
         this.userService = userService;
     }
 
+    // CADASTRAR FONTE
     public SourceResponseDTO create(SourceCreateRequestDTO request) {
 
         if (sourceRepository.existsByName(request.name().trim())) {
@@ -40,16 +41,13 @@ public class SourceService {
         source.setName(request.name().trim());
         source.setUrl(request.url().trim());
         source.setUser(user);
+        source.setDescription(request.description());
+        source.setStatus(1); // Ativo por padrão
 
         try {
             Source savedSource = sourceRepository.saveAndFlush(source);
 
-            return new SourceResponseDTO(
-                    savedSource.getId(),
-                    savedSource.getName(),
-                    savedSource.getDateCreation(),
-                    savedSource.getUrl(),
-                    savedSource.getUser().getId());
+            return toResponse(savedSource);
 
         } catch (DataIntegrityViolationException e) {
 
@@ -69,18 +67,64 @@ public class SourceService {
                 HttpStatus.NOT_FOUND, "Fonte não encontrada."));
     }
 
+    // LISTAR FONTES
     public List<SourceResponseDTO> listAll() {
         return sourceRepository.findAll()
                 .stream()
-                .map(source -> new SourceResponseDTO(
-                        source.getId(),
-                        source.getName(),
-                        source.getDateCreation(),
-                        source.getUrl(),
-                        source.getUser().getId()))
+                .map(this::toResponse)
                 .toList();
     }
 
+    // BUSCAR FONTE POR ID
+    public SourceResponseDTO findById(Long id) {
+        Source source = findEntityById(id);
+        return toResponse(source);
+    }
+
+    // ALTERAR NOME, URL E DESCRIÇÃO
+    public SourceResponseDTO update(Long id, SourceUpdateRequestDTO request) {
+        Source source = findEntityById(id);
+        String name = request.name().trim();
+        if (sourceRepository.existsByNameAndIdNot(name, id)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Já existe uma fonte com esse nome.");
+        }
+        source.setName(name);
+        source.setUrl(request.url().trim());
+        source.setDescription(request.description());
+        try {
+            Source updatedSource = sourceRepository.saveAndFlush(source);
+            return toResponse(updatedSource);
+        } catch (DataIntegrityViolationException e) {
+            if (isUniqueConstraintViolation(e)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Já existe uma fonte com esse nome.", e);
+            }
+            throw e;
+        }
+    }
+
+    // DESATIVAR FONTE
+    public SourceResponseDTO deactivate(Long id) {
+        Source source = findEntityById(id);
+        source.setStatus(0);
+        Source updatedSource = sourceRepository.save(source);
+        return toResponse(updatedSource);
+    }
+
+    // ATIVAR FONTE
+    public SourceResponseDTO activate(Long id) {
+        Source source = findEntityById(id);
+        source.setStatus(1);
+        Source updatedSource = sourceRepository.save(source);
+        return toResponse(updatedSource);
+    }
+
+    // CONVERTER ENTIDADE PARA DTO
+    private SourceResponseDTO toResponse(Source source) {
+        return new SourceResponseDTO(source.getId(), source.getName(), source.getDateCreation(), source.getUrl(),
+                source.getDescription(), source.getStatus(), source.getUser().getId());
+    }
+
+    // VERIFICAR VIOLAÇÃO DE CHAVE ÚNICA NO ORACLE
     private boolean isUniqueConstraintViolation(
             DataIntegrityViolationException exception) {
         Throwable cause = exception;
@@ -98,4 +142,5 @@ public class SourceService {
 
         return false;
     }
+
 }

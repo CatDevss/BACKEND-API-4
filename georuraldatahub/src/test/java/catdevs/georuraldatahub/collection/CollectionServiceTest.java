@@ -30,7 +30,7 @@ class CollectionServiceTest {
         service.collect(3L,request);
         verify(datasets).findEntityById(1L); verify(users).findEntityById(2L);
         verify(dictionaries).findForValidation(3L, null);
-        verify(files).uploadCollectedFile(data,1L,2L,3L,null);
+        verify(files).uploadCollectedFile(data,1L,2L,3L,null, "IBGE_MUNICIPIOS");
     }
     @Test void collectsWithoutDatasetAndPassesNullOnlyToOptionalAssociation() throws Exception {
         source("https://www.ibge.gov.br/");
@@ -39,7 +39,7 @@ class CollectionServiceTest {
         when(connectors.collect(request)).thenReturn(data);
         service.collect(3L, request);
         verifyNoInteractions(datasets);
-        verify(files).uploadCollectedFile(data, null, 2L, 3L, null);
+        verify(files).uploadCollectedFile(data, null, 2L, 3L, null, "IBGE_MUNICIPIOS");
     }
     @Test void scheduledDailyRequestCanOmitDataset() {
         var daily = new CollectionRequest(Product.INPE_QUEIMADAS, null, 2L, "D-1", null, null, null);
@@ -54,7 +54,7 @@ class CollectionServiceTest {
         var order = inOrder(dictionaries, connectors, files);
         order.verify(dictionaries).findForValidation(3L, 77L);
         order.verify(connectors).collect(chosen);
-        order.verify(files).uploadCollectedFile(data, null, 2L, 3L, 77L);
+        order.verify(files).uploadCollectedFile(data, null, 2L, 3L, 77L, "IBGE_MUNICIPIOS");
     }
     @Test void dictionaryFromAnotherSourcePreventsDownload() {
         source("https://www.ibge.gov.br/");

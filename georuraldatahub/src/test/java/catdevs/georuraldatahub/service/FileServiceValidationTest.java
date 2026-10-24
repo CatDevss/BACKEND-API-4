@@ -25,8 +25,7 @@ class FileServiceValidationTest {
     private final BucketService bucket = mock(BucketService.class);
     private final QuarantineRepository quarantine = mock(QuarantineRepository.class);
     private final FileValidationService validator = new FileValidationService(new CsvRecordValidator(), new GeoJsonRecordValidator());
-    private final OccurrenceService occurrences = mock(OccurrenceService.class);
-    private final FileService service = new FileService(files, versions, ingestions, datasets, users, dictionaries, bucket, validator, quarantine, Optional.of(occurrences));
+    private final FileService service = new FileService(files, versions, ingestions, datasets, users, dictionaries, bucket, validator, quarantine);
     private final Dataset dataset = new Dataset();
 
     @BeforeEach void setup() throws Exception {
@@ -47,7 +46,7 @@ class FileServiceValidationTest {
     private MockMultipartFile csv(String text) { return new MockMultipartFile("file", "test.csv", "text/csv", text.getBytes(StandardCharsets.UTF_8)); }
 
     @Test void isolatedModeKeepsValidationQuarantineAndApprovedSubsetWithoutOccurrenceTables() throws Exception {
-        var isolated = new FileService(files, versions, ingestions, datasets, users, dictionaries, bucket, validator, quarantine, Optional.empty());
+        var isolated = new FileService(files, versions, ingestions, datasets, users, dictionaries, bucket, validator, quarantine);
         var response = isolated.uploadToSource(csv("id\n1\nx"), 4L, 2L);
         assertEquals("PARCIAL", response.validation().status());
         assertEquals(1, response.validation().validRecords());
@@ -55,7 +54,6 @@ class FileServiceValidationTest {
         verify(quarantine).save(any());
         verify(bucket).uploadValidationReport(any(), any());
         verify(bucket).uploadSourceValidatedContent(any(), eq(4L), any(), any());
-        verifyNoInteractions(occurrences);
     }
     @Test void sourceUploadValidatesAndStoresWithoutLookingUpOrAssociatingDataset() throws Exception {
         var response = service.uploadToSource(csv("id\n1"), 4L, 2L);

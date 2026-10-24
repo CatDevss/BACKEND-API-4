@@ -17,4 +17,6 @@ public interface SourceRepository extends JpaRepository<Source, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select s from Source s where s.id = :id")
     Optional<Source> findLockedById(@Param("id") Long id);
+
+    boolean existsByNameAndIdNot(String name, Long id);
 }

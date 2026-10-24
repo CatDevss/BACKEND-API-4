@@ -7,6 +7,8 @@ public record SourceResponseDTO(
         String name,
         LocalDateTime dateCreation,
         String url,
+        String description,
+        Integer status,
         Long userId
 ) {
 }

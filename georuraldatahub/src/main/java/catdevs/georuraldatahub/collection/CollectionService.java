@@ -43,7 +43,7 @@ public class CollectionService {
         } catch (IOException e) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Falha ao ler os dados do canal oficial: " + e.getMessage(), e);
         }
-        var file = files.uploadCollectedFile(data, request.datasetId(), request.userId(), sourceId, request.dictionaryId());
+        var file = files.uploadCollectedFile(data, request.datasetId(), request.userId(), sourceId, request.dictionaryId(), request.product().name());
         log.info("Coleta concluída: fonte={}, produto={}, bytes={}, arquivo={}", sourceId, request.product(), data.content().length,
                 file == null ? null : file.id());
         return new Result(file, data.metadata());
