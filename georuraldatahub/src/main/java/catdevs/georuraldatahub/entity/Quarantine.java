@@ -37,12 +37,19 @@ public class Quarantine {
     @Column(name = "qua_motivo")
     private String reason;
 
+    @Column(name = "qua_tratamento")
+    private String treatment;
+
     @CreationTimestamp 
     @Column(name = "qua_data_entrada")
     private LocalDateTime dateEntry;
 
     @Column (name = "qua_data_resolucao")
     private LocalDateTime dateResolution;
+
+    @ManyToOne (fetch = FetchType.LAZY)
+    @JoinColumn (name = "usr_id", referencedColumnName = "usr_id")
+    private User user;
 
     public Quarantine() {
     }
@@ -87,6 +94,14 @@ public class Quarantine {
         this.reason = reason;
     }
 
+    public String getTreatment() {
+        return treatment;
+    }
+
+    public void setTreatment(String treatment) {
+        this.treatment = treatment;
+    }
+
     public LocalDateTime getDateEntry() {
         return dateEntry;
     }
@@ -102,4 +117,14 @@ public class Quarantine {
     public void setDateResolution(LocalDateTime dateResolution) {
         this.dateResolution = dateResolution;
     }
+
+    public User getUser() {
+        return user;
+    }
+
+    public void setUser(User user) {
+        this.user = user;
+    }
+
+    
 }
