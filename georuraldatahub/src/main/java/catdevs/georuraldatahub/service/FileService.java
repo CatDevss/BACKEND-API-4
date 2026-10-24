@@ -1,46 +1,48 @@
 package catdevs.georuraldatahub.service;
 
-import catdevs.georuraldatahub.collection.CollectedData;
-import catdevs.georuraldatahub.collection.DownloadedMultipartFile;
-
-import catdevs.georuraldatahub.validation.FileValidationService;
-import catdevs.georuraldatahub.repository.QuarantineRepository;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import catdevs.georuraldatahub.validation.RecordValidationResult;
-import catdevs.georuraldatahub.validation.FileValidationReport;
-import java.util.ArrayList;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.slf4j.LoggerFactory;
-import catdevs.georuraldatahub.entity.Quarantine;
-import org.springframework.web.server.ResponseStatusException;
-import org.springframework.http.HttpStatus;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.text.Normalizer;
+import java.util.ArrayList;
 import java.util.List;
 
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import catdevs.georuraldatahub.collection.CollectedData;
+import catdevs.georuraldatahub.collection.DownloadedMultipartFile;
 import catdevs.georuraldatahub.dto.FileResponseDTO;
 import catdevs.georuraldatahub.entity.DataIngestion;
 import catdevs.georuraldatahub.entity.Dataset;
 import catdevs.georuraldatahub.entity.Dictionary;
 import catdevs.georuraldatahub.entity.File;
+import catdevs.georuraldatahub.entity.Quarantine;
 import catdevs.georuraldatahub.entity.User;
 import catdevs.georuraldatahub.entity.Version;
+import catdevs.georuraldatahub.entity.enums.DataIngestionType;
 import catdevs.georuraldatahub.entity.enums.IngestionStatus;
 import catdevs.georuraldatahub.entity.enums.VersionStatus;
 import catdevs.georuraldatahub.exception.DuplicateFileException;
 import catdevs.georuraldatahub.repository.FileRepository;
 import catdevs.georuraldatahub.repository.IngestionRepository;
+import catdevs.georuraldatahub.repository.QuarantineRepository;
 import catdevs.georuraldatahub.repository.VersionRepository;
+import catdevs.georuraldatahub.validation.FileValidationReport;
+import catdevs.georuraldatahub.validation.FileValidationService;
+import catdevs.georuraldatahub.validation.RecordValidationResult;
 
+/** Serviço de ingestão e consulta de arquivos. */
 @Service
 public class FileService {
 
@@ -78,52 +80,57 @@ public class FileService {
         this.quarantineRepository = quarantineRepository;
     }
 
-    /** Upload into a source without creating any dataset membership. */
+     /** Envia um arquivo para uma fonte, sem associar a nenhum dataset. */
     @Transactional(rollbackFor = Exception.class)
     public FileResponseDTO uploadToSource(MultipartFile file, Long sourceId, Long userId) throws Exception {
         return uploadToSource(file, sourceId, userId, null);
     }
 
+    /** Igual ao anterior, mas permite escolher o dicionário. */
     @Transactional(rollbackFor = Exception.class)
     public FileResponseDTO uploadToSource(MultipartFile file, Long sourceId, Long userId, Long dictionaryId) throws Exception {
-        return ingest(file, null, userId, sourceId, null, dictionaryId);
+        return ingest(file, null, userId, sourceId, null, dictionaryId, DataIngestionType.UPLOAD, null);
     }
 
-    /** Compatibility endpoint: ingest into the source and immediately associate the dataset. */
+     /** Endpoint de compatibilidade: envia para a fonte e já associa ao dataset. */
     @Transactional(rollbackFor = Exception.class)
     public FileResponseDTO uploadFile(MultipartFile multipartFile, Long datasetId, Long userId, Long sourceId)
             throws Exception {
         return uploadFile(multipartFile, datasetId, userId, sourceId, null);
     }
 
+    /** Igual ao anterior, mas permite escolher o dicionário. */
     @Transactional(rollbackFor = Exception.class)
     public FileResponseDTO uploadFile(MultipartFile multipartFile, Long datasetId, Long userId, Long sourceId,
             Long dictionaryId) throws Exception {
-        return ingest(multipartFile, datasetId, userId, sourceId, null, dictionaryId);
+        return ingest(multipartFile, datasetId, userId, sourceId, null, dictionaryId, DataIngestionType.UPLOAD, null);
     }
 
+     /** Ingere um arquivo vindo de coleta automática e associa ao dataset. */
     @Transactional(rollbackFor = Exception.class)
     public FileResponseDTO uploadCollectedFile(CollectedData collected,
             Long datasetId, Long userId, Long sourceId) throws Exception {
-        return uploadCollectedFile(collected, datasetId, userId, sourceId, null);
+        return uploadCollectedFile(collected, datasetId, userId, sourceId, null, null);
     }
-
+    
+      /** Igual ao anterior, mas permite escolher o dicionário. */
     @Transactional(rollbackFor = Exception.class)
     public FileResponseDTO uploadCollectedFile(CollectedData collected,
-            Long datasetId, Long userId, Long sourceId, Long dictionaryId) throws Exception {
+            Long datasetId, Long userId, Long sourceId, Long dictionaryId, String connector) throws Exception {
         var file = new DownloadedMultipartFile(collected.filename(),
                 collected.format().equals("csv") ? "text/csv" : "application/geo+json", collected.content());
-        return ingest(file, datasetId, userId, sourceId, collected, dictionaryId);
+        return ingest(file, datasetId, userId, sourceId, collected, dictionaryId, DataIngestionType.API, connector);
     }
 
+    /** Fluxo principal: valida, guarda no bucket e salva ingestão, arquivo e versões. */
     private FileResponseDTO ingest(MultipartFile multipartFile, Long datasetId, Long userId, Long sourceId,
-            CollectedData collected, Long dictionaryId) throws Exception {
+            CollectedData collected, Long dictionaryId, DataIngestionType ingestionType, String connector) throws Exception {
         String hash = calculateHash(multipartFile);
 
         User user = userService.findEntityById(userId);
-        // Lock the source and record the selected dictionary; omission uses its latest version.
+         // Bloqueia a fonte e pega o dicionário; se não informado, usa a versão mais recente.
         Dictionary dictionary = dictionaryService.acquireForValidation(sourceId, dictionaryId);
-        // The source lock also serializes hash checks for uploads and scheduled collections.
+        // O bloqueio da fonte também evita duplicidade entre uploads e coletas agendadas.
         if (fileRepository.existsByHashAndIngestion_Dictionary_Source_Id(hash, sourceId)) {
             throw new DuplicateFileException("Este conteúdo já foi enviado para esta fonte. Selecione o arquivo existente para compor o conjunto.");
         }
@@ -147,12 +154,12 @@ public class FileService {
         try (InputStream input = multipartFile.getInputStream()) {
             accepted = validationService.acceptedContent(input, format, records);
         }
-        // Raw content is retained for audit. Only the filtered artifact is eligible for treatment.
+        // O conteúdo bruto fica guardado para auditoria. Só o arquivo filtrado segue para tratamento.
         String location = bucketService.uploadToSourceRawZone(multipartFile, sourceId, hash, sanitizedFilename);
 
         List<String> uploaded = new ArrayList<>();
         uploaded.add(location);
-        // Includes failures raised during transaction commit, not just repository.save().
+         // Se a transação der rollback (inclusive no commit), apaga do bucket o que já foi enviado.
         TransactionSynchronizationManager.registerSynchronization(
             new TransactionSynchronization() {
                 @Override public void afterCompletion(int status) {
@@ -167,6 +174,7 @@ public class FileService {
         String reportLocation = bucketService.uploadValidationReport(location, reportJson);
         uploaded.add(reportLocation);
 
+         // Em coletas, guarda também os arquivos originais e os metadados.
         if (collected != null) {
             int index = 0;
             for (var original : collected.originals()) {
@@ -178,12 +186,16 @@ public class FileService {
                     mapper.writeValueAsBytes(collected.metadata()), "application/json"));
         }
 
+         // Salva a ingestão (ERRO se o arquivo foi rejeitado por completo)
         DataIngestion ingestion = new DataIngestion();
         ingestion.setDictionary(dictionary);
         ingestion.setUser(user);
+        ingestion.setType(ingestionType);
+        ingestion.setConnector(connector);
         ingestion.setIngStatus(report.status().equals("REJEITADO") ? IngestionStatus.ERRO : IngestionStatus.CONCLUIDO);
         ingestion = ingestionRepository.save(ingestion);
 
+        // Salva o arquivo.
         File file = new File();
         file.setIngestion(ingestion);
         file.setName(sanitizedFilename);
@@ -193,6 +205,7 @@ public class FileService {
         file.setLocation(location);
         file = fileRepository.save(file);
 
+         // Versão 1: conteúdo bruto.
         Version version = new Version();
         version.setFile(file);
         version.setVersionNumber(1);
@@ -200,6 +213,7 @@ public class FileService {
         version.setLocation(location);
         versionRepository.save(version);
 
+          // Se não for totalmente válido, vai para a quarentena.
         if (!report.status().equals("VALIDO")) {
             var quarantine = new Quarantine();
             quarantine.setIngestion(ingestion);
@@ -208,17 +222,21 @@ public class FileService {
             quarantine.setReason(quarantineSummary(report));
             quarantineRepository.save(quarantine);
         }
+
+          // Versão 2: só os registros aceitos, se houver algum.
         if (accepted.length > 0) {
             String acceptedLocation = bucketService.uploadSourceValidatedContent(accepted, sourceId, hash, sanitizedFilename);
             uploaded.add(acceptedLocation);
             Version validated = new Version();
             validated.setFile(file);
             validated.setVersionNumber(2);
-            // Filtering validates the subset; it does not mark it as treated or published.
+            // Filtrar só valida os registros; não significa que já foi tratado ou publicado.
             validated.setStatus(VersionStatus.BRUTA);
             validated.setLocation(acceptedLocation);
             versionRepository.save(validated);
         }
+
+         // Associa ao dataset, se informado.
         if (dataset != null) dataset.getFiles().add(file);
 
         return new FileResponseDTO(
@@ -233,18 +251,21 @@ public class FileService {
                 user.getId(), report);
     }
 
+
+    /** Calcula o hash SHA-256 do arquivo, em hexadecimal. */
     String calculateHash(MultipartFile file) throws IOException, NoSuchAlgorithmException {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
 
         try (InputStream is = file.getInputStream();
                 DigestInputStream dis = new DigestInputStream(is, digest)) {
             byte[] buffer = new byte[8192];
+            // Só ler já atualiza o hash, por isso o laço fica vazio.
             while (dis.read(buffer) != -1) {
-
             }
 
         }
 
+          // Converte os bytes do hash para texto hexadecimal.
         StringBuilder sb = new StringBuilder();
         for (byte b : digest.digest()) {
             sb.append(String.format("%02x", b));
@@ -252,6 +273,7 @@ public class FileService {
         return sb.toString();
     }
 
+      /** Retorna a extensão do arquivo em minúsculas, ou null se não tiver. */
     private String extractFormat(String filename) {
         if (filename == null || !filename.contains(".")) {
             return null;
@@ -259,7 +281,7 @@ public class FileService {
         return filename.substring(filename.lastIndexOf(".") + 1).toLowerCase(java.util.Locale.ROOT);
     }
 
-    /**
+   /**
      * Remove acentos e troca espaços/caracteres especiais por "_",
      * pra gerar um nome seguro pra usar como chave de objeto no bucket.
      */
@@ -272,7 +294,7 @@ public class FileService {
         return semAcento.replaceAll("[^a-zA-Z0-9._-]", "_");
     }
 
-    // ASCII-only summary fits VARCHAR2(500 BYTE), including the existing audit trigger.
+     /** Monta o resumo do motivo da quarentena (só ASCII, máximo de 500 caracteres). */
     private String quarantineSummary(FileValidationReport report) {
         String codes = report.records().stream().flatMap(r -> r.errors().stream())
                 .map(error -> error.split(":", 2)[0].replaceAll("[^A-Z_]", ""))
@@ -283,6 +305,7 @@ public class FileService {
         return summary.substring(0, Math.min(summary.length(), 500));
     }
 
+     /** Busca o relatório de validação de um arquivo. */
     @Transactional(readOnly = true)
     public FileValidationReport validationReport(Long fileId) throws Exception {
         File file = fileRepository.findById(fileId).orElseThrow(() -> new ResponseStatusException(
@@ -290,6 +313,7 @@ public class FileService {
         return mapper.readValue(bucketService.readValidationReport(file.getLocation()), FileValidationReport.class);
     }
 
+       /** Busca os metadados da coleta de um arquivo. */
     @Transactional(readOnly = true)
     public CollectedData.Metadata collectionMetadata(Long fileId) throws Exception {
         File file = fileRepository.findById(fileId).orElseThrow(() -> new ResponseStatusException(
@@ -298,6 +322,7 @@ public class FileService {
                 CollectedData.Metadata.class);
     }
 
+      /** Lista os arquivos de uma fonte, do mais recente para o mais antigo. */
     @Transactional(readOnly = true)
     public List<FileResponseDTO> findBySourceId(Long sourceId) {
         return fileRepository.findByIngestion_Dictionary_Source_IdOrderByIdDesc(sourceId).stream()
@@ -307,6 +332,7 @@ public class FileService {
                 .toList();
     }
 
+      /** Lista os arquivos de um dataset. */
     @Transactional(readOnly = true)
     public List<FileResponseDTO> findByDatasetId(Long datasetId) {
 
