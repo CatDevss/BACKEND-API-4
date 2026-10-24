@@ -34,7 +34,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<String> handleUploadLimit(MaxUploadSizeExceededException ex) {
-        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body("O arquivo excede o limite de upload configurado.");
+        return ResponseEntity.status(HttpStatus.CONTENT_TOO_LARGE).body("O arquivo excede o limite de upload configurado.");
     }
 
     @ExceptionHandler(BmcException.class)

@@ -44,6 +44,6 @@ class ApiErrorResponseTest {
     }
     @Test void wrongHttpMethodKeeps405WithBodyInsteadOfBeingConvertedTo500() throws Exception {
         mvc.perform(delete("/fontes/conectores")).andExpect(status().isMethodNotAllowed())
-                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.isEmptyString())));
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.emptyString())));
     }
 }
