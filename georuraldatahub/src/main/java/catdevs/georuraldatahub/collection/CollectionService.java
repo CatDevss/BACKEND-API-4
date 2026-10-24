@@ -32,7 +32,7 @@ public class CollectionService {
                 "A URL da fonte cadastrada não corresponde ao órgão do conector. Use o CRUD de fontes existente.");
         if (request.datasetId() != null) datasets.findEntityById(request.datasetId());
         users.findEntityById(request.userId());
-        dictionaries.rules(dictionaries.findLatestBySourceId(sourceId));
+        dictionaries.rules(dictionaries.findForValidation(sourceId, request.dictionaryId()));
         var log = org.slf4j.LoggerFactory.getLogger(CollectionService.class);
         log.info("Iniciando coleta manual: fonte={}, produto={}, competência={}", sourceId, request.product(), request.competence());
         CollectedData data;
@@ -43,7 +43,7 @@ public class CollectionService {
         } catch (IOException e) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Falha ao ler os dados do canal oficial: " + e.getMessage(), e);
         }
-        var file = files.uploadCollectedFile(data, request.datasetId(), request.userId(), sourceId);
+        var file = files.uploadCollectedFile(data, request.datasetId(), request.userId(), sourceId, request.dictionaryId());
         log.info("Coleta concluída: fonte={}, produto={}, bytes={}, arquivo={}", sourceId, request.product(), data.content().length,
                 file == null ? null : file.id());
         return new Result(file, data.metadata());

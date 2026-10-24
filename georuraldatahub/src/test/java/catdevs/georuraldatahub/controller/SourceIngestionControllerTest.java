@@ -30,7 +30,17 @@ class SourceIngestionControllerTest {
     @Test void uploadRouteRequiresOnlySourceUserAndMultipartFile() throws Exception {
         mvc.perform(multipart("/fontes/4/arquivos").file(new MockMultipartFile("file", "test.csv", "text/csv", "id\n1".getBytes()))
                 .param("userId", "2")).andExpect(status().isCreated());
-        verify(files).uploadToSource(any(), eq(4L), eq(2L));
+        verify(files).uploadToSource(any(), eq(4L), eq(2L), isNull());
+    }
+    @Test void collectionAcceptsDictionaryIdAndRejectsNonpositiveIds() throws Exception {
+        String body = "{\"product\":\"IBGE_MUNICIPIOS\",\"userId\":2,\"competence\":\"2024\",\"dictionaryId\":77}";
+        mvc.perform(post("/fontes/4/coletas").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated());
+        verify(collections).collect(eq(4L), argThat(r -> Long.valueOf(77L).equals(r.dictionaryId())));
+        clearInvocations(collections);
+        mvc.perform(post("/fontes/4/coletas").contentType(MediaType.APPLICATION_JSON)
+                .content(body.replace("77", "0"))).andExpect(status().isBadRequest());
+        verifyNoInteractions(collections);
     }
     @Test void sourceListDoesNotRequireDatasetAndReturnsNotFoundForMissingSource() throws Exception {
         when(files.findBySourceId(4L)).thenReturn(List.of());

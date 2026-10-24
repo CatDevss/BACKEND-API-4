@@ -35,7 +35,7 @@ class FileServiceValidationTest {
         when(datasets.findLockedEntityById(1L)).thenReturn(dataset);
         var user = new User(); user.setId(2L); when(users.findEntityById(2L)).thenReturn(user);
         var dictionary = new Dictionary(); dictionary.setId(3L); dictionary.setVersion(2);
-        when(dictionaries.acquireForValidation(4L)).thenReturn(dictionary);
+        when(dictionaries.acquireForValidation(4L, null)).thenReturn(dictionary);
         when(dictionaries.rules(dictionary)).thenReturn(List.of(FieldRule.required("id", FieldType.INTEGER)));
         when(bucket.uploadToSourceRawZone(any(), eq(4L), any(), any())).thenReturn("bruta/test.csv");
         when(bucket.uploadValidationReport(eq("bruta/test.csv"), any())).thenReturn("bruta/test.csv.validation.json");
@@ -166,7 +166,7 @@ class FileServiceValidationTest {
         when(files.existsByHashAndIngestion_Dictionary_Source_Id(any(), eq(4L))).thenReturn(true);
         assertThrows(DuplicateFileException.class, () -> service.uploadFile(csv("id\n1"), 1L, 2L, 4L));
         verifyNoInteractions(bucket);
-        verify(dictionaries).acquireForValidation(4L);
+        verify(dictionaries).acquireForValidation(4L, null);
     }
     @Test void transactionRollbackCleansBothArtifacts() throws Exception {
         service.uploadFile(csv("id\n1"), 1L, 2L, 4L);

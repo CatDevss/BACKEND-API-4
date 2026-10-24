@@ -36,9 +36,24 @@ public class DictionaryService {
     // Same source lock as create/update/delete: selection and first use are atomic.
     @Transactional
     public Dictionary acquireForValidation(Long sourceId) {
+        return acquireForValidation(sourceId, null);
+    }
+
+    @Transactional
+    public Dictionary acquireForValidation(Long sourceId, Long dictionaryId) {
         lockSource(sourceId);
-        Dictionary d = findLatestBySourceId(sourceId);
-        return d;
+        return findForValidation(sourceId, dictionaryId);
+    }
+
+    @Transactional(readOnly = true)
+    public Dictionary findForValidation(Long sourceId, Long dictionaryId) {
+        if (dictionaryId == null) return findLatestBySourceId(sourceId);
+        if (dictionaryId <= 0) throw new IllegalArgumentException("Informe um ID de dicionário positivo.");
+        Dictionary dictionary = entity(dictionaryId);
+        if (!Objects.equals(dictionary.getSource().getId(), sourceId))
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT,
+                    "O dicionário selecionado não pertence à fonte informada.");
+        return dictionary;
     }
 
     @Transactional

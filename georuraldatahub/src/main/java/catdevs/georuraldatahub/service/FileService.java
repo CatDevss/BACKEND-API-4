@@ -84,33 +84,48 @@ public class FileService {
     /** Upload into a source without creating any dataset membership. */
     @Transactional(rollbackFor = Exception.class)
     public FileResponseDTO uploadToSource(MultipartFile file, Long sourceId, Long userId) throws Exception {
-        return ingest(file, null, userId, sourceId, null);
+        return uploadToSource(file, sourceId, userId, null);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public FileResponseDTO uploadToSource(MultipartFile file, Long sourceId, Long userId, Long dictionaryId) throws Exception {
+        return ingest(file, null, userId, sourceId, null, dictionaryId);
     }
 
     /** Compatibility endpoint: ingest into the source and immediately associate the dataset. */
     @Transactional(rollbackFor = Exception.class)
     public FileResponseDTO uploadFile(MultipartFile multipartFile, Long datasetId, Long userId, Long sourceId)
             throws Exception {
-        return ingest(multipartFile, datasetId, userId, sourceId, null);
+        return uploadFile(multipartFile, datasetId, userId, sourceId, null);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public FileResponseDTO uploadFile(MultipartFile multipartFile, Long datasetId, Long userId, Long sourceId,
+            Long dictionaryId) throws Exception {
+        return ingest(multipartFile, datasetId, userId, sourceId, null, dictionaryId);
     }
 
     @Transactional(rollbackFor = Exception.class)
     public FileResponseDTO uploadCollectedFile(CollectedData collected,
             Long datasetId, Long userId, Long sourceId) throws Exception {
+        return uploadCollectedFile(collected, datasetId, userId, sourceId, null);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public FileResponseDTO uploadCollectedFile(CollectedData collected,
+            Long datasetId, Long userId, Long sourceId, Long dictionaryId) throws Exception {
         var file = new DownloadedMultipartFile(collected.filename(),
                 collected.format().equals("csv") ? "text/csv" : "application/geo+json", collected.content());
-        return ingest(file, datasetId, userId, sourceId, collected);
+        return ingest(file, datasetId, userId, sourceId, collected, dictionaryId);
     }
 
     private FileResponseDTO ingest(MultipartFile multipartFile, Long datasetId, Long userId, Long sourceId,
-            CollectedData collected) throws Exception {
+            CollectedData collected, Long dictionaryId) throws Exception {
         String hash = calculateHash(multipartFile);
 
         User user = userService.findEntityById(userId);
-        // O usuário informa só a fonte; o backend escolhe o dicionário (versão mais
-        // recente da fonte)
-        // e o registra na ingestão (dic_id).
-        Dictionary dictionary = dictionaryService.acquireForValidation(sourceId);
+        // Lock the source and record the selected dictionary; omission uses its latest version.
+        Dictionary dictionary = dictionaryService.acquireForValidation(sourceId, dictionaryId);
         // The source lock also serializes hash checks for uploads and scheduled collections.
         if (fileRepository.existsByHashAndIngestion_Dictionary_Source_Id(hash, sourceId)) {
             throw new DuplicateFileException("Este conteúdo já foi enviado para esta fonte. Selecione o arquivo existente para compor o conjunto.");

@@ -40,7 +40,7 @@ class ManualJsonUploadTest {
                 .setControllerAdvice(new GlobalExceptionHandler()).build();
         var user = new User(); user.setId(2L); when(users.findEntityById(2L)).thenReturn(user);
         var dictionary = new Dictionary(); dictionary.setId(3L); dictionary.setVersion(1);
-        when(dictionaries.acquireForValidation(4L)).thenReturn(dictionary);
+        when(dictionaries.acquireForValidation(4L, null)).thenReturn(dictionary);
         when(dictionaries.rules(dictionary)).thenReturn(List.of(FieldRule.required("id", FieldType.INTEGER)));
         when(ingestions.save(any())).thenAnswer(inv -> { DataIngestion i = inv.getArgument(0); i.setId(5L); return i; });
         when(files.save(any())).thenAnswer(inv -> { File f = inv.getArgument(0); f.setId(6L); return f; });
@@ -80,6 +80,21 @@ class ManualJsonUploadTest {
         assertEquals(mapper.readTree(input), mapper.readTree(content.getValue()));
         verifyNoInteractions(occurrences);
     }
+    @Test void selectedDictionaryIsUsedForValidationAndRecordedInIngestion() throws Exception {
+        var selected = new Dictionary(); selected.setId(77L); selected.setVersion(1);
+        when(dictionaries.acquireForValidation(4L, 77L)).thenReturn(selected);
+        when(dictionaries.rules(selected)).thenReturn(List.of(FieldRule.required("id", FieldType.INTEGER)));
+        mvc.perform(multipart("/fontes/4/arquivos").param("userId", "2").param("dictionaryId", "77")
+                .file(new MockMultipartFile("file", "test.json", "application/json", "[{\"id\":1}]".getBytes())))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.validation.status").value("VALIDO"))
+                .andExpect(jsonPath("$.validation.dictionaryId").value(77))
+                .andExpect(jsonPath("$.validation.dictionaryVersion").value(1));
+        var ingestion = org.mockito.ArgumentCaptor.forClass(DataIngestion.class);
+        verify(ingestions).save(ingestion.capture());
+        assertSame(selected, ingestion.getValue().getDictionary());
+        verify(dictionaries, never()).acquireForValidation(4L, null);
+    }
     @Test void wrongJsonFieldsProduceReadableReportAndRegisterOccurrencesInsteadOfRejectingExtension() throws Exception {
         mvc.perform(multipart("/fontes/4/arquivos").param("userId", "2")
                 .file(new MockMultipartFile("file", "test.json", "application/json", "[{\"id\":\"x\"}]".getBytes())))
@@ -89,7 +104,7 @@ class ManualJsonUploadTest {
         verify(bucket, never()).uploadSourceValidatedContent(any(), any(), any(), any());
     }
     @Test void explicitStatusReasonReachesClientInsteadOfEmptyErrorBody() throws Exception {
-        when(dictionaries.acquireForValidation(4L)).thenThrow(new ResponseStatusException(HttpStatus.GATEWAY_TIMEOUT, "Fonte demorou a responder."));
+        when(dictionaries.acquireForValidation(4L, null)).thenThrow(new ResponseStatusException(HttpStatus.GATEWAY_TIMEOUT, "Fonte demorou a responder."));
         mvc.perform(multipart("/fontes/4/arquivos").param("userId", "2")
                 .file(new MockMultipartFile("file", "test.json", "application/json", "{\"id\":1}".getBytes())))
                 .andExpect(status().isGatewayTimeout()).andExpect(content().string("Fonte demorou a responder."));
