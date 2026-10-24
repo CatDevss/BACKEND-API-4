@@ -38,6 +38,7 @@ final class ParanaSpatialFilter {
         ObjectNode output = mapper.createObjectNode().put("type","FeatureCollection");
         ArrayNode features = output.putArray("features");
         for (JsonNode feature : root.path("features")) {
+            http.checkCollectionDeadline();
             Geometry source = parse(feature.path("geometry"));
             if (source.isEmpty() || !source.getEnvelopeInternal().intersects(boundary.geometry().getEnvelopeInternal())) continue;
             Geometry intersection = OverlayNGRobust.overlay(GeometryFixer.fix(source), boundary.geometry(), OverlayNG.INTERSECTION);

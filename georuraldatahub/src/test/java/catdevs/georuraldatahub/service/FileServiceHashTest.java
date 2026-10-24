@@ -14,7 +14,7 @@ import org.springframework.mock.web.MockMultipartFile;
  */
 class FileServiceHashTest {
 
-    private final FileService fileService = new FileService(null, null, null, null, null, null, null, null, null) ;
+    private final FileService fileService = new FileService(null, null, null, null, null, null, null, null, null, java.util.Optional.empty()) ;
 
 
         /**

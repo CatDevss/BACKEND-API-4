@@ -14,6 +14,14 @@ public class GeoJsonRecordValidator {
         JsonNode root;
         try { root = mapper.readTree(input); }
         catch (com.fasterxml.jackson.core.JsonProcessingException e) { return fileError("MALFORMED_FILE"); }
+        return validate(root, rules);
+    }
+    public List<RecordValidationResult> validate(JsonNode root, List<FieldRule> rules) {
+        if (root != null && "Feature".equals(root.path("type").asText())) {
+            var collection = mapper.createObjectNode().put("type", "FeatureCollection");
+            collection.putArray("features").add(root);
+            root = collection;
+        }
         if (root == null || !"FeatureCollection".equals(root.path("type").asText()) || !root.path("features").isArray())
             return fileError("INVALID_FILE_STRUCTURE");
         if (root.path("features").isEmpty()) return fileError("EMPTY_FILE");

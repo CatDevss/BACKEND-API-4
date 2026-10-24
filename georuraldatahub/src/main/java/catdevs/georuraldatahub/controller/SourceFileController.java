@@ -24,8 +24,9 @@ public class SourceFileController {
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
     public FileResponseDTO upload(@PathVariable Long sourceId, @RequestParam Long userId,
-            @RequestPart("file") MultipartFile file) throws Exception {
-        return files.uploadToSource(file, sourceId, userId);
+            @RequestPart("file") MultipartFile file,
+            @RequestParam(required = false) Long dictionaryId) throws Exception {
+        return files.uploadToSource(file, sourceId, userId, dictionaryId);
     }
 
     @GetMapping

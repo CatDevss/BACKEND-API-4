@@ -32,16 +32,21 @@ public class CollectionService {
                 "A URL da fonte cadastrada não corresponde ao órgão do conector. Use o CRUD de fontes existente.");
         if (request.datasetId() != null) datasets.findEntityById(request.datasetId());
         users.findEntityById(request.userId());
-        dictionaries.rules(dictionaries.findLatestBySourceId(sourceId));
+        dictionaries.rules(dictionaries.findForValidation(sourceId, request.dictionaryId()));
+        var log = org.slf4j.LoggerFactory.getLogger(CollectionService.class);
+        log.info("Iniciando coleta manual: fonte={}, produto={}, competência={}", sourceId, request.product(), request.competence());
         CollectedData data;
         try { data = connectors.collect(request); }
         catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Coleta interrompida.", e);
         } catch (IOException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Falha ao baixar dados do canal oficial.", e);
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Falha ao ler os dados do canal oficial: " + e.getMessage(), e);
         }
-        return new Result(files.uploadCollectedFile(data, request.datasetId(), request.userId(), sourceId), data.metadata());
+        var file = files.uploadCollectedFile(data, request.datasetId(), request.userId(), sourceId, request.dictionaryId());
+        log.info("Coleta concluída: fonte={}, produto={}, bytes={}, arquivo={}", sourceId, request.product(), data.content().length,
+                file == null ? null : file.id());
+        return new Result(file, data.metadata());
     }
     static boolean matchesAgency(String value, CollectionRequest.Product product) {
         try {

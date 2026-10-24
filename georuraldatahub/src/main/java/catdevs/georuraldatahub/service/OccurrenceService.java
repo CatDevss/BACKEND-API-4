@@ -8,6 +8,7 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -25,6 +26,7 @@ import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.TypedQuery;
 
 @Service
+@ConditionalOnProperty(name = "features.occurrences.enabled", havingValue = "true", matchIfMissing = true)
 public class OccurrenceService {
 
     @PersistenceContext
@@ -52,15 +54,14 @@ public class OccurrenceService {
 
                 occurrence.setFile(file);
                 occurrence.setRecordIndex(result.recordIndex());
-                occurrence.setFieldName(extractField(error));
+                occurrence.setFieldName(limit(extractField(error), 255));
                 occurrence.setPosition(null);
                 occurrence.setCode(classify(error));
-                occurrence.setReason(error);
+                occurrence.setReason(limit(error, 2000));
                 occurrence.setStatus(OccurrenceStatus.ABERTA);
                 occurrence.setValidationAttempt(1);
 
                 entityManager.persist(occurrence);
-                entityManager.flush();
 
                 OccurrenceHistory history = new OccurrenceHistory(
                         occurrence,
@@ -308,8 +309,22 @@ public class OccurrenceService {
         }
     }
 
+    private String limit(String value, int maximumBytes) {
+        if (value == null) return null;
+        int end = 0, bytes = 0;
+        while (end < value.length()) {
+            int point = value.codePointAt(end);
+            int width = new String(Character.toChars(point)).getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+            if (bytes + width > maximumBytes) break;
+            bytes += width; end += Character.charCount(point);
+        }
+        return value.substring(0, end);
+    }
+
     private String classify(String error) {
-        String normalized = error.toLowerCase();
+        String code = error.split(":", 2)[0].trim();
+        if (code.matches("[A-Z][A-Z_]{0,79}")) return code;
+        String normalized = error.toLowerCase(java.util.Locale.ROOT);
 
         if (normalized.contains("obrigatório")) {
             return "CAMPO_OBRIGATORIO";
@@ -335,6 +350,11 @@ public class OccurrenceService {
     }
 
     private String extractField(String error) {
+        int separator = error.indexOf(':');
+        if (separator >= 0 && java.util.Set.of("REQUIRED_FIELD", "UNKNOWN_FIELD", "UNKNOWN_VALUE", "INVALID_TYPE",
+                "INVALID_COORDINATES", "INVALID_GEOMETRY", "DUPLICATE_VALUE").contains(error.substring(0, separator))) {
+            return error.substring(separator + 1).trim().split("=", 2)[0];
+        }
         java.util.regex.Matcher matcher =
                 java.util.regex.Pattern
                         .compile("Campo '([^']+)'")

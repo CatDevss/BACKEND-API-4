@@ -38,7 +38,7 @@ public class DatasetFileService {
     }
 
     private Dataset dataset(Long datasetId) {
-        return datasets.findById(datasetId)
+        return datasets.findLockedById(datasetId)
                 .orElseThrow(() -> new DataSetNotFoundException("Conjunto não encontrado."));
     }
 

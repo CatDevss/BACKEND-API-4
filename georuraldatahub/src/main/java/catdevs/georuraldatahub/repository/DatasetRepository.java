@@ -9,11 +9,9 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface DatasetRepository extends JpaRepository<Dataset, Long> {
-
-    @Query("""
-        SELECT CASE WHEN COUNT(f) > 0 THEN true ELSE false END
-        FROM Dataset d JOIN d.files f
-        WHERE d.id = :datasetId
-        """)
-    boolean hasFiles(@Param("datasetId") Long datasetId);
+    @org.springframework.data.jpa.repository.QueryHints(
+            @jakarta.persistence.QueryHint(name = "jakarta.persistence.lock.timeout", value = "10000"))
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select d from Dataset d where d.id = :id")
+    Optional<Dataset> findLockedById(@Param("id") Long id);
 }

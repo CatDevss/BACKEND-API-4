@@ -25,7 +25,8 @@ class FileServiceValidationTest {
     private final BucketService bucket = mock(BucketService.class);
     private final QuarantineRepository quarantine = mock(QuarantineRepository.class);
     private final FileValidationService validator = new FileValidationService(new CsvRecordValidator(), new GeoJsonRecordValidator());
-    private final FileService service = new FileService(files, versions, ingestions, datasets, users, dictionaries, bucket, validator, quarantine);
+    private final OccurrenceService occurrences = mock(OccurrenceService.class);
+    private final FileService service = new FileService(files, versions, ingestions, datasets, users, dictionaries, bucket, validator, quarantine, Optional.of(occurrences));
     private final Dataset dataset = new Dataset();
 
     @BeforeEach void setup() throws Exception {
@@ -34,7 +35,7 @@ class FileServiceValidationTest {
         when(datasets.findLockedEntityById(1L)).thenReturn(dataset);
         var user = new User(); user.setId(2L); when(users.findEntityById(2L)).thenReturn(user);
         var dictionary = new Dictionary(); dictionary.setId(3L); dictionary.setVersion(2);
-        when(dictionaries.acquireForValidation(4L)).thenReturn(dictionary);
+        when(dictionaries.acquireForValidation(4L, null)).thenReturn(dictionary);
         when(dictionaries.rules(dictionary)).thenReturn(List.of(FieldRule.required("id", FieldType.INTEGER)));
         when(bucket.uploadToSourceRawZone(any(), eq(4L), any(), any())).thenReturn("bruta/test.csv");
         when(bucket.uploadValidationReport(eq("bruta/test.csv"), any())).thenReturn("bruta/test.csv.validation.json");
@@ -45,6 +46,17 @@ class FileServiceValidationTest {
     @AfterEach void cleanup() { TransactionSynchronizationManager.clearSynchronization(); }
     private MockMultipartFile csv(String text) { return new MockMultipartFile("file", "test.csv", "text/csv", text.getBytes(StandardCharsets.UTF_8)); }
 
+    @Test void isolatedModeKeepsValidationQuarantineAndApprovedSubsetWithoutOccurrenceTables() throws Exception {
+        var isolated = new FileService(files, versions, ingestions, datasets, users, dictionaries, bucket, validator, quarantine, Optional.empty());
+        var response = isolated.uploadToSource(csv("id\n1\nx"), 4L, 2L);
+        assertEquals("PARCIAL", response.validation().status());
+        assertEquals(1, response.validation().validRecords());
+        assertEquals(1, response.validation().rejectedRecords());
+        verify(quarantine).save(any());
+        verify(bucket).uploadValidationReport(any(), any());
+        verify(bucket).uploadSourceValidatedContent(any(), eq(4L), any(), any());
+        verifyNoInteractions(occurrences);
+    }
     @Test void sourceUploadValidatesAndStoresWithoutLookingUpOrAssociatingDataset() throws Exception {
         var response = service.uploadToSource(csv("id\n1"), 4L, 2L);
         assertEquals("VALIDO", response.validation().status());
@@ -154,7 +166,7 @@ class FileServiceValidationTest {
         when(files.existsByHashAndIngestion_Dictionary_Source_Id(any(), eq(4L))).thenReturn(true);
         assertThrows(DuplicateFileException.class, () -> service.uploadFile(csv("id\n1"), 1L, 2L, 4L));
         verifyNoInteractions(bucket);
-        verify(dictionaries).acquireForValidation(4L);
+        verify(dictionaries).acquireForValidation(4L, null);
     }
     @Test void transactionRollbackCleansBothArtifacts() throws Exception {
         service.uploadFile(csv("id\n1"), 1L, 2L, 4L);

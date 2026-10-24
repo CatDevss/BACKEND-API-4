@@ -31,7 +31,7 @@ public class PublicDataConnectors {
     }
     public CollectedData collect(CollectionRequest request) throws IOException, InterruptedException {
         if (request == null || request.product() == null) throw new IllegalArgumentException("Informe o produto.");
-        try {
+        try (var budget = http.collectionBudget()) {
             return switch (request.product()) {
                 case IBGE_MUNICIPIOS -> municipalities(request);
                 case IBGE_BIOMAS -> biomes(request);
@@ -55,6 +55,8 @@ public class PublicDataConnectors {
         String municipality = r.municipality();
         if (municipality != null && !municipality.matches("41[0-9]{5}")) throw new IllegalArgumentException("Informe um município do Paraná: código IBGE de sete dígitos iniciado por 41.");
         if (r.bbox() != null || r.biome() != null) throw new IllegalArgumentException("Malha municipal aceita apenas ano e código IBGE opcional.");
+        // Recent editions are published as state SHP archives; the simplified API may return HTTP 500.
+        if (year >= 2023) return municipalArchive(r, year, municipality);
         String path = municipality == null ? "/estados/PR" : "/municipios/" + municipality;
         String url = "https://servicodados.ibge.gov.br/api/v3/malhas" + path
                 + "?formato=application%2Fvnd.geo%2Bjson&qualidade=maxima&periodo=" + year
@@ -72,6 +74,39 @@ public class PublicDataConnectors {
         return result(r, "malha_" + (municipality == null ? "PR" : municipality) + "_" + year + ".geojson",
                 "geojson", raw.content(), List.of(raw), municipality == null ? "Paraná (UF 41), municípios" : "Paraná, município " + municipality, "geojson");
     }
+    private CollectedData municipalArchive(CollectionRequest r, int year, String municipality) throws IOException, InterruptedException {
+        String filename = "PR_Municipios_" + year + ".zip";
+        String url = "https://geoftp.ibge.gov.br/organizacao_do_territorio/malhas_territoriais/malhas_municipais/municipio_"
+                + year + "/UFs/PR/" + filename;
+        Original original = download(filename, url, "application/zip");
+        JsonNode mesh;
+        try { mesh = featureCollection(shapes.toGeoJson(original.content())); }
+        catch (IOException | IllegalArgumentException e) {
+            throw OfficialDataClient.upstream("Malha municipal IBGE incompatível: " + e.getMessage());
+        }
+        var output = mapper.createObjectNode().put("type", "FeatureCollection");
+        var features = output.putArray("features");
+        Set<String> codes = new HashSet<>();
+        for (var feature : mesh.path("features")) {
+            http.checkCollectionDeadline();
+            String code = feature.path("properties").path("CD_MUN").asText();
+            if (!code.matches("41[0-9]{5}") || !codes.add(code))
+                throw OfficialDataClient.upstream("ZIP IBGE contém código municipal fora do Paraná ou duplicado.");
+            if (municipality == null || municipality.equals(code)) {
+                var copy = ((ObjectNode) feature).deepCopy();
+                // Preserve every source attribute and retain the legacy code alias.
+                ((ObjectNode) copy.path("properties")).put("codarea", code);
+                features.add(copy);
+            }
+        }
+        if (features.isEmpty()) throw new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.NOT_FOUND, "Município solicitado não encontrado na malha IBGE de " + year + ".");
+        if (municipality == null && codes.size() < 2) throw OfficialDataClient.upstream("ZIP IBGE não contém a malha municipal estadual.");
+        return result(r, "malha_" + (municipality == null ? "PR" : municipality) + "_" + year + ".geojson",
+                "geojson", mapper.writeValueAsBytes(output), List.of(original),
+                municipality == null ? "Paraná (UF 41), municípios" : "Paraná, município " + municipality, "shapefile.zip");
+    }
+
     private CollectedData biomes(CollectionRequest r) throws IOException, InterruptedException {
         int year = year(r.competence());
         String filename = switch (year) {
@@ -99,10 +134,6 @@ public class PublicDataConnectors {
             throw new IllegalArgumentException("Focos diários já são filtrados para o Paraná; não aceitam filtros adicionais.");
         String filename = "focos_diario_br_" + date.format(DateTimeFormatter.BASIC_ISO_DATE) + ".csv";
         Original raw = download(filename, "https://dataserver-coids.inpe.br/queimadas/queimadas/focos/csv/diario/Brasil/" + filename, "text/csv");
-        String header = new String(raw.content(), 0, Math.min(raw.content().length, 1000), StandardCharsets.UTF_8).split("\\R", 2)[0];
-        Set<String> columns = new HashSet<>(Arrays.asList(header.replace("\uFEFF", "").split(",")));
-        if (!columns.containsAll(Set.of("id", "lat", "lon", "data_hora_gmt", "satelite", "estado_id", "municipio_id")))
-            throw OfficialDataClient.upstream("CSV de focos não contém o cabeçalho oficial esperado.");
         byte[] filtered = paranaFires(raw.content());
         return result(r, filename.replace("_br_", "_PR_"), "csv", filtered, List.of(raw),
                 "Paraná (UF 41); estado_id=41 e municipio_id iniciado por 41; todos os satélites", "csv");
@@ -166,16 +197,16 @@ public class PublicDataConnectors {
                 + "; recorte estadual exato sobre a malha IBGE 2022; bbox=" + effectiveBbox, "WFS GeoJSON paginado");
     }
     private byte[] paranaFires(byte[] content) throws IOException {
-        try (var reader = new java.io.PushbackReader(new java.io.InputStreamReader(
-                new java.io.ByteArrayInputStream(content), StandardCharsets.UTF_8), 1)) {
-            catdevs.georuraldatahub.validation.CsvRecordValidator.skipBom(reader);
-            List<String> headers = catdevs.georuraldatahub.validation.CsvRecordValidator.readRecord(reader);
+        try (var reader = new catdevs.georuraldatahub.validation.CsvRecordValidator.TableReader(new java.io.ByteArrayInputStream(content))) {
+            List<String> headers = reader.readRecord();
             if (headers == null) throw new IOException("CSV de focos vazio.");
+            headers = headers.stream().map(String::trim).toList();
+            if (!new HashSet<>(headers).containsAll(Set.of("id", "lat", "lon", "data_hora_gmt", "satelite", "estado_id", "municipio_id")))
+                throw OfficialDataClient.upstream("CSV de focos não contém o cabeçalho oficial esperado.");
             int state = headers.indexOf("estado_id"), municipality = headers.indexOf("municipio_id");
-            if (state < 0 || municipality < 0) throw new IOException("CSV sem identificadores de UF/município.");
             StringBuilder output = new StringBuilder(catdevs.georuraldatahub.validation.CsvRecordValidator.encode(headers)).append('\n');
             List<String> row;
-            while ((row = catdevs.georuraldatahub.validation.CsvRecordValidator.readRecord(reader)) != null) {
+            while ((row = reader.readRecord()) != null) {
                 if (row.size() == 1 && row.getFirst().isBlank()) continue;
                 if (row.size() != headers.size()) throw new IOException("CSV de focos com quantidade de colunas inválida.");
                 if (row.get(state).trim().equals("41") && row.get(municipality).trim().matches("41[0-9]{5}"))
@@ -202,6 +233,7 @@ public class PublicDataConnectors {
     }
     private CollectedData result(CollectionRequest r, String filename, String format, byte[] content,
             List<Original> originals, String scope, String originFormat) {
+        http.checkCollectionDeadline();
         if (content.length > limits.getMaxTotalBytes()) throw OfficialDataClient.upstream("Conteúdo convertido excede o limite total da coleta.");
         var entry = catalog.entry(r.product());
         var metadata = new Metadata(r.product().name(), r.competence(), format, originFormat, scope, Instant.now().toString(),
