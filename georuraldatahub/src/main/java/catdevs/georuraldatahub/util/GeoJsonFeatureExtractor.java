@@ -1,4 +1,4 @@
-package catdevs.georuraldatahub.service;
+package catdevs.georuraldatahub.util;
 
 import java.util.ArrayList;
 import java.util.EnumSet;
