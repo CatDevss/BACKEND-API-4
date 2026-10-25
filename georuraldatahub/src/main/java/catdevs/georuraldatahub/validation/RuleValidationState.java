@@ -6,7 +6,6 @@ import java.util.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-/** State belongs to one file, never shared between uploads. */
 final class RuleValidationState {
     private final Set<String> records = new HashSet<>();
     private final Map<String, Set<String>> uniqueValues = new HashMap<>();
@@ -37,7 +36,6 @@ final class RuleValidationState {
             if (valid && Set.of(FieldType.NUMBER, FieldType.INTEGER, FieldType.LATITUDE, FieldType.LONGITUDE).contains(rule.type()))
                 canonical = new BigDecimal(text.replace(',', '.')).stripTrailingZeros().toPlainString();
             normalized.put(rule.name(), canonical);
-            // Only approved records reserve unique values, so rejected data cannot poison later records.
             if (rule.unique() && uniqueValues.getOrDefault(rule.name(), Set.of()).contains(canonical))
                 errors.add("DUPLICATE_VALUE: " + rule.name());
         }

@@ -23,7 +23,6 @@ public class FileValidationService {
             default -> List.of(RecordValidationResult.invalid(-1, "", List.of("UNSUPPORTED_FORMAT: " + format)));
         };
     }
-    /** Produces the only content eligible for treatment, preserving CSV headers / GeoJSON envelope. */
     public byte[] acceptedContent(InputStream original, String format, List<RecordValidationResult> records) throws Exception {
         var valid = records.stream().filter(RecordValidationResult::valid).toList();
         if (valid.isEmpty() || records.stream().anyMatch(r -> r.recordIndex() < 0)) return new byte[0];

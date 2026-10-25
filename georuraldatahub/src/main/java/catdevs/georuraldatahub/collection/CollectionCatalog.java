@@ -47,7 +47,6 @@ public class CollectionCatalog {
                 "Mantido upload existente; nenhuma automação de login, captcha ou download não autorizado.")
         );
     }
-    /** Suggested rules only. Applying them is an explicit dictionary CRUD operation. */
     public DictionaryRequestDTO dictionaryTemplate(CollectionRequest.Product product, String competence) {
         List<FieldRule> rules = new ArrayList<>();
         switch (product) {

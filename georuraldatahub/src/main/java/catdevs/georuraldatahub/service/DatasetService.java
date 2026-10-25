@@ -80,7 +80,6 @@ public class DatasetService {
                 Dataset dataset = findEntityById(id);
                 dataset.setName(validName(request.name()));
 
-                // A entidade gerenciada é atualizada no commit da transação.
                 return toDto(dataset);
         }
 

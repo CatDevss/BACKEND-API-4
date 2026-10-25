@@ -23,7 +23,6 @@ public class CollectionService {
     }
     public record Result(FileResponseDTO file, CollectedData.Metadata collection) {}
 
-    // Network transfers happen before FileService starts its database transaction/locks.
     public Result collect(Long sourceId, CollectionRequest request) throws Exception {
         if (sourceId == null || request == null || request.product() == null
                 || request.userId() == null) throw new IllegalArgumentException("Fonte, produto e usuário são obrigatórios.");

@@ -32,7 +32,7 @@ class DatasetStructureServiceTest {
         when(files.findByDatasetId(1L)).thenReturn(List.of(file(3, 10, 2), file(2, 20, 1), file(1, 10, 1)));
         when(layers.listLayers(1L)).thenReturn(List.of(new LayerInfoDTO(3L, "3.geojson", "geojson", 50L, null)));
         var result = service.get(1L);
-        assertEquals(2, result.sources().size()); // Identical source names must not merge distinct sources.
+        assertEquals(2, result.sources().size());
         var first = result.sources().getFirst();
         assertEquals(10L, first.id());
         assertEquals(List.of(3L, 1L), first.files().stream().map(f -> f.id()).toList());

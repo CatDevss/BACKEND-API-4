@@ -69,7 +69,6 @@ public class QuarantineService {
         return response(quarantines.save(quarantine));
     }
 
-    /** Closes the analysis only: rejected data and its original validation report remain unchanged. */
     @Transactional
     public QuarantineResponseDTO resolve(Long id, Long userId, String treatment) {
         activeUser(userId);

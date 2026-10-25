@@ -10,7 +10,6 @@ import org.locationtech.jts.operation.overlayng.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.node.*;
 
-/** Geographic clipping only. Area calculation must use an equivalent projection later. */
 final class ParanaSpatialFilter {
     static final String BOUNDARY_URL = "https://servicodados.ibge.gov.br/api/v3/malhas/estados/PR?formato=application%2Fvnd.geo%2Bjson&qualidade=maxima&periodo=2022";
     static final String LIMITATION = "Escopo exclusivo do Paraná (UF 41). Recorte espacial usa a malha simplificada IBGE 2022, qualidade máxima; não substitui limite cadastral. Geometrias inválidas podem ser reparadas para a interseção; os originais são preservados. Sem cálculo de área ou reprojeção equivalente nesta etapa.";
@@ -42,7 +41,6 @@ final class ParanaSpatialFilter {
             Geometry source = parse(feature.path("geometry"));
             if (source.isEmpty() || !source.getEnvelopeInternal().intersects(boundary.geometry().getEnvelopeInternal())) continue;
             Geometry intersection = OverlayNGRobust.overlay(GeometryFixer.fix(source), boundary.geometry(), OverlayNG.INTERSECTION);
-            // Contacts at the boundary alone do not become deforestation/biome area.
             List<Polygon> polygons = new java.util.ArrayList<>();
             polygons(intersection, polygons);
             if (polygons.isEmpty()) continue;

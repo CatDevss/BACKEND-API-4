@@ -26,7 +26,6 @@ public class SourceService {
         this.userService = userService;
     }
 
-    // CADASTRAR FONTE
     public SourceResponseDTO create(SourceCreateRequestDTO request) {
 
         if (sourceRepository.existsByName(request.name().trim())) {
@@ -42,7 +41,7 @@ public class SourceService {
         source.setUrl(request.url().trim());
         source.setUser(user);
         source.setDescription(request.description());
-        source.setStatus(1); // Ativo por padrão
+        source.setStatus(1);
 
         try {
             Source savedSource = sourceRepository.saveAndFlush(source);
@@ -67,7 +66,6 @@ public class SourceService {
                 HttpStatus.NOT_FOUND, "Fonte não encontrada."));
     }
 
-    // LISTAR FONTES
     public List<SourceResponseDTO> listAll() {
         return sourceRepository.findAll()
                 .stream()
@@ -75,13 +73,11 @@ public class SourceService {
                 .toList();
     }
 
-    // BUSCAR FONTE POR ID
     public SourceResponseDTO findById(Long id) {
         Source source = findEntityById(id);
         return toResponse(source);
     }
 
-    // ALTERAR NOME, URL E DESCRIÇÃO
     public SourceResponseDTO update(Long id, SourceUpdateRequestDTO request) {
         Source source = findEntityById(id);
         String name = request.name().trim();
@@ -102,7 +98,6 @@ public class SourceService {
         }
     }
 
-    // DESATIVAR FONTE
     public SourceResponseDTO deactivate(Long id) {
         Source source = findEntityById(id);
         source.setStatus(0);
@@ -110,7 +105,6 @@ public class SourceService {
         return toResponse(updatedSource);
     }
 
-    // ATIVAR FONTE
     public SourceResponseDTO activate(Long id) {
         Source source = findEntityById(id);
         source.setStatus(1);
@@ -118,13 +112,11 @@ public class SourceService {
         return toResponse(updatedSource);
     }
 
-    // CONVERTER ENTIDADE PARA DTO
     private SourceResponseDTO toResponse(Source source) {
         return new SourceResponseDTO(source.getId(), source.getName(), source.getDateCreation(), source.getUrl(),
                 source.getDescription(), source.getStatus(), source.getUser().getId());
     }
 
-    // VERIFICAR VIOLAÇÃO DE CHAVE ÚNICA NO ORACLE
     private boolean isUniqueConstraintViolation(
             DataIntegrityViolationException exception) {
         Throwable cause = exception;

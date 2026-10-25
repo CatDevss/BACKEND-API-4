@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
-/** Converts spatial JSON records to map features without changing the stored original. */
 public final class GeoJsonContent {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private GeoJsonContent() {}

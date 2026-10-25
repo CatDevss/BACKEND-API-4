@@ -11,8 +11,6 @@ import org.springframework.stereotype.Component;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.*;
 
-/** Reads the polygon/DBF subset used by official IBGE biome and municipal archives.
- * Unsupported projections/types fail explicitly. Nothing is extracted to disk. */
 @Component
 public class BiomesShapefileReader {
     private final CollectionProperties limits;

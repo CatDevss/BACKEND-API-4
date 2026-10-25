@@ -4,7 +4,6 @@ import java.io.InputStream;
 import java.util.*;
 import com.fasterxml.jackson.databind.*;
 
-/** JSON records and GeoJSON share field rules, but only GeoJSON requires Feature geometry. */
 public class JsonRecordValidator {
     private final GeoJsonRecordValidator geoJson;
     static final ObjectMapper MAPPER = new ObjectMapper()

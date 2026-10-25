@@ -5,28 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 
-/**
- * Testes unitários para o cálculo de hash de arquivos em {@link FileService}.
- *
- * Cobre a task T2.24: garante que o hash gerado depende apenas do
- * conteúdo do arquivo, e não do nome ou de qualquer outro metadado.
- * Essa propriedade é essencial pra checagem de duplicado
- */
 class FileServiceHashTest {
 
     private final FileService fileService = new FileService(null, null, null, null, null, null, null, null, null) ;
 
 
-        /**
-     * Verifica que dois arquivos com o mesmo conteúdo, mas nomes
-     * diferentes (a.txt e b.txt), geram exatamente
-     * o mesmo hash SHA-256.
-     *
-     * Se esse teste falhar, significa que {@link FileService#calculateHash}
-     * passou a depender de algo além dos bytes do arquivo (nome,
-     * tipo de conteúdo, etc.), o que quebraria a detecção de
-     * arquivos duplicados.
-     */
 
     @Test
     void sameContentMustReturnSameHash() throws Exception {

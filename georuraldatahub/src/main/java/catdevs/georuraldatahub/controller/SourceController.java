@@ -31,7 +31,6 @@ public class SourceController {
         this.sourceService = sourceService;
     }
 
-    // CADASTRAR FONTE
     @PostMapping
     public ResponseEntity<SourceResponseDTO> create(
             @Valid @RequestBody SourceCreateRequestDTO request) {
@@ -40,21 +39,18 @@ public class SourceController {
                 .body(sourceService.create(request));
     }
 
-    // LISTAR FONTES
     @GetMapping
     public ResponseEntity<List<SourceResponseDTO>> listAll() {
         return ResponseEntity.status(HttpStatus.OK)
                 .body(sourceService.listAll());
     }
 
-    // BUSCAR FONTE POR ID
     @GetMapping("/{id}")
     public ResponseEntity<SourceResponseDTO> findById(@PathVariable Long id) {
         return ResponseEntity.status(HttpStatus.OK)
                 .body(sourceService.findById(id));
     }
 
-    // ALTERAR FONTE
     @PutMapping("/{id}")
     public ResponseEntity<SourceResponseDTO> update(@PathVariable Long id,
             @Valid @RequestBody SourceUpdateRequestDTO request) {
@@ -62,14 +58,12 @@ public class SourceController {
                 .body(sourceService.update(id, request));
     }
 
-    // DESATIVAR FONTE
     @PatchMapping("/{id}/desativar")
     public ResponseEntity<SourceResponseDTO> deactivate(@PathVariable Long id) {
         return ResponseEntity.status(HttpStatus.OK)
                 .body(sourceService.deactivate(id));
     }
 
-    // ATIVAR FONTE
     @PatchMapping("/{id}/ativar")
     public ResponseEntity<SourceResponseDTO> activate(@PathVariable Long id) {
         return ResponseEntity.status(HttpStatus.OK)

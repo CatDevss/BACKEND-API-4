@@ -40,7 +40,6 @@ public class CollectionProperties {
     public void setMaxFeatures(int value) { maxFeatures = value; }
     public List<Job> getJobs() { return jobs; }
     public void setJobs(List<Job> value) { jobs = value; }
-    // competence may be D-1 only for daily INPE_QUEIMADAS jobs.
     public record Job(@jakarta.validation.constraints.NotNull @jakarta.validation.constraints.Positive Long sourceId,
             @jakarta.validation.Valid @jakarta.validation.constraints.NotNull CollectionRequest request) {}
 }

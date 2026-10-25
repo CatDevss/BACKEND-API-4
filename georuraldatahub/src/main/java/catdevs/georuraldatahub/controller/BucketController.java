@@ -25,9 +25,6 @@ public class BucketController {
         this.bucketService = bucketService;
     }
 
-    /**
-     * Lista os objetos armazenados no bucket.
-     */
     @GetMapping
     public List<String> listObjects() {
         return bucketService.listObjectsBucket();

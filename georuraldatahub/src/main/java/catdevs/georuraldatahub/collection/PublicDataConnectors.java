@@ -11,7 +11,6 @@ import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.node.*;
 import catdevs.georuraldatahub.collection.CollectedData.*;
 
-/** Confirmed products share transport, provenance and ingestion, not separate CRUDs. */
 @Component
 public class PublicDataConnectors {
     private static final String WFS = "https://terrabrasilis.dpi.inpe.br/geoserver/ows";
@@ -55,7 +54,6 @@ public class PublicDataConnectors {
         String municipality = r.municipality();
         if (municipality != null && !municipality.matches("41[0-9]{5}")) throw new IllegalArgumentException("Informe um município do Paraná: código IBGE de sete dígitos iniciado por 41.");
         if (r.bbox() != null || r.biome() != null) throw new IllegalArgumentException("Malha municipal aceita apenas ano e código IBGE opcional.");
-        // Recent editions are published as state SHP archives; the simplified API may return HTTP 500.
         if (year >= 2023) return municipalArchive(r, year, municipality);
         String path = municipality == null ? "/estados/PR" : "/municipios/" + municipality;
         String url = "https://servicodados.ibge.gov.br/api/v3/malhas" + path
@@ -94,7 +92,6 @@ public class PublicDataConnectors {
                 throw OfficialDataClient.upstream("ZIP IBGE contém código municipal fora do Paraná ou duplicado.");
             if (municipality == null || municipality.equals(code)) {
                 var copy = ((ObjectNode) feature).deepCopy();
-                // Preserve every source attribute and retain the legacy code alias.
                 ((ObjectNode) copy.path("properties")).put("codarea", code);
                 features.add(copy);
             }
@@ -144,7 +141,7 @@ public class PublicDataConnectors {
         if (layer == null || !(r.biome().equalsIgnoreCase("CERRADO") || r.biome().equalsIgnoreCase("MATA_ATLANTICA")))
             throw new IllegalArgumentException("Biomas do Paraná aceitos: CERRADO e MATA_ATLANTICA.");
         if (r.municipality() != null) throw new IllegalArgumentException("Use bbox para recortar o PRODES.");
-        bboxFilter(r.bbox()); // validate the optional user recorte before downloading the state boundary
+        bboxFilter(r.bbox());
         var boundary = parana.boundary();
         var envelope = boundary.geometry().getEnvelopeInternal();
         if (r.bbox() != null) envelope = envelope.intersection(new org.locationtech.jts.geom.Envelope(

@@ -55,7 +55,6 @@ public class CsvRecordValidator {
         return fields.stream().map(v -> "\"" + v.replace("\"", "\"\"") + "\"")
                 .collect(java.util.stream.Collectors.joining(","));
     }
-    /** One parser for validation, filtering and map conversion. Output is always comma-separated. */
     public static final class TableReader implements AutoCloseable {
         private final PushbackReader reader;
         private final char delimiter;
@@ -92,7 +91,6 @@ public class CsvRecordValidator {
             return semicolons > commas && semicolons >= tabs ? ';' : tabs > commas ? '\t' : ',';
         }
     }
-    // RFC 4180: escaped quotes and multiline fields. Ambiguous framing rejects the whole file.
     public static List<String> readRecord(PushbackReader reader) throws IOException {
         return readRecord(reader, ',');
     }

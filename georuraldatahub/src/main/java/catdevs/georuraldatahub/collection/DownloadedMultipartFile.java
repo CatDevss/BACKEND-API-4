@@ -4,7 +4,6 @@ import java.io.*;
 import java.nio.file.Files;
 import org.springframework.web.multipart.MultipartFile;
 
-/** Replays the downloaded bytes through the same ingest API as a manual upload. */
 public final class DownloadedMultipartFile implements MultipartFile {
     private final String filename;
     private final String contentType;

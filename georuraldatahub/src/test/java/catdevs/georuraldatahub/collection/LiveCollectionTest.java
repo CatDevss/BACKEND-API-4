@@ -9,8 +9,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import catdevs.georuraldatahub.collection.CollectionRequest.Product;
 import catdevs.georuraldatahub.validation.*;
 
-/** Opt-in integration checks against the actual public services; no Oracle or OCI writes.
- * Run: mvn -Dtest=LiveCollectionTest -Dcollection.live.tests=true test */
 @EnabledIfSystemProperty(named="collection.live.tests",matches="true")
 class LiveCollectionTest {
     private final CollectionProperties limits = new CollectionProperties();
@@ -78,7 +76,6 @@ class LiveCollectionTest {
         assertTrue(result.metadata().scope().contains("Paraná"));
         assertEquals("csv",result.format());
         var rules = new CollectionCatalog().dictionaryTemplate(Product.INPE_QUEIMADAS, date).rules();
-        // A day with no PR detections is a legitimate empty result, not proof of a broken channel.
         try (var reader = new CsvRecordValidator.TableReader(new java.io.ByteArrayInputStream(result.content()))) {
             reader.readRecord();
             if (reader.readRecord() != null) assertValid(result, rules);

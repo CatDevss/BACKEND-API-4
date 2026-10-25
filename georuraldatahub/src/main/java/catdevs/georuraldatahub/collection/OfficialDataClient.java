@@ -36,7 +36,6 @@ public class OfficialDataClient {
             throw new IllegalArgumentException("Destino fora dos canais oficiais autorizados.");
     }
 
-    /** One budget per collection/request thread; concurrent collections do not share deadlines. */
     public CollectionBudget collectionBudget() {
         Long previous = collectionDeadline.get();
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(properties.getMaxDurationSeconds());
@@ -51,7 +50,6 @@ public class OfficialDataClient {
     @FunctionalInterface
     public interface CollectionBudget extends AutoCloseable { @Override void close(); }
 
-    /** The deadline covers headers, response body, redirects and retries, not just connecting. */
     public byte[] download(URI uri) throws IOException, InterruptedException {
         checkUri(uri);
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(properties.getRequestTimeoutSeconds());
@@ -107,7 +105,6 @@ public class OfficialDataClient {
     }
 
     private HttpResponse.BodySubscriber<byte[]> body(HttpResponse.ResponseInfo info) {
-        // Error/redirect bodies are discarded instead of retained in memory.
         if (info.statusCode() != 200) return HttpResponse.BodySubscribers.mapping(HttpResponse.BodySubscribers.discarding(), ignored -> new byte[0]);
         int maximum = properties.getMaxDownloadBytes();
         if (maximum < 1) throw upstream("Limite de download inválido.");
@@ -118,7 +115,6 @@ public class OfficialDataClient {
         return new LimitedBodySubscriber(maximum);
     }
 
-    /** Bounds allocation even when Content-Length is absent or incorrect. */
     static final class LimitedBodySubscriber implements HttpResponse.BodySubscriber<byte[]> {
         private final HttpResponse.BodySubscriber<byte[]> delegate = HttpResponse.BodySubscribers.ofByteArray();
         private final int maximum;

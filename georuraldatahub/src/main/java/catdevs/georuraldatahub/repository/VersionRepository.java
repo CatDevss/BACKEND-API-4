@@ -14,10 +14,6 @@ public interface VersionRepository extends JpaRepository<Version, Long> {
     Optional<Version> findFirstByFile_IdAndStatusAndLocationStartingWithOrderByVersionNumberDesc(
             Long fileId, VersionStatus status, String locationPrefix);
 
-            /**
-     * Para cada arquivo, devolve só a versão mais recente (maior número de versão).
-     * O status dessa versão é a etapa atual do arquivo.
-     */
     @Query("""
         SELECT new catdevs.georuraldatahub.dto.FileStageDTO(
             v.file.id, v.status, v.versionNumber, v.location)

@@ -24,7 +24,6 @@ public class DatasetFileService {
     public void associate(Long datasetId, Long fileId) {
         var dataset = dataset(datasetId);
         var file = file(fileId);
-        // The existing JPA relationship owns conjunto_arquivo; no file or bucket object is copied.
         if (dataset.getFiles().stream().noneMatch(existing -> existing.getId().equals(fileId))) {
             dataset.getFiles().add(file);
         }
