@@ -1,6 +1,9 @@
 package catdevs.georuraldatahub.service;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -19,17 +22,17 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import catdevs.georuraldatahub.entity.File;
+import catdevs.georuraldatahub.validation.CsvRecordValidator;
 
-/**
- * Fornece informações de inspeção dos arquivos armazenados no sistema.
- * Não altera o arquivo original nem cria versões novas.
- */
 @Service
 public class FileInspectionService {
 
     private static final int DEFAULT_PAGE_SIZE = 100;
     private static final int MAX_PAGE_SIZE = 500;
     private static final int HEADER_BYTES_TO_SHOW = 32;
+    private static final int SAMPLE_BYTES = 4096;
+    private static final int MAX_JSON_INSPECTION_BYTES = 5 * 1024 * 1024;
+    private static final int MAX_LINE_CHARS = 1_000_000;
 
     private final FileService fileService;
     private final BucketService bucketService;
@@ -38,197 +41,555 @@ public class FileInspectionService {
     public FileInspectionService(
             FileService fileService,
             BucketService bucketService) {
+
         this.fileService = fileService;
         this.bucketService = bucketService;
         this.objectMapper = new ObjectMapper();
     }
 
-    /** Retorna metadados registrados no banco e informações básicas do objeto. */
+    /**
+     * Retorna os metadados básicos do arquivo.
+     */
     @Transactional(readOnly = true)
-    public Map<String, Object> getMetadata(Long fileId) throws IOException {
+    public Map<String, Object> getMetadata(Long fileId)
+            throws IOException {
+
         File file = findFile(fileId);
-        byte[] content = readOriginal(file);
+
+        byte[] sample = bucketService.readObjectPrefix(
+                requireLocation(file),
+                SAMPLE_BYTES);
+
+        Long registeredSize = file.getSize();
+
+        /*
+         * Se o tamanho registrado for desconhecido, não podemos
+         * garantir que o conteúdo foi lido integralmente.
+         *
+         * Se o tamanho registrado for maior que o tamanho lido,
+         * sabemos que recebemos apenas uma amostra.
+         *
+         * Se ambos forem iguais, consideramos a leitura completa.
+         */
+        boolean isSample = registeredSize == null
+                || registeredSize > sample.length;
 
         Map<String, Object> result = new LinkedHashMap<>();
+
         result.put("id", file.getId());
         result.put("nome", file.getName());
         result.put("formato", file.getFormatFile());
-        result.put("tamanhoRegistradoBytes", file.getSize());
-        result.put("tamanhoLidoBytes", content.length);
+        result.put("tamanhoRegistradoBytes", registeredSize);
+        result.put("tamanhoLidoBytes", sample.length);
+        result.put("tamanhoLidoEhAmostra", isSample);
         result.put("hash", file.getHash());
         result.put("localizacao", file.getLocation());
         result.put("dataRecebimento", file.getReceivedDate());
-        result.put("texto", isTextFile(file, content));
+        result.put("texto", isTextFile(file, sample));
         result.put("dataInspecao", LocalDateTime.now());
+
         return result;
     }
 
     /**
-     * Retorna uma página de linhas para arquivos textuais.
-     * page é baseada em zero. O tamanho máximo permitido é 500 linhas.
+     * Retorna uma página do conteúdo textual sem ler todo o arquivo
+     * para calcular o número total de linhas.
      */
     @Transactional(readOnly = true)
-    public Map<String, Object> getTextContent(Long fileId, int page, int size) throws IOException {
+    public Map<String, Object> getTextContent(
+            Long fileId,
+            int page,
+            int size) throws IOException {
+
         if (page < 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
                     "O parâmetro page não pode ser negativo.");
         }
+
         if (size <= 0) {
             size = DEFAULT_PAGE_SIZE;
         }
-        if (size > MAX_PAGE_SIZE) {
-            size = MAX_PAGE_SIZE;
-        }
+
+        size = Math.min(size, MAX_PAGE_SIZE);
 
         File file = findFile(fileId);
-        byte[] bytes = readOriginal(file);
-        if (!isTextFile(file, bytes)) {
-            throw new ResponseStatusException(HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+        String location = requireLocation(file);
+
+        byte[] sample = bucketService.readObjectPrefix(
+                location,
+                SAMPLE_BYTES);
+
+        if (!isTextFile(file, sample)) {
+            throw new ResponseStatusException(
+                    HttpStatus.UNSUPPORTED_MEDIA_TYPE,
                     "A visualização paginada está disponível apenas para arquivos textuais.");
         }
 
-        String text = new String(bytes, StandardCharsets.UTF_8);
-        String[] lines = text.split("\\R", -1);
-        int start = Math.min(page * size, lines.length);
-        int end = Math.min(start + size, lines.length);
-        List<String> pageLines = new ArrayList<>();
-        for (int i = start; i < end; i++) {
-            pageLines.add(lines[i]);
+        long startIndex = (long) page * size;
+
+        List<String> pageLines = new ArrayList<>(size);
+        long linesSkipped = 0;
+        boolean hasNextPage = false;
+
+        try (InputStream input =
+                     bucketService.openObjectStream(location);
+             BufferedReader reader = new BufferedReader(
+                     new InputStreamReader(
+                             input,
+                             StandardCharsets.UTF_8))) {
+
+            String line;
+
+            /*
+             * Avança até o começo da página solicitada.
+             */
+            while (linesSkipped < startIndex) {
+                line = readBoundedLine(reader);
+
+                if (line == null) {
+                    break;
+                }
+
+                linesSkipped++;
+            }
+
+            /*
+             * Lê apenas as linhas que pertencem à página.
+             */
+            while (pageLines.size() < size) {
+                line = readBoundedLine(reader);
+
+                if (line == null) {
+                    break;
+                }
+
+                pageLines.add(line);
+            }
+
+            /*
+             * Lê no máximo uma linha adicional para verificar
+             * se existe uma próxima página.
+             */
+            if (pageLines.size() == size) {
+                hasNextPage = readBoundedLine(reader) != null;
+            }
         }
 
         Map<String, Object> result = new LinkedHashMap<>();
+
         result.put("arquivoId", file.getId());
         result.put("nome", file.getName());
         result.put("pagina", page);
         result.put("tamanhoPagina", size);
-        result.put("totalLinhas", lines.length);
-        result.put("totalPaginas", Math.max(1, (int) Math.ceil((double) lines.length / size)));
+        result.put("linhasRetornadas", pageLines.size());
         result.put("temPaginaAnterior", page > 0);
-        result.put("temProximaPagina", end < lines.length);
+        result.put("temProximaPagina", hasNextPage);
+
+        /*
+         * Os totais não são calculados em cada solicitação,
+         * evitando percorrer o arquivo até EOF.
+         */
+        result.put("totalLinhas", null);
+        result.put("totalPaginas", null);
+
         result.put("linhas", pageLines);
+
         return result;
     }
 
     /**
-     * Retorna uma descrição da estrutura identificável do arquivo.
-     * CSV: cabeçalho e quantidade de linhas. JSON/GeoJSON: tipo e resumo dos campos.
-     * Outros formatos binários: tamanho, assinatura provável e primeiros bytes em hexadecimal.
+     * Inspeciona a estrutura do arquivo.
      */
     @Transactional(readOnly = true)
-    public Map<String, Object> getStructure(Long fileId) throws IOException {
+    public Map<String, Object> getStructure(Long fileId)
+            throws IOException {
+
         File file = findFile(fileId);
-        byte[] bytes = readOriginal(file);
-        String format = normalizeFormat(file.getFormatFile(), file.getName());
+        String location = requireLocation(file);
+
+        String format = normalizeFormat(
+                file.getFormatFile(),
+                file.getName());
 
         Map<String, Object> result = new LinkedHashMap<>();
+
         result.put("arquivoId", file.getId());
         result.put("nome", file.getName());
         result.put("formato", format);
-        result.put("tamanhoBytes", bytes.length);
+        result.put("tamanhoBytes", file.getSize());
 
+        /*
+         * CSV e TSV: utiliza o mesmo TableReader do validador.
+         */
         if (format.equals("csv") || format.equals("tsv")) {
-            String text = new String(bytes, StandardCharsets.UTF_8);
-            String[] lines = text.split("\\R", -1);
-            String firstLine = lines.length == 0 ? "" : lines[0];
-            String delimiter = format.equals("tsv") || (!firstLine.contains(",") && firstLine.contains("\t"))
-                    ? "\t" : ",";
-            String[] columns = firstLine.isBlank() ? new String[0] : firstLine.split(java.util.regex.Pattern.quote(delimiter), -1);
-            result.put("tipoEstrutura", "tabela");
-            result.put("delimitador", delimiter.equals("\t") ? "TAB" : "vírgula");
-            result.put("quantidadeColunas", columns.length);
-            result.put("colunas", List.of(columns));
-            result.put("quantidadeLinhasComCabecalho", lines.length);
-            result.put("quantidadeRegistrosEstimados", Math.max(0, lines.length - (firstLine.isBlank() ? 0 : 1)));
-            return result;
+
+            try (InputStream input =
+                         bucketService.openObjectStream(location);
+                 CsvRecordValidator.TableReader reader =
+                         new CsvRecordValidator.TableReader(input)) {
+
+                List<String> columns = reader.readRecord();
+
+                boolean hasHeader = columns != null
+                        && !(columns.size() == 1
+                        && columns.get(0).isBlank());
+
+                if (hasHeader) {
+                    columns.replaceAll(String::trim);
+                } else {
+                    columns = new ArrayList<>();
+                }
+
+                long totalRecords = 0;
+                List<String> record;
+
+                while ((record = reader.readRecord()) != null) {
+                    if (record.size() == 1
+                            && record.get(0).isBlank()) {
+                        continue;
+                    }
+
+                    totalRecords++;
+                }
+
+                char delimiter = reader.getDelimiter();
+
+                result.put("tipoEstrutura", "tabela");
+
+                result.put(
+                        "delimitador",
+                        delimiter == '\t'
+                                ? "TAB"
+                                : delimiter == ';'
+                                ? "ponto e vírgula"
+                                : "vírgula");
+
+                result.put("quantidadeColunas", columns.size());
+                result.put("colunas", columns);
+
+                result.put(
+                        "quantidadeLinhasComCabecalho",
+                        totalRecords + (hasHeader ? 1L : 0L));
+
+                result.put(
+                        "quantidadeRegistrosEstimados",
+                        totalRecords);
+
+                return result;
+
+            } catch (IllegalArgumentException e) {
+                throw new ResponseStatusException(
+                        HttpStatus.UNPROCESSABLE_CONTENT,
+                        "Não foi possível interpretar a estrutura CSV/TSV do arquivo: "
+                                + e.getMessage(),
+                        e);
+            }
         }
 
+        /*
+         * JSON e GeoJSON.
+         */
         if (format.equals("json") || format.equals("geojson")) {
+
+            byte[] bytes;
+
+            try (InputStream input =
+                         bucketService.openObjectStream(location)) {
+
+                bytes = input.readNBytes(
+                        MAX_JSON_INSPECTION_BYTES + 1);
+            }
+
+            if (bytes.length > MAX_JSON_INSPECTION_BYTES) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONTENT_TOO_LARGE,
+                        "A inspeção estrutural de JSON está limitada a 5 MB.");
+            }
+
             try {
                 JsonNode root = objectMapper.readTree(bytes);
+
                 result.put("tipoEstrutura", "json");
-                result.put("tipoRaiz", root == null ? "vazio" : root.getNodeType().name());
+
+                result.put(
+                        "tipoRaiz",
+                        root == null
+                                ? "vazio"
+                                : root.getNodeType().name());
+
                 if (root != null && root.isObject()) {
+
                     List<String> fields = new ArrayList<>();
+
                     root.fieldNames().forEachRemaining(fields::add);
+
                     result.put("camposRaiz", fields);
+
                     JsonNode type = root.get("type");
+
                     if (type != null && type.isTextual()) {
                         result.put("tipoGeoJson", type.asText());
                     }
+
                     JsonNode features = root.get("features");
+
                     if (features != null && features.isArray()) {
-                        result.put("quantidadeFeatures", features.size());
+                        result.put(
+                                "quantidadeFeatures",
+                                features.size());
                     }
+
                 } else if (root != null && root.isArray()) {
-                    result.put("quantidadeElementos", root.size());
+
+                    result.put(
+                            "quantidadeElementos",
+                            root.size());
                 }
+
                 return result;
-            } catch (Exception exception) {
-                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT,
-                        "Não foi possível interpretar a estrutura JSON do arquivo.");
+
+            } catch (ResponseStatusException e) {
+                throw e;
+
+            } catch (Exception e) {
+                throw new ResponseStatusException(
+                        HttpStatus.UNPROCESSABLE_CONTENT,
+                        "Não foi possível interpretar a estrutura JSON do arquivo.",
+                        e);
             }
         }
 
-        result.put("tipoEstrutura", "binaria-ou-formato-especializado");
-        result.put("assinatura", identifyBinaryFormat(bytes, format));
-        int headerLength = Math.min(bytes.length, HEADER_BYTES_TO_SHOW);
-        result.put("cabecalhoHexadecimal", HexFormat.of().formatHex(bytes, 0, headerLength));
-        result.put("observacao", "A assinatura e o cabeçalho são informativos; a extração completa depende de um leitor específico para o formato.");
+        /*
+         * Outros formatos: identifica a assinatura binária.
+         */
+        byte[] header = bucketService.readObjectPrefix(
+                location,
+                HEADER_BYTES_TO_SHOW);
+
+        result.put(
+                "tipoEstrutura",
+                "binaria-ou-formato-especializado");
+
+        result.put(
+                "assinatura",
+                identifyBinaryFormat(header, format));
+
+        result.put(
+                "cabecalhoHexadecimal",
+                HexFormat.of().formatHex(header));
+
+        result.put(
+                "observacao",
+                "A assinatura e o cabeçalho são informativos; "
+                        + "a extração completa depende de um leitor "
+                        + "específico para o formato.");
+
         return result;
     }
 
+    /**
+     * Lê uma linha com limite máximo de caracteres.
+     */
+    private String readBoundedLine(BufferedReader reader)
+            throws IOException {
+
+        StringBuilder line = new StringBuilder();
+        int value;
+        boolean readAny = false;
+
+        while ((value = reader.read()) != -1) {
+            readAny = true;
+
+            if (value == '\n') {
+                break;
+            }
+
+            if (value != '\r') {
+                if (line.length() >= MAX_LINE_CHARS) {
+                    throw new ResponseStatusException(
+                            HttpStatus.CONTENT_TOO_LARGE,
+                            "Uma linha do arquivo excede o limite de inspeção de 1.000.000 caracteres.");
+                }
+
+                line.append((char) value);
+            }
+        }
+
+        return !readAny && line.isEmpty()
+                ? null
+                : line.toString();
+    }
+
+    /**
+     * Busca o arquivo pelo identificador.
+     */
     private File findFile(Long fileId) {
+
         if (fileId == null || fileId <= 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
                     "O identificador do arquivo deve ser positivo.");
         }
+
         return fileService.findEntityById(fileId);
     }
 
-    private byte[] readOriginal(File file) throws IOException {
-        if (file.getLocation() == null || file.getLocation().isBlank()) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+    /**
+     * Valida a localização do arquivo no Object Storage.
+     */
+    private String requireLocation(File file) {
+
+        if (file.getLocation() == null
+                || file.getLocation().isBlank()) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
                     "O arquivo não possui localização registrada no Object Storage.");
         }
-        return bucketService.readObjectContent(file.getLocation());
+
+        return file.getLocation();
     }
 
-    private boolean isTextFile(File file, byte[] bytes) {
-        String format = normalizeFormat(file.getFormatFile(), file.getName());
-        if (List.of("csv", "tsv", "txt", "json", "geojson", "xml", "html", "md", "log", "yaml", "yml").contains(format)) {
+    /**
+     * Verifica se o arquivo pode ser tratado como texto.
+     */
+    private boolean isTextFile(File file, byte[] sample) {
+
+        String format = normalizeFormat(
+                file.getFormatFile(),
+                file.getName());
+
+        if (List.of(
+                "csv",
+                "tsv",
+                "txt",
+                "json",
+                "geojson",
+                "xml",
+                "html",
+                "md",
+                "log",
+                "yaml",
+                "yml")
+                .contains(format)) {
+
             return true;
         }
-        int sampleLength = Math.min(bytes.length, 4096);
-        for (int i = 0; i < sampleLength; i++) {
-            int value = bytes[i] & 0xff;
+
+        for (byte item : sample) {
+            int value = item & 0xff;
+
             if (value == 0) {
                 return false;
             }
-            if (value < 0x20 && value != '\n' && value != '\r' && value != '\t' && value != '\f') {
+
+            if (value < 0x20
+                    && value != '\n'
+                    && value != '\r'
+                    && value != '\t'
+                    && value != '\f') {
+
                 return false;
             }
         }
+
         return true;
     }
 
-    private String normalizeFormat(String format, String filename) {
+    /**
+     * Normaliza o formato do arquivo.
+     */
+    private String normalizeFormat(
+            String format,
+            String filename) {
+
         String value = format;
+
         if (value == null || value.isBlank()) {
             value = filename != null && filename.contains(".")
-                    ? filename.substring(filename.lastIndexOf('.') + 1)
+                    ? filename.substring(
+                            filename.lastIndexOf('.') + 1)
                     : "";
         }
-        return value.toLowerCase(Locale.ROOT).replaceFirst("^\\.", "").trim();
+
+        return value.toLowerCase(Locale.ROOT)
+                .replaceFirst("^\\.", "")
+                .trim();
     }
 
-    private String identifyBinaryFormat(byte[] bytes, String extension) {
-        if (bytes.length >= 4 && bytes[0] == 'P' && bytes[1] == 'K') return "ZIP/OOXML (assinatura PK)";
-        if (bytes.length >= 4 && (bytes[0] & 0xff) == 0x25 && bytes[1] == 'P' && bytes[2] == 'D' && bytes[3] == 'F') return "PDF";
-        if (bytes.length >= 3 && (bytes[0] & 0xff) == 0xFF && (bytes[1] & 0xff) == 0xD8 && (bytes[2] & 0xff) == 0xFF) return "JPEG";
-        if (bytes.length >= 8 && (bytes[0] & 0xff) == 0x89 && bytes[1] == 'P' && bytes[2] == 'N' && bytes[3] == 'G') return "PNG";
-        if (bytes.length >= 6 && new String(bytes, 0, 6, StandardCharsets.US_ASCII).startsWith("GIF8")) return "GIF";
-        if (bytes.length >= 4 && bytes[0] == 'O' && bytes[1] == 'b' && bytes[2] == 'j' && bytes[3] == '1') return "Parquet";
-        if (bytes.length >= 4 && bytes[0] == 'S' && bytes[1] == 'Q' && bytes[2] == 'L' && bytes[3] == 'i') return "SQLite";
-        return extension.isBlank() ? "desconhecido" : "formato não reconhecido pela assinatura (extensão ." + extension + ")";
+    /**
+     * Identifica formatos binários por suas assinaturas.
+     */
+    private String identifyBinaryFormat(
+            byte[] bytes,
+            String extension) {
+
+        if (bytes.length >= 4
+                && bytes[0] == 'P'
+                && bytes[1] == 'K') {
+
+            return "ZIP/OOXML (assinatura PK)";
+        }
+
+        if (bytes.length >= 4
+                && (bytes[0] & 0xff) == 0x25
+                && bytes[1] == 'P'
+                && bytes[2] == 'D'
+                && bytes[3] == 'F') {
+
+            return "PDF";
+        }
+
+        if (bytes.length >= 3
+                && (bytes[0] & 0xff) == 0xFF
+                && (bytes[1] & 0xff) == 0xD8
+                && (bytes[2] & 0xff) == 0xFF) {
+
+            return "JPEG";
+        }
+
+        if (bytes.length >= 8
+                && (bytes[0] & 0xff) == 0x89
+                && bytes[1] == 'P'
+                && bytes[2] == 'N'
+                && bytes[3] == 'G') {
+
+            return "PNG";
+        }
+
+        if (bytes.length >= 6
+                && new String(
+                        bytes,
+                        0,
+                        6,
+                        StandardCharsets.US_ASCII)
+                        .startsWith("GIF8")) {
+
+            return "GIF";
+        }
+
+        if (bytes.length >= 4
+                && bytes[0] == 'O'
+                && bytes[1] == 'b'
+                && bytes[2] == 'j'
+                && bytes[3] == '1') {
+
+            return "Parquet";
+        }
+
+        if (bytes.length >= 4
+                && bytes[0] == 'S'
+                && bytes[1] == 'Q'
+                && bytes[2] == 'L'
+                && bytes[3] == 'i') {
+
+            return "SQLite";
+        }
+
+        return extension.isBlank()
+                ? "desconhecido"
+                : "formato não reconhecido pela assinatura (extensão ."
+                        + extension + ")";
     }
 }

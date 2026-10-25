@@ -90,12 +90,13 @@ public class DatasetService {
                     "Os dados para atualização são obrigatórios.");
         }
 
-        // Validar antes de alterar a entidade evita mudanças parciais.
+        // Valida o nome antes de alterar a entidade.
         String name = validateName(request.name());
 
         Dataset dataset = findEntityById(id);
         dataset.setName(name);
 
+        // A entidade gerenciada será atualizada no commit da transação.
         return toDto(dataset);
     }
 
@@ -105,12 +106,12 @@ public class DatasetService {
         // Bloqueia o conjunto antes de verificar se ele pode ser excluído.
         Dataset dataset = findLockedEntityById(id);
 
+        // Verifica os arquivos associados à coleção da entidade.
         boolean hasAssociatedFiles =
                 dataset.getFiles() != null
                         && !dataset.getFiles().isEmpty();
 
-        // A consulta também protege contra associações que não estejam
-        // refletidas na coleção carregada.
+        // Confere também as associações registradas no banco.
         boolean hasFilesInRepository =
                 datasetRepository.hasFiles(id);
 

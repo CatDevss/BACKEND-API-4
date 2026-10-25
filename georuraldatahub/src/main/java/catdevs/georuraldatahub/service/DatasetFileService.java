@@ -34,14 +34,14 @@ public class DatasetFileService {
         // Só depois procura o arquivo.
         File file = file(fileId);
 
-        // A associação é feita pela coleção gerenciada pelo JPA.
-        // O arquivo não é copiado nem salvo novamente.
+        // Verifica se o arquivo já está associado ao conjunto.
         boolean alreadyAssociated = dataset.getFiles()
                 .stream()
                 .anyMatch(existing ->
                         existing.getId() != null
                                 && existing.getId().equals(fileId));
 
+        // Adiciona apenas se ainda não estiver associado.
         if (!alreadyAssociated) {
             dataset.getFiles().add(file);
         }

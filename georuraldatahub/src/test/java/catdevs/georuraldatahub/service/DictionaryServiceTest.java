@@ -189,6 +189,54 @@ class DictionaryServiceTest {
     }
 
     @Test
+    void canSelectUsedOlderVersionWithoutReplacingItWithLatest() {
+        when(ingestions.existsByDictionary_Id(1L))
+                .thenReturn(true);
+
+        assertSame(dictionary, service.acquireForValidation(3L, 1L));
+
+        var order = inOrder(sources, repository);
+
+        order.verify(sources).findLockedById(3L);
+        order.verify(repository).findById(1L);
+
+        verify(repository, never())
+                .findFirstBySource_IdOrderByVersionDesc(any());
+
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void selectedDictionaryMustExistAndBelongToTheSource() {
+        assertEquals(
+                404,
+                assertThrows(
+                        ResponseStatusException.class,
+                        () -> service.acquireForValidation(3L, 99L)
+                ).getStatusCode().value()
+        );
+
+        var other = new Source();
+        other.setId(7L);
+        dictionary.setSource(other);
+
+        assertEquals(
+                422,
+                assertThrows(
+                        ResponseStatusException.class,
+                        () -> service.acquireForValidation(3L, 1L)
+                ).getStatusCode().value()
+        );
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.acquireForValidation(3L, 0L)
+        );
+
+        verify(repository, never()).save(any());
+    }
+
+    @Test
     void rejectsVersionAboveCurrentDatabaseLimit() {
         dictionary.setVersion(99);
 
@@ -286,8 +334,8 @@ class DictionaryServiceTest {
                         "nome",
                         null,
                         List.of(
-                                request.rules().getFirst(),
-                                request.rules().getFirst()
+                                request.rules().get(0),
+                                request.rules().get(0)
                         )
                 )
         );

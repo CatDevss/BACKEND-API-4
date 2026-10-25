@@ -10,6 +10,12 @@ import java.util.List;
 
 public interface FileRepository extends JpaRepository<File, Long> {
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.QueryHints(
+        @jakarta.persistence.QueryHint(name = "jakarta.persistence.lock.timeout", value = "10000"))
+    @Query("select f from File f where f.id = :id")
+    java.util.Optional<File> findLockedById(@Param("id") Long id);
+
     boolean existsByHashAndIngestion_Dictionary_Source_Id(String hash, Long sourceId);
 
     @EntityGraph(attributePaths = {"ingestion", "ingestion.user"})

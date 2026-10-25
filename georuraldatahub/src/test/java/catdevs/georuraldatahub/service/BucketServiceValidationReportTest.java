@@ -15,7 +15,7 @@ import catdevs.georuraldatahub.config.ObjectStorageProperties;
 
 class BucketServiceValidationReportTest {
     private final ObjectStorageClient client = mock(ObjectStorageClient.class);
-    private final BucketService service = new BucketService(client, new ObjectStorageProperties("namespace", "bucket", "compartment"));
+    private final BucketService service = new BucketService(client, new ObjectStorageProperties("namespace", "bucket", "compartment"), new catdevs.georuraldatahub.processing.ProcessingProperties());
 
     @Test void newFilesUseSourcePathsWithoutCollidingWithHistoricalDatasetPaths() throws Exception {
         var file = new org.springframework.mock.web.MockMultipartFile("file", "test.csv", "text/csv", new byte[]{1});
@@ -51,5 +51,19 @@ class BucketServiceValidationReportTest {
         BmcException failure = mock(BmcException.class); when(failure.getStatusCode()).thenReturn(500);
         when(client.getObject(any(GetObjectRequest.class))).thenThrow(failure);
         assertSame(failure, assertThrows(BmcException.class, () -> service.readValidationReport("bruta/test.csv")));
+    }
+
+    @Test void quarantineUsesSameScopeHashAndBytesAsRawWithoutDeletingOriginal() throws Exception {
+        var file = new org.springframework.mock.web.MockMultipartFile("file", "original.zip", "application/zip", new byte[]{1, 2, 3});
+        String raw = "bruta/fontes/4/sha256_original.zip";
+        assertEquals("quarentena/fontes/4/sha256_original.zip", service.uploadToQuarantineZone(file, raw));
+        var request = ArgumentCaptor.forClass(PutObjectRequest.class);
+        verify(client).putObject(request.capture());
+        assertEquals("quarentena/fontes/4/sha256_original.zip", request.getValue().getObjectName());
+        assertEquals(3L, request.getValue().getContentLength());
+        assertArrayEquals(file.getBytes(), request.getValue().getPutObjectBody().readAllBytes());
+        verify(client, never()).deleteObject(any());
+        assertEquals("quarentena/9/hash_test.csv", BucketService.quarantineLocation("bruta/9/hash_test.csv"));
+        assertThrows(IllegalArgumentException.class, () -> BucketService.quarantineLocation("validada/test.csv"));
     }
 }

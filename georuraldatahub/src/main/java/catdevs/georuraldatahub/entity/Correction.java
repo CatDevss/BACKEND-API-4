@@ -15,12 +15,6 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
-/**
- * Registra uma proposta de correção associada a um arquivo.
- *
- * Correções novas começam como RASCUNHO e só podem ser editadas
- * ou excluídas enquanto permanecerem nesse estado.
- */
 @Entity
 @Table(name = "correcao")
 public class Correction {

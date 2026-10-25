@@ -29,8 +29,8 @@ class CollectionServiceTest {
         when(connectors.collect(request)).thenReturn(data);
         service.collect(3L,request);
         verify(datasets).findEntityById(1L); verify(users).findEntityById(2L);
-        verify(dictionaries).findLatestBySourceId(3L);
-        verify(files).uploadCollectedFile(data,1L,2L,3L);
+        verify(dictionaries).findForValidation(3L, null);
+        verify(files).uploadCollectedFile(data,1L,2L,3L,null, "IBGE_MUNICIPIOS");
     }
     @Test void collectsWithoutDatasetAndPassesNullOnlyToOptionalAssociation() throws Exception {
         source("https://www.ibge.gov.br/");
@@ -39,11 +39,35 @@ class CollectionServiceTest {
         when(connectors.collect(request)).thenReturn(data);
         service.collect(3L, request);
         verifyNoInteractions(datasets);
-        verify(files).uploadCollectedFile(data, null, 2L, 3L);
+        verify(files).uploadCollectedFile(data, null, 2L, 3L, null, "IBGE_MUNICIPIOS");
     }
     @Test void scheduledDailyRequestCanOmitDataset() {
         var daily = new CollectionRequest(Product.INPE_QUEIMADAS, null, 2L, "D-1", null, null, null);
         assertNull(CollectionScheduler.resolved(daily).datasetId());
+    }
+    @Test void selectedDictionaryIsCheckedBeforeDownloadAndForwardedToIngestion() throws Exception {
+        source("https://www.ibge.gov.br/");
+        var chosen = new CollectionRequest(Product.IBGE_MUNICIPIOS, null, 2L, "2024", null, null, null, 77L);
+        var data = new CollectedData("file.geojson", "geojson", new byte[]{1}, List.of(), null);
+        when(connectors.collect(chosen)).thenReturn(data);
+        service.collect(3L, chosen);
+        var order = inOrder(dictionaries, connectors, files);
+        order.verify(dictionaries).findForValidation(3L, 77L);
+        order.verify(connectors).collect(chosen);
+        order.verify(files).uploadCollectedFile(data, null, 2L, 3L, 77L, "IBGE_MUNICIPIOS");
+    }
+    @Test void dictionaryFromAnotherSourcePreventsDownload() {
+        source("https://www.ibge.gov.br/");
+        var chosen = new CollectionRequest(Product.IBGE_MUNICIPIOS, null, 2L, "2024", null, null, null, 77L);
+        when(dictionaries.findForValidation(3L, 77L)).thenThrow(new ResponseStatusException(
+                org.springframework.http.HttpStatus.UNPROCESSABLE_CONTENT, "Dicionário de outra fonte."));
+        assertEquals(422, assertThrows(ResponseStatusException.class,
+                () -> service.collect(3L, chosen)).getStatusCode().value());
+        verifyNoInteractions(connectors, files);
+    }
+    @Test void resolvingScheduledDayPreservesDictionarySelection() {
+        var daily = new CollectionRequest(Product.INPE_QUEIMADAS, null, 2L, "D-1", null, null, null, 77L);
+        assertEquals(77L, CollectionScheduler.resolved(daily).dictionaryId());
     }
     @Test void rejectsWrongAgencyBeforeNetworkOrUpload() {
         source("https://www.inpe.br/");
@@ -52,7 +76,7 @@ class CollectionServiceTest {
     }
     @Test void missingDictionaryPreventsDownload() {
         source("https://www.ibge.gov.br/");
-        when(dictionaries.findLatestBySourceId(3L)).thenThrow(new IllegalArgumentException("Sem dicionário"));
+        when(dictionaries.findForValidation(3L, null)).thenThrow(new IllegalArgumentException("Sem dicionário"));
         assertThrows(IllegalArgumentException.class, () -> service.collect(3L,request));
         verifyNoInteractions(connectors,files);
     }

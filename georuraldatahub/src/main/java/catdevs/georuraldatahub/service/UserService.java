@@ -37,4 +37,18 @@ public class UserService {
                         HttpStatus.BAD_REQUEST,
                         "Usuário não encontrado"));
     }
+
+    public User findEntityByEmail(String email) {
+
+        if (email == null || email.isBlank()) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "O token autenticado não contém um e-mail válido.");
+        }
+
+        return userRepository.findByEmailIgnoreCase(email.trim())
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.FORBIDDEN,
+                        "O usuário autenticado não está cadastrado no sistema."));
+    }
 }

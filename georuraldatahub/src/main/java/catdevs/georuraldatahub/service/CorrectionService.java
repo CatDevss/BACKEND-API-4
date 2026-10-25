@@ -1,6 +1,7 @@
 package catdevs.georuraldatahub.service;
 
 import java.util.List;
+import java.util.Objects;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -12,11 +13,6 @@ import catdevs.georuraldatahub.entity.File;
 import catdevs.georuraldatahub.entity.User;
 import catdevs.georuraldatahub.repository.CorrectionRepository;
 
-/**
- * Regras de negócio para criação e gerenciamento de correções.
- *
- * Uma correção só pode ser editada ou excluída enquanto estiver em RASCUNHO.
- */
 @Service
 public class CorrectionService {
 
@@ -37,26 +33,28 @@ public class CorrectionService {
         this.userService = userService;
     }
 
-    /**
-     * Cria uma correção em rascunho associada a um arquivo e a um usuário.
-     */
     @Transactional
     public Correction create(
             Long fileId,
-            Long userId,
+            Long actorUserId,
             String fieldName,
             String originalValue,
             String proposedValue) {
 
-        validateRequiredText(fieldName, "O nome do campo é obrigatório.");
-        validateRequiredText(proposedValue, "O valor proposto é obrigatório.");
+        validateRequiredText(
+                fieldName,
+                "O nome do campo é obrigatório.");
+
+        validateRequiredText(
+                proposedValue,
+                "O valor proposto é obrigatório.");
 
         File file = fileService.findEntityById(fileId);
-        User user = userService.findEntityById(userId);
+        User actor = userService.findEntityById(actorUserId);
 
         Correction correction = new Correction();
         correction.setFile(file);
-        correction.setUser(user);
+        correction.setUser(actor);
         correction.setFieldName(fieldName.trim());
         correction.setOriginalValue(originalValue);
         correction.setProposedValue(proposedValue);
@@ -65,79 +63,80 @@ public class CorrectionService {
         return correctionRepository.save(correction);
     }
 
-    /**
-     * Lista todas as correções de um arquivo,
-     * da mais recente para a mais antiga.
-     */
     @Transactional(readOnly = true)
     public List<Correction> findByFile(Long fileId) {
 
         fileService.findEntityById(fileId);
 
-        return correctionRepository.findByFile_IdOrderByCreatedAtDesc(fileId);
+        return correctionRepository
+                .findByFile_IdOrderByCreatedAtDesc(fileId);
     }
 
-    /**
-     * Consulta uma correção específica pertencente ao arquivo informado.
-     */
     @Transactional(readOnly = true)
-    public Correction findById(Long fileId, Long correctionId) {
+    public Correction findById(
+            Long fileId,
+            Long correctionId) {
 
         fileService.findEntityById(fileId);
 
-        return correctionRepository.findByIdAndFile_Id(correctionId, fileId)
+        return correctionRepository
+                .findByIdAndFile_Id(correctionId, fileId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         "Correção não encontrada para o arquivo informado."));
     }
 
-    /**
-     * Atualiza os dados de uma correção,
-     * desde que ela ainda esteja em rascunho.
-     */
     @Transactional
     public Correction update(
             Long fileId,
             Long correctionId,
+            Long actorUserId,
             String fieldName,
             String proposedValue) {
 
-        validateRequiredText(fieldName, "O nome do campo é obrigatório.");
-        validateRequiredText(proposedValue, "O valor proposto é obrigatório.");
+        validateRequiredText(
+                fieldName,
+                "O nome do campo é obrigatório.");
+
+        validateRequiredText(
+                proposedValue,
+                "O valor proposto é obrigatório.");
 
         Correction correction = findById(fileId, correctionId);
 
+        ensureOwner(correction, actorUserId);
         ensureDraft(correction);
 
         correction.setFieldName(fieldName.trim());
         correction.setProposedValue(proposedValue);
 
-        // Preserva o valor original para manter o histórico da correção.
+        // Mantém o valor original para preservar o histórico.
         return correctionRepository.save(correction);
     }
 
-    /**
-     * Exclui uma correção somente se ela ainda estiver em rascunho.
-     */
     @Transactional
-    public void delete(Long fileId, Long correctionId) {
+    public void delete(
+            Long fileId,
+            Long correctionId,
+            Long actorUserId) {
 
         Correction correction = findById(fileId, correctionId);
 
+        ensureOwner(correction, actorUserId);
         ensureDraft(correction);
 
         correctionRepository.delete(correction);
     }
 
-    /**
-     * Marca a correção como aplicada.
-     * Depois disso, edição e exclusão são bloqueadas.
-     */
     @Transactional
-    public Correction markAsApplied(Long fileId, Long correctionId) {
+    public Correction markAsApplied(
+            Long fileId,
+            Long correctionId,
+            Long actorUserId) {
 
         Correction correction = findById(fileId, correctionId);
 
+        ensureOwner(correction, actorUserId);
         ensureDraft(correction);
 
         correction.setStatus(STATUS_APPLIED);
@@ -145,19 +144,41 @@ public class CorrectionService {
         return correctionRepository.save(correction);
     }
 
-    private void ensureDraft(Correction correction) {
+    private void ensureOwner(
+            Correction correction,
+            Long actorUserId) {
 
-        if (!STATUS_DRAFT.equalsIgnoreCase(correction.getStatus())) {
+        if (actorUserId == null
+                || correction.getUser() == null
+                || !Objects.equals(
+                        correction.getUser().getId(),
+                        actorUserId)) {
+
             throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "Somente correções em rascunho podem ser editadas ou excluídas.");
+                    HttpStatus.FORBIDDEN,
+                    "Você não tem permissão para alterar esta correção.");
         }
     }
 
-    private void validateRequiredText(String value, String message) {
+    private void ensureDraft(Correction correction) {
+
+        if (!STATUS_DRAFT.equalsIgnoreCase(
+                correction.getStatus())) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Somente correções em rascunho podem ser editadas, excluídas ou aplicadas.");
+        }
+    }
+
+    private void validateRequiredText(
+            String value,
+            String message) {
 
         if (value == null || value.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    message);
         }
     }
 }
