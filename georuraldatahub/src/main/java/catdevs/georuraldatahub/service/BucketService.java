@@ -132,16 +132,12 @@ public class BucketService {
                 } catch (java.security.NoSuchAlgorithmException error) { throw new IllegalStateException(error); }
         }
 
-        public String uploadValidatedContent(byte[] content, Long datasetId, String hash, String filename) {
-                return uploadValidatedScope(content, datasetId.toString(), hash, filename);
+        public String uploadSourceTreatedContent(byte[] content, Long sourceId, String hash, String filename) {
+                return uploadTreatedScope(content, "fontes/" + sourceId, hash, filename);
         }
 
-        public String uploadSourceValidatedContent(byte[] content, Long sourceId, String hash, String filename) {
-                return uploadValidatedScope(content, "fontes/" + sourceId, hash, filename);
-        }
-
-        private String uploadValidatedScope(byte[] content, String scope, String hash, String filename) {
-                String key = "validada/" + scope + "/" + hash + "_" + filename;
+        private String uploadTreatedScope(byte[] content, String scope, String hash, String filename) {
+                String key = "tratada/" + scope + "/" + hash + "_" + filename;
                 try (var input = new java.io.ByteArrayInputStream(content)) {
                         client.putObject(PutObjectRequest.builder()
                                 .namespaceName(props.namespace()).bucketName(props.bucketName())
@@ -243,8 +239,8 @@ public class BucketService {
         }
 
         public JsonNode readRasterManifest(String location) throws IOException {
-                if (location == null || !location.startsWith("validada/") || !location.endsWith(".raster.json"))
-                        throw new IllegalArgumentException("Informe o manifesto da versão raster aprovada.");
+                if (location == null || !location.startsWith("tratada/") || !location.endsWith(".raster.json"))
+                        throw new IllegalArgumentException("Informe o manifesto da versão raster tratada.");
                 var request = GetObjectRequest.builder().namespaceName(props.namespace()).bucketName(props.bucketName())
                         .objectName(location).build();
                 try (InputStream input = client.getObject(request).getInputStream()) {
@@ -257,7 +253,7 @@ public class BucketService {
 
         public static String workingLocation(String location, String zone) {
                 if (location == null || !location.contains("/")
-                        || !java.util.Set.of("validada/", "quarentena/", "tratada/", "publicada/").contains(zone))
+                        || !java.util.Set.of("quarentena/", "tratada/", "publicada/").contains(zone))
                         throw new IllegalArgumentException("Localização ou zona de trabalho inválida.");
                 return zone + location.substring(location.indexOf('/') + 1);
         }
@@ -265,7 +261,7 @@ public class BucketService {
         /** Copia por streaming; a origem é preservada e o destino nunca pode ser a zona bruta. */
         public String copyWorkingObject(String source, String target) throws IOException {
                 if (source == null || source.equals(target) || target == null
-                        || java.util.Set.of("validada", "quarentena", "tratada", "publicada").stream()
+                        || java.util.Set.of("quarentena", "tratada", "publicada").stream()
                                 .noneMatch(zone -> target.startsWith(zone + "/")))
                         throw new IllegalArgumentException("Destino de cópia inválido.");
                 var object = client.getObject(GetObjectRequest.builder().namespaceName(props.namespace())

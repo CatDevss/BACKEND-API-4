@@ -25,8 +25,9 @@ class OriginalAndWorkingCopyTest {
         verify(client).putObject(argThat(request -> "*".equals(request.getIfNoneMatch())
                 && hash.equals(request.getOpcMeta().get("sha256"))));
         assertThrows(IllegalArgumentException.class, () -> bucket.deleteObject("bruta/fontes/4/original.csv"));
-        assertThrows(IllegalArgumentException.class, () -> bucket.copyWorkingObject("validada/test.csv", "bruta/test.csv"));
+        assertThrows(IllegalArgumentException.class, () -> bucket.copyWorkingObject("tratada/test.csv", "bruta/test.csv"));
         verify(client, never()).deleteObject(any());
+        assertThrows(IllegalArgumentException.class, () -> BucketService.workingLocation("bruta/test.csv", "validada/"));
         var original = new catdevs.georuraldatahub.entity.File();
         original.setLocation("bruta/original.csv");
         assertThrows(IllegalStateException.class, () -> original.setLocation("bruta/outro.csv"));
@@ -59,8 +60,8 @@ class OriginalAndWorkingCopyTest {
     @Test void workingCopyIsStreamedIntoNextZoneAndKeepsOriginalUntouched() throws Exception {
         when(client.getObject(any())).thenReturn(GetObjectResponse.builder().inputStream(new ByteArrayInputStream(file.getBytes()))
                 .contentLength(3L).contentType("text/csv").build());
-        assertEquals("tratada/revisao.csv", bucket.copyWorkingObject("validada/revisao.csv", "tratada/revisao.csv"));
-        verify(client).getObject(argThat(request -> "validada/revisao.csv".equals(request.getObjectName())));
+        assertEquals("tratada/revisao.csv", bucket.copyWorkingObject("quarentena/revisao.csv", "tratada/revisao.csv"));
+        verify(client).getObject(argThat(request -> "quarentena/revisao.csv".equals(request.getObjectName())));
         var request = org.mockito.ArgumentCaptor.forClass(PutObjectRequest.class); verify(client).putObject(request.capture());
         assertEquals("tratada/revisao.csv", request.getValue().getObjectName());
         assertEquals("text/csv", request.getValue().getContentType());

@@ -35,7 +35,7 @@ class GeospatialIngestionTest {
         when(files.save(any())).thenAnswer(i -> { File entity = i.getArgument(0); entity.setId(6L); return entity; });
         when(bucket.uploadToSourceRawZone(any(), any(), any(), any())).thenReturn("bruta/fontes/4/original");
         when(bucket.uploadValidationReport(any(), any())).thenReturn("bruta/fontes/4/original.validation.json");
-        when(bucket.uploadSourceValidatedContent(any(), any(), any(), any())).thenReturn("validada/fontes/4/result");
+        when(bucket.uploadSourceTreatedContent(any(), any(), any(), any())).thenReturn("tratada/fontes/4/result");
         when(bucket.uploadCollectionArtifact(any(), any(), any())).thenAnswer(i -> i.getArgument(0));
     }
     @AfterEach void cleanup() { TransactionSynchronizationManager.clearSynchronization(); }
@@ -49,7 +49,7 @@ class GeospatialIngestionTest {
         var response = service.uploadToSource(file("parana-utm.gpkg"), 4L, 2L, null);
         assertEquals("VALIDO", response.validation().status());
         assertEquals("gpkg", response.formatFile());
-        verify(bucket).uploadSourceValidatedContent(any(), eq(4L), any(), eq("parana-utm.gpkg.geojson"));
+        verify(bucket).uploadSourceTreatedContent(any(), eq(4L), any(), eq("parana-utm.gpkg.geojson"));
         verify(bucket).uploadCollectionArtifact(eq("bruta/fontes/4/original.geospatial.json"), any(), eq("application/json"));
         verifyNoInteractions(datasets, quarantine);
     }
@@ -62,7 +62,7 @@ class GeospatialIngestionTest {
         var file = new MockMultipartFile("file", "projetado.geojson", "application/geo+json", data);
         var response = service.uploadToSource(file, 4L, 2L, null);
         assertEquals("VALIDO", response.validation().status());
-        verify(bucket).uploadSourceValidatedContent(any(), eq(4L), any(), eq("projetado.geojson"));
+        verify(bucket).uploadSourceTreatedContent(any(), eq(4L), any(), eq("projetado.geojson"));
         var metadata = ArgumentCaptor.forClass(byte[].class);
         verify(bucket).uploadCollectionArtifact(eq("bruta/fontes/4/original.geospatial.json"), metadata.capture(), any());
         assertEquals(31982, new com.fasterxml.jackson.databind.ObjectMapper().readTree(metadata.getValue()).path("sourceSrid").asInt());
@@ -90,13 +90,13 @@ class GeospatialIngestionTest {
         var response = service.uploadToSource(file("parana-utm.tif"), 4L, 2L, null);
         assertEquals("VALIDO", response.validation().status()); assertEquals(1, response.validation().validRecords());
         var content = ArgumentCaptor.forClass(byte[].class);
-        verify(bucket).uploadSourceValidatedContent(content.capture(), eq(4L), any(), eq("parana-utm.tif.raster.json"));
+        verify(bucket).uploadSourceTreatedContent(content.capture(), eq(4L), any(), eq("parana-utm.tif.raster.json"));
         var manifest = new com.fasterxml.jackson.databind.ObjectMapper().readTree(content.getValue());
         assertEquals("RASTER", manifest.path("kind").asText()); assertEquals(31982, manifest.path("sourceSrid").asInt());
         assertFalse(manifest.has("features")); verifyNoInteractions(datasets, quarantine);
-        verify(bucket).copyWorkingObject("bruta/fontes/4/original", "validada/fontes/4/original");
+        verify(bucket).copyWorkingObject("bruta/fontes/4/original", "tratada/fontes/4/original");
         var captured = ArgumentCaptor.forClass(Version.class); verify(versions, times(2)).save(captured.capture());
-        assertEquals("validada/fontes/4/original", captured.getValue().getLocation());
+        assertEquals("tratada/fontes/4/original", captured.getValue().getLocation());
         assertEquals("bruta/fontes/4/original", captured.getValue().getFile().getLocation());
     }
     @Test void corruptRasterIsPreservedInRawZoneAndQuarantinedWithoutValidatedVersion() throws Exception {
@@ -106,7 +106,7 @@ class GeospatialIngestionTest {
         assertEquals("REJEITADO", response.validation().status());
         assertTrue(response.validation().records().getFirst().errors().getFirst().startsWith("INVALID_GEOSPATIAL_FILE"));
         verify(bucket).uploadToSourceRawZone(eq(corrupt), eq(4L), any(), any());
-        verify(bucket, never()).uploadSourceValidatedContent(any(), any(), any(), any());
+        verify(bucket, never()).uploadSourceTreatedContent(any(), any(), any(), any());
         verify(quarantine).save(argThat(q -> "ARQUIVO_REJEITADO".equals(q.getStatus())));
         verify(bucket).uploadToQuarantineZone(same(corrupt), eq("bruta/fontes/4/original"));
         verify(bucket).uploadValidationReport(eq("quarentena/fontes/4/original"), contains("INVALID_GEOSPATIAL_FILE"));

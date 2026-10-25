@@ -46,9 +46,11 @@ public class LegacySpatialLayerStore {
         if (!Set.of("geojson", "json", "csv", "zip", "gpkg").contains(format))
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT, "Formato não suportado para carga espacial: " + format);
         var version = versions.findFirstByFile_IdAndStatusAndLocationStartingWithOrderByVersionNumberDesc(
-                fileId, VersionStatus.BRUTA, "validada/")
+                fileId, VersionStatus.TRATADA, "tratada/")
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT,
-                        "Arquivo sem versão validada pendente de carga (ou já carregada)."));
+                        "Arquivo sem cópia tratada disponível para carga."));
+        if (!layers.findByVersion_Id(version.getId()).isEmpty())
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Esta versão já possui camada espacial.");
         return new Input(datasetId, fileId, version.getId(), version.getLocation(), file.getLocation());
     }
 
@@ -65,12 +67,21 @@ public class LegacySpatialLayerStore {
         // Open EntityManager in View pode manter entidades da leitura anterior no cache da requisição.
         entityManager.refresh(dataset);
         entityManager.refresh(version);
-        if (version.getStatus() != VersionStatus.BRUTA || !input.location().equals(version.getLocation())
-                || !input.location().startsWith("validada/")
+        if (version.getStatus() != VersionStatus.TRATADA || !input.location().equals(version.getLocation())
+                || !input.location().startsWith("tratada/")
                 || !file.getId().equals(version.getFile().getId())
                 || dataset.getFiles().stream().noneMatch(f -> f.getId().equals(input.fileId())))
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Arquivo já carregado ou associação/versão alterada durante a leitura.");
-        String target = BucketService.workingLocation(input.location(), "tratada/");
+        var latest = versions.findFirstByFile_IdOrderByVersionNumberDesc(file.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "Arquivo sem versão atual."));
+        if (!latest.getId().equals(input.versionId()) || !layers.findByVersion_Id(input.versionId()).isEmpty())
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "A cópia foi atualizada ou já recebeu uma camada.");
+        var output = new catdevs.georuraldatahub.entity.Version();
+        output.setFile(file);
+        output.setVersionNumber(latest.getVersionNumber() + 1);
+        output.setStatus(VersionStatus.BRUTA);
+        String target = "tratada/legado/" + file.getId() + "/versao-" + output.getVersionNumber() + "/"
+                + input.location().substring(input.location().lastIndexOf('/') + 1);
         org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
                 new org.springframework.transaction.support.TransactionSynchronization() {
                     @Override public void afterCompletion(int status) {
@@ -82,17 +93,18 @@ public class LegacySpatialLayerStore {
                     }
                 });
         bucket.copyWorkingObject(input.location(), target);
+        output.setLocation(target);
+        output = versions.saveAndFlush(output);
         var layer = new Layer();
         layer.setDataset(dataset);
-        layer.setVersion(version);
+        layer.setVersion(output);
         layer.setName(file.getName());
         layer.setGeometryType(extraction.geometryType());
         layer.setSrid(4326);
         layer = layers.saveAndFlush(layer);
         int inserted = features.insertBatch(layer.getId(), 4326, extraction.features());
-        version.setLocation(target);
-        version.setStatus(VersionStatus.TRATADA);
-        versions.saveAndFlush(version);
+        output.setStatus(VersionStatus.TRATADA);
+        versions.saveAndFlush(output);
         return new SpatialLayerService.LayerLoadResult(layer.getId(), layer.getName(), layer.getGeometryType(), 4326, inserted);
     }
 }

@@ -38,7 +38,7 @@ class FileServiceValidationTest {
         when(dictionaries.rules(dictionary)).thenReturn(List.of(FieldRule.required("id", FieldType.INTEGER)));
         when(bucket.uploadToSourceRawZone(any(), eq(4L), any(), any())).thenReturn("bruta/test.csv");
         when(bucket.uploadValidationReport(eq("bruta/test.csv"), any())).thenReturn("bruta/test.csv.validation.json");
-        when(bucket.uploadSourceValidatedContent(any(), eq(4L), any(), any())).thenReturn("validada/test.csv");
+        when(bucket.uploadSourceTreatedContent(any(), eq(4L), any(), any())).thenReturn("tratada/test.csv");
         when(ingestions.save(any())).thenAnswer(inv -> { DataIngestion i = inv.getArgument(0); i.setId(5L); return i; });
         when(files.save(any())).thenAnswer(inv -> { File f = inv.getArgument(0); f.setId(6L); return f; });
     }
@@ -55,7 +55,7 @@ class FileServiceValidationTest {
         verify(bucket).uploadValidationReport(eq("bruta/test.csv"), any());
         verify(bucket).uploadValidationReport(eq("quarentena/test.csv"), any());
         verify(bucket).uploadToQuarantineZone(any(), eq("bruta/test.csv"));
-        verify(bucket, never()).uploadSourceValidatedContent(any(), any(), any(), any());
+        verify(bucket, never()).uploadSourceTreatedContent(any(), any(), any(), any());
     }
     @Test void sourceUploadValidatesAndStoresWithoutLookingUpOrAssociatingDataset() throws Exception {
         var response = service.uploadToSource(csv("id\n1"), 4L, 2L);
@@ -65,7 +65,12 @@ class FileServiceValidationTest {
         assertTrue(dataset.getFiles().isEmpty());
         verify(files).save(argThat(file -> file.getIngestion().getDictionary().getId().equals(3L)));
         verify(bucket).uploadToSourceRawZone(any(), eq(4L), any(), eq("test.csv"));
-        verify(bucket).uploadSourceValidatedContent(any(), eq(4L), any(), eq("test.csv"));
+        verify(bucket).uploadSourceTreatedContent(any(), eq(4L), any(), eq("test.csv"));
+        var recorded = ArgumentCaptor.forClass(Version.class); verify(versions, times(2)).save(recorded.capture());
+        assertEquals(VersionStatus.BRUTA, recorded.getAllValues().get(0).getStatus());
+        assertEquals(VersionStatus.TRATADA, recorded.getAllValues().get(1).getStatus());
+        assertEquals("tratada/test.csv", recorded.getAllValues().get(1).getLocation());
+        assertEquals("bruta/test.csv", recorded.getAllValues().get(1).getFile().getLocation());
     }
     @Test void sourceCollectionValidatesAndStoresWithoutDataset() throws Exception {
         var data = new catdevs.georuraldatahub.collection.CollectedData("test.csv", "csv",
@@ -124,7 +129,7 @@ class FileServiceValidationTest {
         var response = service.uploadFile(csv("id\n1\nx\n2"), 1L, 2L, 4L);
         assertEquals("PARCIAL", response.validation().status()); assertEquals(2, response.validation().validRecords());
         assertEquals(3L, response.validation().dictionaryId()); assertEquals(2, response.validation().dictionaryVersion());
-        verify(bucket, never()).uploadSourceValidatedContent(any(), any(), any(), any());
+        verify(bucket, never()).uploadSourceTreatedContent(any(), any(), any(), any());
         var capturedVersions = ArgumentCaptor.forClass(Version.class);
         verify(versions, times(2)).save(capturedVersions.capture());
         assertEquals(List.of(VersionStatus.BRUTA, VersionStatus.QUARENTENA), capturedVersions.getAllValues().stream().map(Version::getStatus).toList());
@@ -145,7 +150,7 @@ class FileServiceValidationTest {
     @Test void entirelyRejectedFileNeverProducesValidatedVersion() throws Exception {
         var response = service.uploadFile(csv("id\nx"), 1L, 2L, 4L);
         assertEquals("REJEITADO", response.validation().status());
-        verify(bucket, never()).uploadSourceValidatedContent(any(), any(), any(), any());
+        verify(bucket, never()).uploadSourceTreatedContent(any(), any(), any(), any());
         verify(versions).save(argThat(v -> v.getStatus() == VersionStatus.BRUTA));
         verify(quarantine).save(argThat(q -> q.getStatus().equals("ARQUIVO_REJEITADO")));
         assertEquals(IngestionStatus.ERRO, dataset.getFiles().getFirst().getIngestion().getIngStatus());
@@ -166,7 +171,7 @@ class FileServiceValidationTest {
     @Test void malformedFileRejectsAllRows() throws Exception {
         var report = service.uploadFile(csv("id\n1\n\"unterminated"), 1L, 2L, 4L).validation();
         assertEquals("REJEITADO", report.status()); assertEquals(0, report.validRecords());
-        verify(bucket, never()).uploadSourceValidatedContent(any(), any(), any(), any());
+        verify(bucket, never()).uploadSourceTreatedContent(any(), any(), any(), any());
     }
     @Test void duplicateUploadFailsBeforeStorageAndValidation() throws Exception {
         when(files.existsByHashAndIngestion_Dictionary_Source_Id(any(), eq(4L))).thenReturn(true);
@@ -177,11 +182,11 @@ class FileServiceValidationTest {
     @Test void transactionRollbackRemovesWorkingCopyAndPreservesRawOriginal() throws Exception {
         service.uploadFile(csv("id\n1"), 1L, 2L, 4L);
         for (var sync : TransactionSynchronizationManager.getSynchronizations()) sync.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
-        verify(bucket, never()).deleteObject(startsWith("bruta/")); verify(bucket).deleteObject("validada/test.csv");
+        verify(bucket, never()).deleteObject(startsWith("bruta/")); verify(bucket).deleteObject("tratada/test.csv");
         verify(bucket, never()).deleteObject("bruta/test.csv.validation.json");
     }
     @Test void failedValidatedUploadLeavesNoApprovedVersion() throws Exception {
-        when(bucket.uploadSourceValidatedContent(any(), any(), any(), any())).thenThrow(new IllegalStateException("storage offline"));
+        when(bucket.uploadSourceTreatedContent(any(), any(), any(), any())).thenThrow(new IllegalStateException("storage offline"));
         assertThrows(IllegalStateException.class, () -> service.uploadFile(csv("id\n1"), 1L, 2L, 4L));
         for (var sync : TransactionSynchronizationManager.getSynchronizations()) sync.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
         verify(bucket, never()).deleteObject(startsWith("bruta/"));
@@ -216,7 +221,7 @@ class FileServiceValidationTest {
         var report = ArgumentCaptor.forClass(String.class);
         verify(bucket).uploadValidationReport(eq("quarentena/test.csv"), report.capture());
         assertTrue(report.getValue().contains("INVALID_TYPE"));
-        verify(bucket, never()).uploadSourceValidatedContent(any(), any(), any(), any());
+        verify(bucket, never()).uploadSourceTreatedContent(any(), any(), any(), any());
         for (var sync : TransactionSynchronizationManager.getSynchronizations()) sync.afterCompletion(TransactionSynchronization.STATUS_COMMITTED);
         verify(bucket, never()).deleteObject(any());
     }
@@ -226,7 +231,7 @@ class FileServiceValidationTest {
         service.uploadToSource(original, 4L, 2L);
         verify(bucket).uploadToQuarantineZone(same(original), eq("bruta/test.csv"));
         verify(bucket).uploadValidationReport(eq("quarentena/test.csv"), contains("REJEITADO"));
-        verify(bucket, never()).uploadSourceValidatedContent(any(), any(), any(), any());
+        verify(bucket, never()).uploadSourceTreatedContent(any(), any(), any(), any());
         for (var sync : TransactionSynchronizationManager.getSynchronizations()) sync.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
         verify(bucket, never()).deleteObject(startsWith("bruta/"));
         verify(bucket).deleteObject("quarentena/test.csv");
@@ -242,7 +247,7 @@ class FileServiceValidationTest {
         verify(bucket, never()).deleteObject(startsWith("bruta/"));
         verify(bucket, never()).deleteObject("bruta/test.csv.validation.json");
         verify(bucket).deleteObject("quarentena/test.csv");
-        verify(bucket, never()).uploadSourceValidatedContent(any(), any(), any(), any());
+        verify(bucket, never()).uploadSourceTreatedContent(any(), any(), any(), any());
     }
 
     @Test void failedQuarantineReportUploadRollsBackBothQuarantineArtifacts() throws Exception {

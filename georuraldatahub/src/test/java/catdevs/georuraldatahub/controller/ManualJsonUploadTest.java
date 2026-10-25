@@ -44,7 +44,7 @@ class ManualJsonUploadTest {
         when(ingestions.save(any())).thenAnswer(inv -> { DataIngestion i = inv.getArgument(0); i.setId(5L); return i; });
         when(files.save(any())).thenAnswer(inv -> { File f = inv.getArgument(0); f.setId(6L); return f; });
         when(bucket.uploadToSourceRawZone(any(), eq(4L), any(), any())).thenReturn("bruta/fontes/4/test.JSON");
-        when(bucket.uploadSourceValidatedContent(any(), eq(4L), any(), any())).thenReturn("validada/fontes/4/test.JSON");
+        when(bucket.uploadSourceTreatedContent(any(), eq(4L), any(), any())).thenReturn("tratada/fontes/4/test.JSON");
     }
     @AfterEach void cleanup() { TransactionSynchronizationManager.clearSynchronization(); }
 
@@ -56,7 +56,7 @@ class ManualJsonUploadTest {
                 .andExpect(jsonPath("$.validation.validRecords").value(1));
         verifyNoInteractions(datasets);
         var content = org.mockito.ArgumentCaptor.forClass(byte[].class);
-        verify(bucket).uploadSourceValidatedContent(content.capture(), eq(4L), any(), any());
+        verify(bucket).uploadSourceTreatedContent(content.capture(), eq(4L), any(), any());
         assertTrue(new com.fasterxml.jackson.databind.ObjectMapper().readTree(content.getValue()).isArray());
     }
     @Test void manualGeoJsonPreservesAllDeclaredPropertiesAndGeometry() throws Exception {
@@ -74,7 +74,7 @@ class ManualJsonUploadTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.validation.status").value("VALIDO"));
         var content = org.mockito.ArgumentCaptor.forClass(byte[].class);
-        verify(bucket).uploadSourceValidatedContent(content.capture(), eq(4L), any(), any());
+        verify(bucket).uploadSourceTreatedContent(content.capture(), eq(4L), any(), any());
         var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
         assertEquals(mapper.readTree(input), mapper.readTree(content.getValue()));
         verifyNoInteractions(datasets);

@@ -29,7 +29,7 @@ class JpaTreatmentStoreTest {
     private final File file = new File();
     private final Version original = new Version();
     private final TreatmentInputService.Input input = new TreatmentInputService.Input(7L, 10L, "arquivo.csv", "csv", "bruta/original.csv",
-            "validada/original.csv", 5L, "hash", 2L, 1, List.of());
+            "tratada/original.csv", 5L, "hash", 2L, 1, List.of());
     private final TreatmentRequest request = new TreatmentRequest(1L, 3L, null, false, null);
     private final ObjectMapper mapper = new ObjectMapper();
     @BeforeEach void setup() {
@@ -38,8 +38,8 @@ class JpaTreatmentStoreTest {
         when(executions.findById(20L)).thenReturn(Optional.of(execution));
         when(executions.saveAndFlush(any())).thenAnswer(i -> i.getArgument(0));
         file.setId(7L); file.setHash("hash"); file.setLocation("bruta/original.csv");
-        original.setId(10L); original.setFile(file); original.setLocation("validada/original.csv");
-        original.setStatus(VersionStatus.BRUTA); original.setVersionNumber(2);
+        original.setId(10L); original.setFile(file); original.setLocation("tratada/original.csv");
+        original.setStatus(VersionStatus.TRATADA); original.setVersionNumber(2);
         when(files.findLockedById(7L)).thenReturn(Optional.of(file));
         when(versions.findById(10L)).thenReturn(Optional.of(original));
         when(versions.findFirstByFile_IdOrderByVersionNumberDesc(7L)).thenReturn(Optional.of(original));
@@ -55,7 +55,7 @@ class JpaTreatmentStoreTest {
     @Test void createsAnotherVersionAndFlushesFeaturesBeforeApprovingResult() throws Exception {
         var result = store.complete(20L, input, request, point(), mapper.createObjectNode(), 2, 1, false);
         assertEquals("CONCLUIDO", result.status()); assertEquals(11L, result.outputVersionId()); assertEquals(30L, result.layerId());
-        assertEquals(VersionStatus.BRUTA, original.getStatus()); assertEquals("bruta/original.csv", file.getLocation());
+        assertEquals(VersionStatus.TRATADA, original.getStatus()); assertEquals("bruta/original.csv", file.getLocation());
         var argument = ArgumentCaptor.forClass(Version.class); verify(versions, times(2)).saveAndFlush(argument.capture());
         assertEquals(3, argument.getValue().getVersionNumber()); assertEquals(VersionStatus.TRATADA, argument.getValue().getStatus());
         verify(features).insertBatch(eq(30L), eq(4326), any());
@@ -86,7 +86,7 @@ class JpaTreatmentStoreTest {
         verifyNoInteractions(bucket, layers, features);
     }
     @Test void rasterStoresCoverageAndGridMetadataWithoutVectorFeaturesOrDataset() throws Exception {
-        String location = "validada/original.tif";
+        String location = "tratada/original.tif";
         original.setLocation(location);
         var rasterInput = new TreatmentInputService.Input(7L, 10L, "original.tif", "tif", "bruta/original.tif",
                 location, 5L, "hash", 2L, 1, List.of());
@@ -101,7 +101,7 @@ class JpaTreatmentStoreTest {
         var captured = ArgumentCaptor.forClass(RasterMetadata.class); verify(rasters).saveAndFlush(captured.capture());
         assertEquals(31982, captured.getValue().getSourceSrid()); assertEquals(4326, captured.getValue().getFootprint().getSRID());
         assertEquals("tratada/fontes/5/7/execucao-20.tif", captured.getValue().getLocation());
-        verify(bucket).copyWorkingObject("validada/original.tif", "tratada/fontes/5/7/execucao-20.tif");
+        verify(bucket).copyWorkingObject("tratada/original.tif", "tratada/fontes/5/7/execucao-20.tif");
         var output = ArgumentCaptor.forClass(Version.class); verify(versions, times(2)).saveAndFlush(output.capture());
         assertEquals("tratada/fontes/5/7/execucao-20.tif", output.getValue().getLocation());
         assertEquals("bruta/original.csv", file.getLocation());

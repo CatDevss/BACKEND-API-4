@@ -194,7 +194,7 @@ public class FileService {
                 accepted = validationService.acceptedContent(input, prepared == null ? format : "geojson", records);
             }
         }
-        String validatedFilename = sanitizedFilename + (prepared == null || java.util.Set.of("json", "geojson").contains(format)
+        String workingFilename = sanitizedFilename + (prepared == null || java.util.Set.of("json", "geojson").contains(format)
                 ? "" : raster ? ".raster.json" : ".geojson");
         // O conteúdo bruto fica guardado para auditoria. Só o arquivo filtrado segue para tratamento.
         String location = bucketService.uploadToSourceRawZone(multipartFile, sourceId, hash, sanitizedFilename);
@@ -288,20 +288,20 @@ public class FileService {
             working.setStatus(VersionStatus.QUARENTENA);
             working.setLocation(quarantineLocation);
         } else if (raster) {
-            String rasterLocation = BucketService.workingLocation(location, "validada/");
+            String rasterLocation = BucketService.workingLocation(location, "tratada/");
             uploaded.add(rasterLocation);
             bucketService.copyWorkingObject(location, rasterLocation);
             uploaded.add(rasterLocation + ".raster.json");
-            bucketService.uploadSourceValidatedContent(accepted, sourceId, hash, validatedFilename);
-            working.setStatus(VersionStatus.BRUTA);
+            bucketService.uploadSourceTreatedContent(accepted, sourceId, hash, workingFilename);
+            working.setStatus(VersionStatus.TRATADA);
             working.setLocation(rasterLocation);
         } else {
             if (accepted.length == 0) throw new IllegalArgumentException("Arquivo sem conteúdo aprovado para gerar a cópia de trabalho.");
-            String expectedLocation = BucketService.workingLocation(location, "validada/")
+            String expectedLocation = BucketService.workingLocation(location, "tratada/")
                     + (prepared == null || java.util.Set.of("json", "geojson").contains(format) ? "" : ".geojson");
             uploaded.add(expectedLocation);
-            String acceptedLocation = bucketService.uploadSourceValidatedContent(accepted, sourceId, hash, validatedFilename);
-            working.setStatus(VersionStatus.BRUTA);
+            String acceptedLocation = bucketService.uploadSourceTreatedContent(accepted, sourceId, hash, workingFilename);
+            working.setStatus(VersionStatus.TRATADA);
             working.setLocation(acceptedLocation);
         }
         if (quarantineLocation == null) {
