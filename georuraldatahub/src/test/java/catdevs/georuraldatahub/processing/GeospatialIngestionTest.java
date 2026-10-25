@@ -104,5 +104,7 @@ class GeospatialIngestionTest {
         verify(bucket).uploadToSourceRawZone(eq(corrupt), eq(4L), any(), any());
         verify(bucket, never()).uploadSourceValidatedContent(any(), any(), any(), any());
         verify(quarantine).save(argThat(q -> "ARQUIVO_REJEITADO".equals(q.getStatus())));
+        verify(bucket).uploadToQuarantineZone(same(corrupt), eq("bruta/fontes/4/original"));
+        verify(bucket).uploadValidationReport(eq("quarentena/fontes/4/original"), contains("INVALID_GEOSPATIAL_FILE"));
     }
 }

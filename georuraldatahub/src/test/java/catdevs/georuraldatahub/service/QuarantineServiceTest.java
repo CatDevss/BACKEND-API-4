@@ -48,6 +48,8 @@ class QuarantineServiceTest {
         assertNull(result.responsibleId()); assertNull(result.treatment()); assertNull(result.dateResolution());
         assertEquals(5L, result.sourceId()); assertEquals("Fonte", result.sourceName());
         assertEquals("/arquivos/7/validacao", result.validationReportUrl());
+        assertEquals("quarentena/original.csv", result.quarantineLocation());
+        assertEquals("quarentena/original.csv.validation.json", result.quarantineReportLocation());
         verify(repository, never()).save(any());
     }
     @Test void claimRegistersOnlyTheVolunteerAndKeepsObservationEmpty() {
@@ -130,5 +132,7 @@ class QuarantineServiceTest {
     @Test void ingestionLevelQuarantineMayHaveNoFile() {
         quarantine.setFile(null);
         assertNull(service.get(1L).fileId()); assertNull(service.get(1L).validationReportUrl());
+        assertNull(service.get(1L).quarantineLocation());
+        assertNull(service.get(1L).quarantineReportLocation());
     }
 }

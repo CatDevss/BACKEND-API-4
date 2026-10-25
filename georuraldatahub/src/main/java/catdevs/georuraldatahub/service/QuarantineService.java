@@ -121,11 +121,14 @@ public class QuarantineService {
         var dictionary = ingestion == null ? null : ingestion.getDictionary();
         var source = dictionary == null ? null : dictionary.getSource();
         var user = q.getUser();
+        String quarantineLocation = file != null && file.getLocation() != null && file.getLocation().startsWith("bruta/")
+                ? BucketService.quarantineLocation(file.getLocation()) : null;
         return new QuarantineResponseDTO(q.getId(), ingestion == null ? null : ingestion.getId(),
                 file == null ? null : file.getId(), file == null ? null : file.getName(),
                 source == null ? null : source.getId(), source == null ? null : source.getName(),
                 q.getStatus(), q.getReason(), q.getTreatment(), q.getDateEntry(), q.getDateResolution(),
                 user == null ? null : user.getId(), user == null ? null : user.getName(),
-                file == null ? null : "/arquivos/" + file.getId() + "/validacao");
+                file == null ? null : "/arquivos/" + file.getId() + "/validacao", quarantineLocation,
+                quarantineLocation == null ? null : quarantineLocation + ".validation.json");
     }
 }

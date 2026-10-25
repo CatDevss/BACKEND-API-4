@@ -52,7 +52,9 @@ class FileServiceValidationTest {
         assertEquals(1, response.validation().validRecords());
         assertEquals(1, response.validation().rejectedRecords());
         verify(quarantine).save(any());
-        verify(bucket).uploadValidationReport(any(), any());
+        verify(bucket).uploadValidationReport(eq("bruta/test.csv"), any());
+        verify(bucket).uploadValidationReport(eq("quarentena/test.csv"), any());
+        verify(bucket).uploadToQuarantineZone(any(), eq("bruta/test.csv"));
         verify(bucket).uploadSourceValidatedContent(any(), eq(4L), any(), any());
     }
     @Test void sourceUploadValidatesAndStoresWithoutLookingUpOrAssociatingDataset() throws Exception {
@@ -157,6 +159,8 @@ class FileServiceValidationTest {
     @Test void validFileSkipsQuarantine() throws Exception {
         assertEquals("VALIDO", service.uploadFile(csv("id\n1"), 1L, 2L, 4L).validation().status());
         verifyNoInteractions(quarantine);
+        verify(bucket, never()).uploadToQuarantineZone(any(), any());
+        verify(bucket, never()).uploadValidationReport(eq("quarentena/test.csv"), any());
     }
     @Test void malformedFileRejectsAllRows() throws Exception {
         var report = service.uploadFile(csv("id\n1\n\"unterminated"), 1L, 2L, 4L).validation();
@@ -203,4 +207,57 @@ class FileServiceValidationTest {
         assertEquals(response.validation(), service.validationReport(6L));
     }
 
+    @Test void partialRejectionStoresWholeOriginalInQuarantineAndOnlyApprovedRowsInValidatedZone() throws Exception {
+        var original = csv("id\n1\nx\n2");
+        service.uploadToSource(original, 4L, 2L);
+        verify(bucket).uploadToSourceRawZone(eq(original), eq(4L), any(), eq("test.csv"));
+        verify(bucket).uploadToQuarantineZone(same(original), eq("bruta/test.csv"));
+        var report = ArgumentCaptor.forClass(String.class);
+        verify(bucket).uploadValidationReport(eq("quarentena/test.csv"), report.capture());
+        assertTrue(report.getValue().contains("INVALID_TYPE"));
+        var accepted = ArgumentCaptor.forClass(byte[].class);
+        verify(bucket).uploadSourceValidatedContent(accepted.capture(), any(), any(), any());
+        try (var reader = new CsvRecordValidator.TableReader(new java.io.ByteArrayInputStream(accepted.getValue()))) {
+            assertEquals(List.of("id"), reader.readRecord());
+            assertEquals(List.of("1"), reader.readRecord());
+            assertEquals(List.of("2"), reader.readRecord());
+            assertNull(reader.readRecord());
+        }
+        for (var sync : TransactionSynchronizationManager.getSynchronizations()) sync.afterCompletion(TransactionSynchronization.STATUS_COMMITTED);
+        verify(bucket, never()).deleteObject(any());
+    }
+
+    @Test void rejectedFileKeepsRawAndQuarantineCopiesAndNeverCreatesApprovedData() throws Exception {
+        var original = csv("id\nx");
+        service.uploadToSource(original, 4L, 2L);
+        verify(bucket).uploadToQuarantineZone(same(original), eq("bruta/test.csv"));
+        verify(bucket).uploadValidationReport(eq("quarentena/test.csv"), contains("REJEITADO"));
+        verify(bucket, never()).uploadSourceValidatedContent(any(), any(), any(), any());
+        for (var sync : TransactionSynchronizationManager.getSynchronizations()) sync.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+        verify(bucket).deleteObject("bruta/test.csv");
+        verify(bucket).deleteObject("quarentena/test.csv");
+        verify(bucket).deleteObject("quarentena/test.csv.validation.json");
+    }
+
+    @Test void failedQuarantineFileUploadDoesNotPersistIngestionAndCleansAttemptedObject() throws Exception {
+        when(bucket.uploadToQuarantineZone(any(), any())).thenThrow(new IllegalStateException("storage offline"));
+        assertThrows(IllegalStateException.class, () -> service.uploadToSource(csv("id\nx"), 4L, 2L));
+        verifyNoInteractions(ingestions, versions, quarantine);
+        verify(files, never()).save(any());
+        for (var sync : TransactionSynchronizationManager.getSynchronizations()) sync.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+        verify(bucket).deleteObject("bruta/test.csv");
+        verify(bucket).deleteObject("bruta/test.csv.validation.json");
+        verify(bucket).deleteObject("quarentena/test.csv");
+        verify(bucket, never()).uploadSourceValidatedContent(any(), any(), any(), any());
+    }
+
+    @Test void failedQuarantineReportUploadRollsBackBothQuarantineArtifacts() throws Exception {
+        when(bucket.uploadValidationReport(eq("quarentena/test.csv"), any())).thenThrow(new IllegalStateException("storage offline"));
+        assertThrows(IllegalStateException.class, () -> service.uploadToSource(csv("id\n1\nx"), 4L, 2L));
+        verifyNoInteractions(ingestions, versions, quarantine);
+        verify(files, never()).save(any());
+        for (var sync : TransactionSynchronizationManager.getSynchronizations()) sync.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+        verify(bucket).deleteObject("quarentena/test.csv");
+        verify(bucket).deleteObject("quarentena/test.csv.validation.json");
+    }
 }

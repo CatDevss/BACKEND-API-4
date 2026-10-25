@@ -53,4 +53,17 @@ class BucketServiceValidationReportTest {
         assertSame(failure, assertThrows(BmcException.class, () -> service.readValidationReport("bruta/test.csv")));
     }
 
+    @Test void quarantineUsesSameScopeHashAndBytesAsRawWithoutDeletingOriginal() throws Exception {
+        var file = new org.springframework.mock.web.MockMultipartFile("file", "original.zip", "application/zip", new byte[]{1, 2, 3});
+        String raw = "bruta/fontes/4/sha256_original.zip";
+        assertEquals("quarentena/fontes/4/sha256_original.zip", service.uploadToQuarantineZone(file, raw));
+        var request = ArgumentCaptor.forClass(PutObjectRequest.class);
+        verify(client).putObject(request.capture());
+        assertEquals("quarentena/fontes/4/sha256_original.zip", request.getValue().getObjectName());
+        assertEquals(3L, request.getValue().getContentLength());
+        assertArrayEquals(file.getBytes(), request.getValue().getPutObjectBody().readAllBytes());
+        verify(client, never()).deleteObject(any());
+        assertEquals("quarentena/9/hash_test.csv", BucketService.quarantineLocation("bruta/9/hash_test.csv"));
+        assertThrows(IllegalArgumentException.class, () -> BucketService.quarantineLocation("validada/test.csv"));
+    }
 }

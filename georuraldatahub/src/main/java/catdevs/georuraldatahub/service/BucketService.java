@@ -76,7 +76,20 @@ public class BucketService {
         private String uploadToRawScope(MultipartFile file, String scope, String hash, String sanitizedFilename)
                         throws IOException {
                 String objectName = "bruta/" + scope + "/" + hash + "_" + sanitizedFilename;
+                return uploadMultipart(file, objectName);
+        }
 
+        public static String quarantineLocation(String rawLocation) {
+                if (rawLocation == null || !rawLocation.startsWith("bruta/") || rawLocation.length() <= 6)
+                        throw new IllegalArgumentException("Localização bruta inválida para quarentena.");
+                return "quarentena/" + rawLocation.substring("bruta/".length());
+        }
+
+        public String uploadToQuarantineZone(MultipartFile file, String rawLocation) throws IOException {
+                return uploadMultipart(file, quarantineLocation(rawLocation));
+        }
+
+        private String uploadMultipart(MultipartFile file, String objectName) throws IOException {
                 try (InputStream body = file.getInputStream()) {
                         PutObjectRequest request = PutObjectRequest.builder()
                                 .namespaceName(props.namespace())

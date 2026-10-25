@@ -233,6 +233,16 @@ public class FileService {
                     mapper.writeValueAsBytes(collected.metadata()), "application/json"));
         }
 
+        if (!report.status().equals("VALIDO")) {
+            // A zona física acompanha a quarentena do banco. O original bruto e o histórico ficam preservados.
+            String quarantineLocation = BucketService.quarantineLocation(location);
+            // Registrar antes do envio também cobre falha de rede após a gravação no OCI.
+            uploaded.add(quarantineLocation);
+            bucketService.uploadToQuarantineZone(multipartFile, location);
+            uploaded.add(quarantineLocation + ".validation.json");
+            bucketService.uploadValidationReport(quarantineLocation, reportJson);
+        }
+
          // Salva a ingestão (ERRO se o arquivo foi rejeitado por completo)
         DataIngestion ingestion = new DataIngestion();
         ingestion.setDictionary(dictionary);
