@@ -47,7 +47,7 @@ class FileServiceValidationTest {
 
     @Test void isolatedModeKeepsValidationQuarantineAndApprovedSubsetWithoutOccurrenceTables() throws Exception {
         var isolated = new FileService(files, versions, ingestions, datasets, users, dictionaries, bucket, validator, quarantine);
-        var response = isolated.uploadToSource(csv("id\n1\nx"), 4L, 2L);
+        var response = isolated.uploadToSource(csv("id\n1\nx"), 4L, 2L, null);
         assertEquals("PARCIAL", response.validation().status());
         assertEquals(1, response.validation().validRecords());
         assertEquals(1, response.validation().rejectedRecords());
@@ -56,7 +56,7 @@ class FileServiceValidationTest {
         verify(bucket).uploadSourceValidatedContent(any(), eq(4L), any(), any());
     }
     @Test void sourceUploadValidatesAndStoresWithoutLookingUpOrAssociatingDataset() throws Exception {
-        var response = service.uploadToSource(csv("id\n1"), 4L, 2L);
+        var response = service.uploadToSource(csv("id\n1"), 4L, 2L, null);
         assertEquals("VALIDO", response.validation().status());
         assertEquals(6L, response.id());
         verifyNoInteractions(datasets);
@@ -68,7 +68,7 @@ class FileServiceValidationTest {
     @Test void sourceCollectionValidatesAndStoresWithoutDataset() throws Exception {
         var data = new catdevs.georuraldatahub.collection.CollectedData("test.csv", "csv",
                 "id\n1".getBytes(StandardCharsets.UTF_8), List.of(), null);
-        assertEquals("VALIDO", service.uploadCollectedFile(data, null, 2L, 4L).validation().status());
+        assertEquals("VALIDO", service.uploadCollectedFile(data, null, 2L, 4L, null, null).validation().status());
         verifyNoInteractions(datasets);
         assertTrue(dataset.getFiles().isEmpty());
         verify(bucket).uploadCollectionArtifact(eq("bruta/test.csv.collection.json"), any(), eq("application/json"));
@@ -94,7 +94,7 @@ class FileServiceValidationTest {
                         original.filename(), original.origin(), original.contentType(), csv.length, original.sha256())));
         var data = new catdevs.georuraldatahub.collection.CollectedData("test.csv", "csv", csv, List.of(original), metadata);
         when(bucket.uploadCollectionArtifact(any(), any(), any())).thenAnswer(inv -> inv.getArgument(0));
-        var response = service.uploadCollectedFile(data, 1L, 2L, 4L);
+        var response = service.uploadCollectedFile(data, 1L, 2L, 4L, null, null);
         assertEquals("PARCIAL", response.validation().status());
         verify(bucket).uploadCollectionArtifact(eq("bruta/test.csv.originals/00000_original.csv"), eq(csv), eq("text/csv"));
         var json = ArgumentCaptor.forClass(byte[].class);
@@ -112,14 +112,14 @@ class FileServiceValidationTest {
         byte[] csv = "id\n1".getBytes(StandardCharsets.UTF_8);
         var data = new catdevs.georuraldatahub.collection.CollectedData("test.csv","csv",csv,List.of(),null);
         when(bucket.uploadCollectionArtifact(any(), any(), any())).thenThrow(new IllegalStateException("offline"));
-        assertThrows(IllegalStateException.class, () -> service.uploadCollectedFile(data,1L,2L,4L));
+        assertThrows(IllegalStateException.class, () -> service.uploadCollectedFile(data,1L,2L,4L, null, null));
         verifyNoInteractions(ingestions,versions);
         for (var sync : TransactionSynchronizationManager.getSynchronizations()) sync.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
         verify(bucket).deleteObject("bruta/test.csv");
         verify(bucket).deleteObject("bruta/test.csv.validation.json");
     }
     @Test void uploadsOnlyValidRowsAndPersistsPartialReport() throws Exception {
-        var response = service.uploadFile(csv("id\n1\nx\n2"), 1L, 2L, 4L);
+        var response = service.uploadFile(csv("id\n1\nx\n2"), 1L, 2L, 4L, null);
         assertEquals("PARCIAL", response.validation().status()); assertEquals(2, response.validation().validRecords());
         assertEquals(3L, response.validation().dictionaryId()); assertEquals(2, response.validation().dictionaryVersion());
         var accepted = ArgumentCaptor.forClass(byte[].class);
@@ -140,7 +140,7 @@ class FileServiceValidationTest {
         assertTrue(q.getValue().getReason().getBytes(StandardCharsets.UTF_8).length <= 500);
     }
     @Test void entirelyRejectedFileNeverProducesValidatedVersion() throws Exception {
-        var response = service.uploadFile(csv("id\nx"), 1L, 2L, 4L);
+        var response = service.uploadFile(csv("id\nx"), 1L, 2L, 4L, null);
         assertEquals("REJEITADO", response.validation().status());
         verify(bucket, never()).uploadSourceValidatedContent(any(), any(), any(), any());
         verify(versions).save(argThat(v -> v.getStatus() == VersionStatus.BRUTA));
@@ -150,52 +150,52 @@ class FileServiceValidationTest {
     @Test void rejectsMetadataThatDoesNotFitExistingFileColumns() {
         for (String filename : List.of("a".repeat(201) + ".csv", "arquivo", "arquivo.abcdefghijkl")) {
             var file = new MockMultipartFile("file", filename, "text/plain", "id\n1".getBytes(StandardCharsets.UTF_8));
-            assertThrows(IllegalArgumentException.class, () -> service.uploadFile(file, 1L, 2L, 4L));
+            assertThrows(IllegalArgumentException.class, () -> service.uploadFile(file, 1L, 2L, 4L, null));
         }
         verifyNoInteractions(bucket);
     }
     @Test void validFileSkipsQuarantine() throws Exception {
-        assertEquals("VALIDO", service.uploadFile(csv("id\n1"), 1L, 2L, 4L).validation().status());
+        assertEquals("VALIDO", service.uploadFile(csv("id\n1"), 1L, 2L, 4L, null).validation().status());
         verifyNoInteractions(quarantine);
     }
     @Test void malformedFileRejectsAllRows() throws Exception {
-        var report = service.uploadFile(csv("id\n1\n\"unterminated"), 1L, 2L, 4L).validation();
+        var report = service.uploadFile(csv("id\n1\n\"unterminated"), 1L, 2L, 4L, null).validation();
         assertEquals("REJEITADO", report.status()); assertEquals(0, report.validRecords());
         verify(bucket, never()).uploadSourceValidatedContent(any(), any(), any(), any());
     }
     @Test void duplicateUploadFailsBeforeStorageAndValidation() throws Exception {
         when(files.existsByHashAndIngestion_Dictionary_Source_Id(any(), eq(4L))).thenReturn(true);
-        assertThrows(DuplicateFileException.class, () -> service.uploadFile(csv("id\n1"), 1L, 2L, 4L));
+        assertThrows(DuplicateFileException.class, () -> service.uploadFile(csv("id\n1"), 1L, 2L, 4L, null));
         verifyNoInteractions(bucket);
         verify(dictionaries).acquireForValidation(4L, null);
     }
     @Test void transactionRollbackCleansBothArtifacts() throws Exception {
-        service.uploadFile(csv("id\n1"), 1L, 2L, 4L);
+        service.uploadFile(csv("id\n1"), 1L, 2L, 4L, null);
         for (var sync : TransactionSynchronizationManager.getSynchronizations()) sync.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
         verify(bucket).deleteObject("bruta/test.csv"); verify(bucket).deleteObject("validada/test.csv");
         verify(bucket).deleteObject("bruta/test.csv.validation.json");
     }
     @Test void failedValidatedUploadLeavesNoApprovedVersion() throws Exception {
         when(bucket.uploadSourceValidatedContent(any(), any(), any(), any())).thenThrow(new IllegalStateException("storage offline"));
-        assertThrows(IllegalStateException.class, () -> service.uploadFile(csv("id\n1"), 1L, 2L, 4L));
+        assertThrows(IllegalStateException.class, () -> service.uploadFile(csv("id\n1"), 1L, 2L, 4L, null));
         for (var sync : TransactionSynchronizationManager.getSynchronizations()) sync.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
         verify(bucket).deleteObject("bruta/test.csv");
         verify(versions, never()).save(argThat(v -> v.getVersionNumber() == 2));
     }
     @Test void failedReportUploadRollsBackAndCleansRawObject() throws Exception {
         when(bucket.uploadValidationReport(any(), any())).thenThrow(new IllegalStateException("storage offline"));
-        assertThrows(IllegalStateException.class, () -> service.uploadFile(csv("id\n1"), 1L, 2L, 4L));
+        assertThrows(IllegalStateException.class, () -> service.uploadFile(csv("id\n1"), 1L, 2L, 4L, null));
         for (var sync : TransactionSynchronizationManager.getSynchronizations()) sync.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
         verify(bucket).deleteObject("bruta/test.csv");
         verifyNoInteractions(versions, ingestions);
     }
     @Test void committedTransactionKeepsAllArtifacts() throws Exception {
-        service.uploadFile(csv("id\n1"), 1L, 2L, 4L);
+        service.uploadFile(csv("id\n1"), 1L, 2L, 4L, null);
         for (var sync : TransactionSynchronizationManager.getSynchronizations()) sync.afterCompletion(TransactionSynchronization.STATUS_COMMITTED);
         verify(bucket, never()).deleteObject(any());
     }
     @Test void reportCanBeReadAfterUpload() throws Exception {
-        var response = service.uploadFile(csv("id\n1"), 1L, 2L, 4L);
+        var response = service.uploadFile(csv("id\n1"), 1L, 2L, 4L, null);
         when(files.findById(6L)).thenReturn(Optional.of(dataset.getFiles().getFirst()));
         var reportJson = ArgumentCaptor.forClass(String.class);
         verify(bucket).uploadValidationReport(eq("bruta/test.csv"), reportJson.capture());

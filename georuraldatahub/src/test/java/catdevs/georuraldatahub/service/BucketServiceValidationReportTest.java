@@ -22,8 +22,7 @@ class BucketServiceValidationReportTest {
         assertEquals("bruta/fontes/4/hash_test.csv", service.uploadToSourceRawZone(file, 4L, "hash", "test.csv"));
         assertEquals("validada/fontes/4/hash_test.csv", service.uploadSourceValidatedContent(new byte[]{1}, 4L, "hash", "test.csv"));
         assertEquals("bruta/fontes/5/hash_test.csv", service.uploadToSourceRawZone(file, 5L, "hash", "test.csv"));
-        assertEquals("bruta/4/hash_test.csv", service.uploadToRawZone(file, 4L, "hash", "test.csv"));
-        verify(client, times(4)).putObject(any(PutObjectRequest.class));
+        verify(client, times(3)).putObject(any(PutObjectRequest.class));
     }
     @Test void reportIsStoredAlongsideRawObjectWithUtf8AndJsonContentType() throws Exception {
         String json = "{\"erro\":\"Campo obrigatório\"}";

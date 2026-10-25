@@ -33,12 +33,6 @@ public class DictionaryService {
                 .orElseThrow(() -> missing("Esta fonte não possui dicionário de dados cadastrado."));
     }
 
-    // Same source lock as create/update/delete: selection and first use are atomic.
-    @Transactional
-    public Dictionary acquireForValidation(Long sourceId) {
-        return acquireForValidation(sourceId, null);
-    }
-
     @Transactional
     public Dictionary acquireForValidation(Long sourceId, Long dictionaryId) {
         lockSource(sourceId);

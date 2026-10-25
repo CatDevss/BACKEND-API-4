@@ -22,10 +22,6 @@ import com.oracle.bmc.objectstorage.requests.PutObjectRequest;
 
 import catdevs.georuraldatahub.config.ObjectStorageProperties;
 
-/**
- * Responsável por conversar com o bucket: listar, enviar e baixar arquivos.
- */
-
 @Service
 public class BucketService {
 
@@ -37,10 +33,6 @@ public class BucketService {
                 this.client = client;
                 this.props = props;
         }
-
-        /**
-         * Retorna os nomes de todos os arquivos que estão no bucket.
-         */
 
         public List<String> listObjectsBucket() {
                 var request = ListObjectsRequest.builder()
@@ -56,23 +48,9 @@ public class BucketService {
                                 .toList();
         }
 
-        /**
-         * Envia o arquivo para a zona bruta do bucket, no formato
-         * "bruta/{datasetId}/{hash}_{nomeOriginal}", e retorna o nome do objeto salvo.
-         */
-        public String uploadToRawZone(MultipartFile file, Long datasetId, String hash, String sanitizedFilename)
-                        throws IOException {
-                return uploadToRawScope(file, datasetId.toString(), hash, sanitizedFilename);
-        }
-
         public String uploadToSourceRawZone(MultipartFile file, Long sourceId, String hash, String filename)
                         throws IOException {
-                return uploadToRawScope(file, "fontes/" + sourceId, hash, filename);
-        }
-
-        private String uploadToRawScope(MultipartFile file, String scope, String hash, String sanitizedFilename)
-                        throws IOException {
-                String objectName = "bruta/" + scope + "/" + hash + "_" + sanitizedFilename;
+                String objectName = "bruta/fontes/" + sourceId + "/" + hash + "_" + filename;
 
                 try (InputStream body = file.getInputStream()) {
                         PutObjectRequest request = PutObjectRequest.builder()
@@ -87,34 +65,14 @@ public class BucketService {
                 return objectName;
         }
 
-        public String uploadValidatedContent(byte[] content, Long datasetId, String hash, String filename) {
-                return uploadValidatedScope(content, datasetId.toString(), hash, filename);
-        }
-
         public String uploadSourceValidatedContent(byte[] content, Long sourceId, String hash, String filename) {
-                return uploadValidatedScope(content, "fontes/" + sourceId, hash, filename);
-        }
-
-        private String uploadValidatedScope(byte[] content, String scope, String hash, String filename) {
-                String key = "validada/" + scope + "/" + hash + "_" + filename;
-                try (var input = new java.io.ByteArrayInputStream(content)) {
-                        client.putObject(PutObjectRequest.builder()
-                                .namespaceName(props.namespace()).bucketName(props.bucketName())
-                                .objectName(key).putObjectBody(input).contentLength((long) content.length).build());
-                } catch (IOException e) { throw new java.io.UncheckedIOException(e); }
-                return key;
+                String key = "validada/fontes/" + sourceId + "/" + hash + "_" + filename;
+                return uploadCollectionArtifact(key, content, null);
         }
 
         public String uploadValidationReport(String rawLocation, String json) {
-                String key = rawLocation + ".validation.json";
-                byte[] content = json.getBytes(StandardCharsets.UTF_8);
-                try (var input = new java.io.ByteArrayInputStream(content)) {
-                        client.putObject(PutObjectRequest.builder()
-                                .namespaceName(props.namespace()).bucketName(props.bucketName())
-                                .objectName(key).putObjectBody(input).contentLength((long) content.length)
-                                .contentType("application/json").build());
-                } catch (IOException e) { throw new java.io.UncheckedIOException(e); }
-                return key;
+                return uploadCollectionArtifact(rawLocation + ".validation.json",
+                        json.getBytes(StandardCharsets.UTF_8), "application/json");
         }
 
         public String readValidationReport(String rawLocation) throws IOException {
@@ -161,12 +119,6 @@ public class BucketService {
                 client.deleteObject(request);
         }
 
-        /**
-         * Lê um arquivo GeoJSON armazenado no Object Storage.
-         *
-         * @param objectName nome completo do objeto no bucket.
-         * @return conteúdo JSON do arquivo.
-         */
         public JsonNode readGeoJson(String objectName) throws IOException {
 
                 if (objectName == null || objectName.isBlank()) {
@@ -201,10 +153,6 @@ public class BucketService {
                 }
         }
 
-        /**
-         * Lê um CSV com latitude e longitude e converte seus registros
-         * em um GeoJSON FeatureCollection para visualização no mapa.
-         */
         public JsonNode readCsvAsGeoJson(String objectName) throws IOException {
 
                 if (objectName == null || objectName.isBlank()) {

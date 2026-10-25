@@ -66,7 +66,7 @@ class DictionaryServiceTest {
         assertEquals("UTILIZADO", service.get(1L).status());
     }
     @Test void selectionLocksSourceUntilIngestionIsRecorded() {
-        assertSame(dictionary, service.acquireForValidation(3L));
+        assertSame(dictionary, service.acquireForValidation(3L, null));
         var order = inOrder(sources, repository);
         order.verify(sources).findLockedById(3L);
         order.verify(repository).findFirstBySource_IdOrderByVersionDesc(3L);
