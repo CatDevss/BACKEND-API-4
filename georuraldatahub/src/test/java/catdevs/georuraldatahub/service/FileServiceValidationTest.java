@@ -129,6 +129,9 @@ class FileServiceValidationTest {
         verify(versions, times(2)).save(capturedVersions.capture());
         assertEquals(List.of(VersionStatus.BRUTA, VersionStatus.BRUTA), capturedVersions.getAllValues().stream().map(Version::getStatus).toList());
         var q = ArgumentCaptor.forClass(Quarantine.class); verify(quarantine).save(q.capture());
+        assertNull(q.getValue().getUser());
+        assertNull(q.getValue().getTreatment());
+        assertNull(q.getValue().getDateResolution());
         assertEquals("REGISTROS_REJEITADOS", q.getValue().getStatus()); assertTrue(q.getValue().getReason().contains("INVALID_TYPE"));
         assertEquals(IngestionStatus.CONCLUIDO, dataset.getFiles().getFirst().getIngestion().getIngStatus());
         var reportJson = ArgumentCaptor.forClass(String.class);
