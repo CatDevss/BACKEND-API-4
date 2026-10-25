@@ -32,10 +32,13 @@ public class BucketService {
         private final ObjectStorageClient client;
         private final ObjectStorageProperties props;
         private final ObjectMapper objectMapper = new ObjectMapper();
+        private final catdevs.georuraldatahub.processing.ProcessingProperties limits;
 
-        public BucketService(ObjectStorageClient client, ObjectStorageProperties props) {
+        public BucketService(ObjectStorageClient client, ObjectStorageProperties props,
+                        catdevs.georuraldatahub.processing.ProcessingProperties limits) {
                 this.client = client;
                 this.props = props;
+                this.limits = limits;
         }
 
         /**
@@ -151,6 +154,54 @@ public class BucketService {
                 }
         }
 
+        public String readGeospatialMetadata(String rawLocation) throws IOException {
+                var request = GetObjectRequest.builder().namespaceName(props.namespace()).bucketName(props.bucketName())
+                        .objectName(rawLocation + ".geospatial.json").build();
+                try (InputStream input = client.getObject(request).getInputStream()) {
+                        int maximum = catdevs.georuraldatahub.processing.ProcessingProperties.MAX_METADATA_BYTES;
+                        byte[] bytes = input.readNBytes(maximum + 1);
+                        if (bytes.length > maximum) throw new IllegalArgumentException("Metadados geoespaciais excedem o limite.");
+                        return new String(bytes, StandardCharsets.UTF_8);
+                } catch (com.oracle.bmc.model.BmcException e) {
+                        if (e.getStatusCode() == 404) throw new org.springframework.web.server.ResponseStatusException(
+                                org.springframework.http.HttpStatus.NOT_FOUND, "Arquivo sem metadados geoespaciais extraídos.");
+                        throw e;
+                }
+        }
+
+        private InputStream bounded(InputStream input) {
+                return new java.io.FilterInputStream(input) {
+                        private long remaining = limits.getMaxOutputBytes();
+                        private void consumed(int count) {
+                                if (count > 0 && (remaining -= count) < 0)
+                                        throw new IllegalArgumentException("Conteúdo vetorial excede o limite de leitura.");
+                        }
+                        @Override public int read() throws IOException {
+                                int value = in.read();
+                                consumed(value == -1 ? 0 : 1);
+                                return value;
+                        }
+                        @Override public int read(byte[] bytes, int offset, int length) throws IOException {
+                                int count = in.read(bytes, offset, (int) Math.min(length, Math.max(0, remaining) + 1));
+                                consumed(count);
+                                return count;
+                        }
+                };
+        }
+
+        public JsonNode readRasterManifest(String location) throws IOException {
+                if (location == null || !location.startsWith("validada/") || !location.endsWith(".raster.json"))
+                        throw new IllegalArgumentException("Informe o manifesto da versão raster aprovada.");
+                var request = GetObjectRequest.builder().namespaceName(props.namespace()).bucketName(props.bucketName())
+                        .objectName(location).build();
+                try (InputStream input = client.getObject(request).getInputStream()) {
+                        int maximum = catdevs.georuraldatahub.processing.ProcessingProperties.MAX_METADATA_BYTES;
+                        byte[] bytes = input.readNBytes(maximum + 1);
+                        if (bytes.length > maximum) throw new IllegalArgumentException("Metadados geoespaciais excedem o limite.");
+                        return objectMapper.readTree(bytes);
+                }
+        }
+
         public void deleteObject(String objectName) {
                 var request = DeleteObjectRequest.builder()
                                 .namespaceName(props.namespace())
@@ -195,9 +246,11 @@ public class BucketService {
 
                 try (InputStream inputStream = client.getObject(request).getInputStream()) {
 
-                        JsonNode root = objectMapper.readTree(inputStream);
-
-                        return catdevs.georuraldatahub.validation.GeoJsonContent.featureCollection(root);
+                        JsonNode root = objectMapper.readTree(bounded(inputStream));
+                        JsonNode collection = catdevs.georuraldatahub.validation.GeoJsonContent.featureCollection(root);
+                        if (collection.path("features").size() > limits.getMaxFeatures())
+                                throw new IllegalArgumentException("Limite de feições excedido.");
+                        return collection;
                 }
         }
 
@@ -233,7 +286,7 @@ public class BucketService {
                                 .build();
 
                 try (InputStream input = client.getObject(request).getInputStream();
-                                var reader = new catdevs.georuraldatahub.validation.CsvRecordValidator.TableReader(input)) {
+                                var reader = new catdevs.georuraldatahub.validation.CsvRecordValidator.TableReader(bounded(input))) {
                         List<String> headers = reader.readRecord();
                         if (headers == null) throw new IllegalArgumentException("O CSV está vazio.");
                         headers = headers.stream().map(String::trim).toList();
@@ -248,6 +301,7 @@ public class BucketService {
                                 if (row.size() != headers.size()) throw new IllegalArgumentException("Quantidade de colunas inválida no registro " + index + ".");
                                 var record = objectMapper.createObjectNode();
                                 for (int i = 0; i < headers.size(); i++) record.put(headers.get(i), row.get(i).trim());
+                                if (index >= limits.getMaxFeatures()) throw new IllegalArgumentException("Limite de feições excedido.");
                                 features.add(catdevs.georuraldatahub.validation.GeoJsonContent.feature(record, index++));
                         }
                         return output;

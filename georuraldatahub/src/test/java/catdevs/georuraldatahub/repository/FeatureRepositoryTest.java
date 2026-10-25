@@ -35,6 +35,8 @@ class FeatureRepositoryTest {
     @Autowired
     private FeatureRepository featureRepository;
     @Autowired
+    private catdevs.georuraldatahub.service.FeatureService featureService;
+    @Autowired
     private LayerRepository layerRepository;
     @Autowired
     private DatasetRepository datasetRepository;
@@ -81,7 +83,7 @@ class FeatureRepositoryTest {
         String polygon = bigPolygon(vertices);
         assertTrue(polygon.length() > 4000, "O polígono precisa passar de 4000 caracteres");
 
-        int inserted = featureRepository.insertBatch(layer.getId(), 4326, List.of(
+        int inserted = featureService.insertBatch(layer.getId(), 4326, List.of(
                 new NewFeature("1", point, "{\"nome\":\"ponto\"}"),
                 new NewFeature("2", polygon, null)));
 
@@ -90,9 +92,9 @@ class FeatureRepositoryTest {
 
         List<Long> ids = featureRepository.findIdsByLayerId(layer.getId());
         JsonNode first = MAPPER.readTree(
-                featureRepository.findGeometryAsGeoJson(ids.get(0)).orElseThrow());
+                featureService.findGeometryAsGeoJson(ids.get(0)).orElseThrow());
         JsonNode second = MAPPER.readTree(
-                featureRepository.findGeometryAsGeoJson(ids.get(1)).orElseThrow());
+                featureService.findGeometryAsGeoJson(ids.get(1)).orElseThrow());
 
         assertEquals("Point", first.get("type").asText());
         assertEquals("Polygon", second.get("type").asText());

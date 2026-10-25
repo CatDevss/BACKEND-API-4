@@ -68,4 +68,18 @@ class GeoJsonFeatureExtractorTest {
         assertThrows(IllegalArgumentException.class, () -> GeoJsonFeatureExtractor.extract(
                 MAPPER.readTree(collection())));
     }
+    @Test
+    void preservesLongUnicodeOriginIdsWithoutTruncationCollisions() throws Exception {
+        String id = "á".repeat(80);
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        var root = mapper.createObjectNode().put("type", "FeatureCollection");
+        var feature = root.putArray("features").addObject().put("type", "Feature").put("id", id);
+        feature.putObject("properties").put("nome", "origem");
+        feature.set("geometry", mapper.readTree("{\"type\":\"Point\",\"coordinates\":[-51,-25]}"));
+        var result = GeoJsonFeatureExtractor.extract(root).features().getFirst();
+        assertEquals(71, result.originId().length());
+        assertEquals(id, mapper.readTree(result.attributesJson()).path("_id_origem_completo").asText());
+        assertEquals("origem", mapper.readTree(result.attributesJson()).path("nome").asText());
+    }
+
 }

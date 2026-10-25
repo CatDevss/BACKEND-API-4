@@ -25,7 +25,7 @@ class FileServiceValidationTest {
     private final BucketService bucket = mock(BucketService.class);
     private final QuarantineRepository quarantine = mock(QuarantineRepository.class);
     private final FileValidationService validator = new FileValidationService(new CsvRecordValidator(), new GeoJsonRecordValidator());
-    private final FileService service = new FileService(files, versions, ingestions, datasets, users, dictionaries, bucket, validator, quarantine);
+    private final FileService service = new FileService(files, versions, ingestions, datasets, users, dictionaries, bucket, validator, quarantine, mock(catdevs.georuraldatahub.processing.GeospatialReader.class));
     private final Dataset dataset = new Dataset();
 
     @BeforeEach void setup() throws Exception {
@@ -46,7 +46,7 @@ class FileServiceValidationTest {
     private MockMultipartFile csv(String text) { return new MockMultipartFile("file", "test.csv", "text/csv", text.getBytes(StandardCharsets.UTF_8)); }
 
     @Test void isolatedModeKeepsValidationQuarantineAndApprovedSubsetWithoutOccurrenceTables() throws Exception {
-        var isolated = new FileService(files, versions, ingestions, datasets, users, dictionaries, bucket, validator, quarantine);
+        var isolated = new FileService(files, versions, ingestions, datasets, users, dictionaries, bucket, validator, quarantine, mock(catdevs.georuraldatahub.processing.GeospatialReader.class));
         var response = isolated.uploadToSource(csv("id\n1\nx"), 4L, 2L);
         assertEquals("PARCIAL", response.validation().status());
         assertEquals(1, response.validation().validRecords());
@@ -202,4 +202,5 @@ class FileServiceValidationTest {
         when(bucket.readValidationReport("bruta/test.csv")).thenReturn(reportJson.getValue());
         assertEquals(response.validation(), service.validationReport(6L));
     }
+
 }

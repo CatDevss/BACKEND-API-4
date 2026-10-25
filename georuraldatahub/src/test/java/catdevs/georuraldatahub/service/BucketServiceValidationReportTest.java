@@ -15,7 +15,7 @@ import catdevs.georuraldatahub.config.ObjectStorageProperties;
 
 class BucketServiceValidationReportTest {
     private final ObjectStorageClient client = mock(ObjectStorageClient.class);
-    private final BucketService service = new BucketService(client, new ObjectStorageProperties("namespace", "bucket", "compartment"));
+    private final BucketService service = new BucketService(client, new ObjectStorageProperties("namespace", "bucket", "compartment"), new catdevs.georuraldatahub.processing.ProcessingProperties());
 
     @Test void newFilesUseSourcePathsWithoutCollidingWithHistoricalDatasetPaths() throws Exception {
         var file = new org.springframework.mock.web.MockMultipartFile("file", "test.csv", "text/csv", new byte[]{1});
@@ -52,4 +52,5 @@ class BucketServiceValidationReportTest {
         when(client.getObject(any(GetObjectRequest.class))).thenThrow(failure);
         assertSame(failure, assertThrows(BmcException.class, () -> service.readValidationReport("bruta/test.csv")));
     }
+
 }

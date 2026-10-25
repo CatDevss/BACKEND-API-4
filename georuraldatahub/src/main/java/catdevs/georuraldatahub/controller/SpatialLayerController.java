@@ -1,6 +1,5 @@
 package catdevs.georuraldatahub.controller;
 
-import java.io.IOException;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -25,8 +24,8 @@ public class SpatialLayerController {
     /** Carrega os registros validados do arquivo para o Oracle Spatial e cria a camada. */
     @PostMapping("/conjuntos/{datasetId}/arquivos/{fileId}/camada")
     public ResponseEntity<LayerLoadResult> createLayer(@PathVariable Long datasetId,
-            @PathVariable Long fileId) throws IOException {
+            @PathVariable Long fileId, @org.springframework.web.bind.annotation.RequestParam(required = false) Long userId) throws Exception {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(spatialLayerService.createLayerFromFile(datasetId, fileId));
+                .body(spatialLayerService.createLayerFromFile(datasetId, fileId, userId));
     }
 }

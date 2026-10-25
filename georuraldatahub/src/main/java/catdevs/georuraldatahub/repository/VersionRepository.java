@@ -7,6 +7,8 @@ import catdevs.georuraldatahub.entity.Version;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface VersionRepository extends JpaRepository<Version, Long> {
+    Optional<Version> findFirstByFile_IdOrderByVersionNumberDesc(Long fileId);
+    Optional<Version> findFirstByFile_IdAndStatusInOrderByVersionNumberDesc(Long fileId, Collection<VersionStatus> statuses);
     Optional<Version> findFirstByFile_IdAndStatusAndLocationStartingWithOrderByVersionNumberDesc(
             Long fileId, VersionStatus status, String locationPrefix);
 

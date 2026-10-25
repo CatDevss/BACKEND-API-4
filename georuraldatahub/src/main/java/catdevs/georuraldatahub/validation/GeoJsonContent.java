@@ -31,6 +31,12 @@ public final class GeoJsonContent {
         var geometry = record.get("geometry");
         var properties = ((ObjectNode) record).deepCopy();
         if (geometry != null && !geometry.isNull()) {
+            if (geometry.isTextual()) {
+                try { geometry = MAPPER.readTree(geometry.asText()); }
+                catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+                    throw new IllegalArgumentException("Geometria JSON inválida no registro " + index + ".", e);
+                }
+            }
             if (!GeometryValidation.valid(geometry)) throw new IllegalArgumentException("Geometria inválida no registro " + index + ".");
             properties.remove("geometry");
         } else {

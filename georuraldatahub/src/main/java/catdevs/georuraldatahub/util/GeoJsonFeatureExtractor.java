@@ -65,11 +65,21 @@ public final class GeoJsonFeatureExtractor {
     private static String originId(JsonNode feature, int position) {
         JsonNode id = feature.get("id");
         String value = (id == null || id.isNull()) ? String.valueOf(position) : id.asText();
-        return value.length() > MAX_ORIGIN_ID_LENGTH ? value.substring(0, MAX_ORIGIN_ID_LENGTH) : value;
+        if (value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= MAX_ORIGIN_ID_LENGTH) return value;
+        return "sha256:" + catdevs.georuraldatahub.processing.VectorTreatment.hash(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
     private static String attributes(JsonNode feature) {
         JsonNode properties = feature.get("properties");
+        JsonNode id = feature.get("id");
+        if (id != null && !id.isNull() && id.asText().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > MAX_ORIGIN_ID_LENGTH) {
+            var copy = properties != null && properties.isObject()
+                    ? ((com.fasterxml.jackson.databind.node.ObjectNode) properties).deepCopy()
+                    : new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+            if (copy.has("_id_origem_completo")) throw new IllegalArgumentException("Campo reservado para rastreabilidade: _id_origem_completo.");
+            copy.set("_id_origem_completo", id);
+            return copy.toString();
+        }
         return (properties == null || properties.isNull()) ? null : properties.toString();
     }
 }
