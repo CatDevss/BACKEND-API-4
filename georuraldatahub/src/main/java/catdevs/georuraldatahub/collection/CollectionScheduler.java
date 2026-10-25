@@ -37,7 +37,7 @@ public class CollectionScheduler {
         if (request != null && request.product() == CollectionRequest.Product.INPE_QUEIMADAS && "D-1".equals(request.competence()))
             return new CollectionRequest(request.product(), request.datasetId(), request.userId(),
                     LocalDate.now(ZoneId.of("America/Sao_Paulo")).minusDays(1).toString(),
-                    request.municipality(), request.biome(), request.bbox());
+                    request.municipality(), request.biome(), request.bbox(), request.dictionaryId());
         return request;
     }
 }

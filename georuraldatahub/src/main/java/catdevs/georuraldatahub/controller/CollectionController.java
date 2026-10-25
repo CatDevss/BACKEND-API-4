@@ -19,6 +19,12 @@ public class CollectionController {
     @GetMapping("/fontes/conectores")
     public List<CollectionCatalog.Entry> catalog() { return catalog.list(); }
 
+    @GetMapping("/fontes/conectores/{product}/dicionario")
+    public catdevs.georuraldatahub.dto.DictionaryRequestDTO dictionaryTemplate(
+            @PathVariable CollectionRequest.Product product, @RequestParam(required = false) String competence) {
+        return catalog.dictionaryTemplate(product, competence);
+    }
+
     @PostMapping("/fontes/{sourceId}/coletas")
     @ResponseStatus(HttpStatus.CREATED)
     public CollectionService.Result collect(@PathVariable Long sourceId, @Valid @RequestBody CollectionRequest request) throws Exception {

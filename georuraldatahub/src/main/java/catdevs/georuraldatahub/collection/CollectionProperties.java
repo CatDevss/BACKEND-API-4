@@ -18,6 +18,16 @@ public class CollectionProperties {
     @jakarta.validation.constraints.Min(1)
     @jakarta.validation.constraints.Max(1000000)
     private int maxFeatures = 100000;
+    @jakarta.validation.constraints.Min(1)
+    @jakarta.validation.constraints.Max(300)
+    private int requestTimeoutSeconds = 90;
+    public int getRequestTimeoutSeconds() { return requestTimeoutSeconds; }
+    public void setRequestTimeoutSeconds(int value) { requestTimeoutSeconds = value; }
+    @jakarta.validation.constraints.Min(1)
+    @jakarta.validation.constraints.Max(900)
+    private int maxDurationSeconds = 180;
+    public int getMaxDurationSeconds() { return maxDurationSeconds; }
+    public void setMaxDurationSeconds(int value) { maxDurationSeconds = value; }
     @jakarta.validation.Valid
     private List<Job> jobs = List.of();
     public int getMaxDownloadBytes() { return maxDownloadBytes; }

@@ -24,9 +24,12 @@ public class Source {
     @Column(name = "fon_descricao")
     private String description;
 
-    @CreationTimestamp 
+    @CreationTimestamp
     @Column(name = "fon_data_criacao")
     private LocalDateTime dateCreation;
+
+    @Column(name = "fon_status")
+    private Integer status;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "usr_id", referencedColumnName = "usr_id")
@@ -73,6 +76,14 @@ public class Source {
 
     public void setDateCreation(LocalDateTime dateCreation) {
         this.dateCreation = dateCreation;
+    }
+
+    public Integer getStatus() {
+        return status;
+    }
+
+    public void setStatus(Integer status) {
+        this.status = status;
     }
 
     public User getUser() {

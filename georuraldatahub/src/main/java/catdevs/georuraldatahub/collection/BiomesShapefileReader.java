@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.*;
 
-/** Reads only the polygon/DBF subset used by the official IBGE biome archives.
+/** Reads the polygon/DBF subset used by official IBGE biome and municipal archives.
  * Unsupported projections/types fail explicitly. Nothing is extracted to disk. */
 @Component
 public class BiomesShapefileReader {
@@ -38,7 +38,7 @@ public class BiomesShapefileReader {
             }
         }
         List<String> shapes = files.keySet().stream().filter(n -> n.endsWith(".shp")).toList();
-        if (shapes.size() != 1) throw invalid("A base de biomas deve conter exatamente um shapefile.");
+        if (shapes.size() != 1) throw invalid("O ZIP IBGE deve conter exatamente um shapefile.");
         String base = shapes.getFirst().replaceFirst("\\.shp$", "");
         byte[] shape = files.get(base + ".shp"), dbf = files.get(base + ".dbf");
         byte[] projection = files.getOrDefault(base + ".prj", files.get(base + ".prj.txt"));
@@ -52,7 +52,7 @@ public class BiomesShapefileReader {
         List<ObjectNode> attributes = attributes(dbf, Charset.forName(encoding));
         if (shape.length < 100 || ByteBuffer.wrap(shape).getInt() != 9994) throw invalid("Cabeçalho SHP inválido.");
         ByteBuffer input = ByteBuffer.wrap(shape).order(ByteOrder.LITTLE_ENDIAN);
-        if (input.getInt(28) != 1000 || input.getInt(32) != 5) throw invalid("Apenas shapefile Polygon é suportado para biomas.");
+        if (input.getInt(28) != 1000 || input.getInt(32) != 5) throw invalid("Apenas shapefile Polygon é suportado.");
         long declared = Integer.toUnsignedLong(ByteBuffer.wrap(shape).getInt(24)) * 2;
         if (declared != shape.length) throw invalid("Shapefile truncado.");
         ObjectNode root = mapper.createObjectNode().put("type", "FeatureCollection");
@@ -64,7 +64,7 @@ public class BiomesShapefileReader {
             if (size < 4 || (long) offset + 8 + size > shape.length) throw invalid("Registro SHP truncado.");
             ByteBuffer data = ByteBuffer.wrap(shape, offset + 8, size).slice().order(ByteOrder.LITTLE_ENDIAN);
             ObjectNode properties = attributes.get(record++);
-            if (properties == null) throw invalid("Base de biomas contém registro excluído no DBF.");
+            if (properties == null) throw invalid("Base IBGE contém registro excluído no DBF.");
             ObjectNode feature = features.addObject().put("type", "Feature");
             feature.set("properties", properties);
             feature.set("geometry", geometry(data));

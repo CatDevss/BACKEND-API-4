@@ -48,7 +48,7 @@ class PublicDataConnectorsTest {
         connectors.collect(request(Product.IBGE_MUNICIPIOS, "2022", null, null, null));
         verify(http).download(argThat(uri -> uri.toString().contains("/estados/PR") && uri.toString().contains("intrarregiao=municipio")));
     }
-    @Test void rejectsInvalidParametersBeforeAnyDownload() {
+    @Test void rejectsInvalidParametersBeforeAnyDownload() throws Exception {
         for (var r : List.of(request(Product.IBGE_MUNICIPIOS, "2022", "1/../../", null, null),
                 request(Product.IBGE_MUNICIPIOS, "2022 OR 1=1", "4106902", null, null),
                 request(Product.IBGE_BIOMAS, "2024", null, null, null),
@@ -58,7 +58,7 @@ class PublicDataConnectorsTest {
                 request(Product.INPE_PRODES, "2023", null, "CERRADO", List.of(4., 5., 1., 2.)),
                 request(Product.INPE_QUEIMADAS, "2999-01-01", null, null, null)))
             assertThrows(IllegalArgumentException.class, () -> connectors.collect(r));
-        verifyNoInteractions(http);
+        verify(http, never()).download(any());
     }
     @Test void convertsRealBiomeArchiveAndRetainsOriginalBytes() throws Exception {
         byte[] zip = fixture("ibge-biomas-2004.zip"); when(http.download(argThat(uri -> !boundaryUri(uri)))).thenReturn(zip);
