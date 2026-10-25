@@ -19,6 +19,7 @@ public class OfficialDataClient {
             "terrabrasilis.dpi.inpe.br", "dataserver-coids.inpe.br");
     private final HttpClient client;
     private final CollectionProperties properties;
+    // Cada coleta tem seu próprio prazo; chamadas aninhadas compartilham o limite mais restrito.
     private final ThreadLocal<Long> collectionDeadline = new ThreadLocal<>();
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -52,6 +53,7 @@ public class OfficialDataClient {
 
     public byte[] download(URI uri) throws IOException, InterruptedException {
         checkUri(uri);
+        // O prazo inclui o corpo da resposta, redirecionamentos e todas as tentativas.
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(properties.getRequestTimeoutSeconds());
         Long collectionEnd = collectionDeadline.get();
         if (collectionEnd != null) deadline = Math.min(deadline, collectionEnd);
@@ -115,6 +117,7 @@ public class OfficialDataClient {
         return new LimitedBodySubscriber(maximum);
     }
 
+    // Limita os bytes recebidos mesmo quando Content-Length está ausente ou incorreto.
     static final class LimitedBodySubscriber implements HttpResponse.BodySubscriber<byte[]> {
         private final HttpResponse.BodySubscriber<byte[]> delegate = HttpResponse.BodySubscribers.ofByteArray();
         private final int maximum;

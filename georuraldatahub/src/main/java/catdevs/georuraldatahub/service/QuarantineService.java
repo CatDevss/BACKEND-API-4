@@ -69,6 +69,7 @@ public class QuarantineService {
         return response(quarantines.save(quarantine));
     }
 
+    // Encerra apenas a análise; não corrige o arquivo nem aprova os registros rejeitados.
     @Transactional
     public QuarantineResponseDTO resolve(Long id, Long userId, String treatment) {
         activeUser(userId);

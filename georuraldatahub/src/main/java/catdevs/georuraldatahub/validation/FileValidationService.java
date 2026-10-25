@@ -25,6 +25,7 @@ public class FileValidationService {
     }
     public byte[] acceptedContent(InputStream original, String format, List<RecordValidationResult> records) throws Exception {
         var valid = records.stream().filter(RecordValidationResult::valid).toList();
+        // Índice negativo indica falha do arquivo inteiro; nesse caso, nenhum registro segue adiante.
         if (valid.isEmpty() || records.stream().anyMatch(r -> r.recordIndex() < 0)) return new byte[0];
         if (normalize(format).equals("csv")) {
             try (var reader = new CsvRecordValidator.TableReader(original)) {

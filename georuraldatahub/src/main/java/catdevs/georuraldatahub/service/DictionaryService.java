@@ -35,6 +35,7 @@ public class DictionaryService {
 
     @Transactional
     public Dictionary acquireForValidation(Long sourceId, Long dictionaryId) {
+        // O CRUD usa o mesmo bloqueio, evitando alterar regras entre a seleção e o primeiro uso.
         lockSource(sourceId);
         return findForValidation(sourceId, dictionaryId);
     }
@@ -111,6 +112,7 @@ public class DictionaryService {
     }
 
     private Dictionary lockDictionary(Long id) {
+        // Mantém a ordem fonte -> dicionário em todas as operações para reduzir risco de deadlock.
         lockSource(dictionaries.findSourceIdById(id).orElseThrow(() -> missing("Dicionário não encontrado.")));
         return dictionaries.findLockedById(id).orElseThrow(() -> missing("Dicionário não encontrado."));
     }

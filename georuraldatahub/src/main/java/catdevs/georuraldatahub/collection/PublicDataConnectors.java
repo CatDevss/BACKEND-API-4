@@ -54,6 +54,7 @@ public class PublicDataConnectors {
         String municipality = r.municipality();
         if (municipality != null && !municipality.matches("41[0-9]{5}")) throw new IllegalArgumentException("Informe um município do Paraná: código IBGE de sete dígitos iniciado por 41.");
         if (r.bbox() != null || r.biome() != null) throw new IllegalArgumentException("Malha municipal aceita apenas ano e código IBGE opcional.");
+        // Para essas edições, usamos o ZIP estadual; a API de malhas apresentou falhas para anos recentes.
         if (year >= 2023) return municipalArchive(r, year, municipality);
         String path = municipality == null ? "/estados/PR" : "/municipios/" + municipality;
         String url = "https://servicodados.ibge.gov.br/api/v3/malhas" + path
@@ -92,6 +93,7 @@ public class PublicDataConnectors {
                 throw OfficialDataClient.upstream("ZIP IBGE contém código municipal fora do Paraná ou duplicado.");
             if (municipality == null || municipality.equals(code)) {
                 var copy = ((ObjectNode) feature).deepCopy();
+                // Mantém os atributos do SHP e acrescenta o alias usado pelas malhas da API.
                 ((ObjectNode) copy.path("properties")).put("codarea", code);
                 features.add(copy);
             }

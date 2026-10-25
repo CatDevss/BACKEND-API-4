@@ -30,6 +30,7 @@ final class ParanaSpatialFilter {
         if (geometry.isEmpty() || geometry.getDimension() != 2) throw OfficialDataClient.upstream("Limite do Paraná inválido.");
         return new Boundary(geometry, new CollectedData.Original("limite_PR_IBGE_2022.geojson",BOUNDARY_URL,"application/geo+json",data));
     }
+    // Recorta nas coordenadas geográficas recebidas; não reprojeta nem calcula área.
     byte[] clip(byte[] input, Boundary boundary) throws IOException {
         JsonNode root = mapper.readTree(input);
         if (root == null || !root.path("type").asText().equals("FeatureCollection") || !root.path("features").isArray())
@@ -42,6 +43,7 @@ final class ParanaSpatialFilter {
             if (source.isEmpty() || !source.getEnvelopeInternal().intersects(boundary.geometry().getEnvelopeInternal())) continue;
             Geometry intersection = OverlayNGRobust.overlay(GeometryFixer.fix(source), boundary.geometry(), OverlayNG.INTERSECTION);
             List<Polygon> polygons = new java.util.ArrayList<>();
+            // Contatos apenas por linha ou ponto não representam área de bioma ou desmatamento.
             polygons(intersection, polygons);
             if (polygons.isEmpty()) continue;
             Geometry result = new GeometryFactory().createMultiPolygon(polygons.toArray(Polygon[]::new));

@@ -35,6 +35,7 @@ public class CollectionService {
         var log = org.slf4j.LoggerFactory.getLogger(CollectionService.class);
         log.info("Iniciando coleta manual: fonte={}, produto={}, competência={}", sourceId, request.product(), request.competence());
         CollectedData data;
+        // O download acontece antes da transação de ingestão, sem manter bloqueios do banco durante a rede.
         try { data = connectors.collect(request); }
         catch (InterruptedException e) {
             Thread.currentThread().interrupt();

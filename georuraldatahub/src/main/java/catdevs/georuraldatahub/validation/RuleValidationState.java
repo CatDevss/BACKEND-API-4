@@ -43,6 +43,7 @@ final class RuleValidationState {
         try { key = mapper.writeValueAsString(normalized) + "|" + geometry; }
         catch (Exception e) { throw new IllegalStateException(e); }
         if (records.contains(key)) errors.add("DUPLICATE_RECORD");
+        // Registros rejeitados não reservam valores únicos nem tornam duplicado um registro válido posterior.
         if (errors.isEmpty()) {
             records.add(key);
             for (FieldRule rule : rules) if (rule.unique() && normalized.containsKey(rule.name()))

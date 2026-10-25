@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.*;
 
+// Leitor restrito aos ZIPs IBGE com SHP Polygon e coordenadas geográficas SIRGAS 2000; não faz reprojeção.
 @Component
 public class BiomesShapefileReader {
     private final CollectionProperties limits;

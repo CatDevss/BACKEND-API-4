@@ -61,6 +61,7 @@ public class LayerService {
                     "Formato não suportado para visualização: " + file.getFormatFile());
         }
 
+        // Usa somente o conteúdo filtrado: o original pode conter registros rejeitados.
         String location = versionRepository.findFirstByFile_IdAndStatusAndLocationStartingWithOrderByVersionNumberDesc(
                 fileId, VersionStatus.BRUTA, "validada/")
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT,

@@ -103,10 +103,12 @@ public class FileService {
         String hash = calculateHash(multipartFile);
 
         User user = userService.findEntityById(userId);
+        // O bloqueio da fonte mantém a checagem de duplicidade e a gravação na mesma transação.
         Dictionary dictionary = dictionaryService.acquireForValidation(sourceId, dictionaryId);
         if (fileRepository.existsByHashAndIngestion_Dictionary_Source_Id(hash, sourceId)) {
             throw new DuplicateFileException("Este conteúdo já foi enviado para esta fonte. Selecione o arquivo existente para compor o conjunto.");
         }
+        // A ingestão pertence à fonte; o conjunto é uma associação opcional, também disponível depois do upload.
         Dataset dataset = datasetId == null ? null : datasetService.findLockedEntityById(datasetId);
 
         String sanitizedFilename = sanitizeFilename(multipartFile.getOriginalFilename());
@@ -131,6 +133,7 @@ public class FileService {
 
         List<String> uploaded = new ArrayList<>();
         uploaded.add(location);
+        // O OCI não participa da transação JPA; em rollback, tentamos remover os objetos enviados.
         TransactionSynchronizationManager.registerSynchronization(
             new TransactionSynchronization() {
                 @Override public void afterCompletion(int status) {
@@ -145,6 +148,7 @@ public class FileService {
         String reportLocation = bucketService.uploadValidationReport(location, reportJson);
         uploaded.add(reportLocation);
 
+        // A conversão do conector não substitui os arquivos oficiais: guardamos ambos e a proveniência.
         if (collected != null) {
             int index = 0;
             for (var original : collected.originals()) {
@@ -195,6 +199,7 @@ public class FileService {
             Version validated = new Version();
             validated.setFile(file);
             validated.setVersionNumber(2);
+            // Aprovação na validação ainda não significa tratamento ou publicação.
             validated.setStatus(VersionStatus.BRUTA);
             validated.setLocation(acceptedLocation);
             versionRepository.save(validated);
