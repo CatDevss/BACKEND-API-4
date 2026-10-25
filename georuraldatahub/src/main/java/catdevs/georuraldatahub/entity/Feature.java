@@ -14,7 +14,8 @@ public class Feature {
     private Layer layer;
     @Column(name = "fei_id_origem", length = 100, updatable = false)
     private String originId;
-    @JdbcTypeCode(SqlTypes.GEOMETRY) @Column(name = "fei_geometria", columnDefinition = "MDSYS.SDO_GEOMETRY", updatable = false)
+    // Oracle JDBC retorna o nome sem MDSYS; manter esse nome para validar o schema sem perder o binder espacial.
+    @JdbcTypeCode(SqlTypes.GEOMETRY) @Column(name = "fei_geometria", columnDefinition = "SDO_GEOMETRY", updatable = false)
     private Geometry geometry;
     @Lob @Column(name = "fei_atributos", updatable = false)
     private String attributes;

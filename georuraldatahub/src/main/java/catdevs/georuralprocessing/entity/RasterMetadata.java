@@ -21,6 +21,6 @@ public class RasterMetadata {
     @Column(name = "ras_pixel_altura", nullable = false, updatable = false) private Double pixelHeight;
     @Lob @Column(name = "ras_metadados", nullable = false, updatable = false) private String metadata;
     @JdbcTypeCode(SqlTypes.GEOMETRY)
-    @Column(name = "ras_cobertura", nullable = false, updatable = false, columnDefinition = "MDSYS.SDO_GEOMETRY")
+    @Column(name = "ras_cobertura", nullable = false, updatable = false, columnDefinition = "SDO_GEOMETRY")
     private Geometry footprint;
 }
