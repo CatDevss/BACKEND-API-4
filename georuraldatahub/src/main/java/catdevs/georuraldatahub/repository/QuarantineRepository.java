@@ -3,7 +3,6 @@ package catdevs.georuraldatahub.repository;
 import catdevs.georuraldatahub.entity.Quarantine;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.QueryHint;
-import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -15,7 +14,6 @@ import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 
 public interface QuarantineRepository extends JpaRepository<Quarantine, Long> {
-    List<Quarantine> findByStatus(String status);
 
     @EntityGraph(attributePaths = {"user", "file", "ingestion", "ingestion.dictionary", "ingestion.dictionary.source"})
     @Query("""

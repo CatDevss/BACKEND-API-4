@@ -70,7 +70,6 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<String> handleUnexpected(Exception ex) {
-        // Preserve Spring HTTP statuses (missing parameters, unsupported methods, etc.).
         if (ex instanceof ErrorResponse error) {
             return ResponseEntity.status(error.getStatusCode()).headers(error.getHeaders())
                     .body(error.getBody().getDetail() == null ? "Requisição inválida." : error.getBody().getDetail());
@@ -80,11 +79,6 @@ public class GlobalExceptionHandler {
                 .body("Não foi possível concluir a operação. Consulte os logs do backend para identificar a causa.");
     }
 
-    @ExceptionHandler(VersionNotFoundException.class)
-    public ResponseEntity<String> handleVersionNotFound(VersionNotFoundException ex) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ex.getMessage());
-    }
-
     @ExceptionHandler(DuplicateFileException.class)
     public ResponseEntity<String> handleDuplicateFile(DuplicateFileException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(ex.getMessage());
@@ -92,11 +86,6 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(DataSetNotFoundException.class)
     public ResponseEntity<String> handleDatasetNotFound(DataSetNotFoundException ex) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ex.getMessage());
-    }
-
-    @ExceptionHandler(UserNotFoundException.class)
-    public ResponseEntity<String> handleUserNotFound(UserNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ex.getMessage());
     }
 

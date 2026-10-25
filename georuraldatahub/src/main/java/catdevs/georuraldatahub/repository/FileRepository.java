@@ -16,14 +16,6 @@ public interface FileRepository extends JpaRepository<File, Long> {
     List<File> findByIngestion_Dictionary_Source_IdOrderByIdDesc(Long sourceId);
 
 
-    @Query("""
-        SELECT CASE WHEN COUNT(f) > 0 THEN true ELSE false END
-        FROM Dataset d JOIN d.files f
-        WHERE d.id = :datasetId
-        AND f.hash = :hash
-    """)
-    boolean existsByHashInDataset(@Param("datasetId") Long datasetId, @Param("hash") String hash);
-
     @EntityGraph(attributePaths = {"ingestion.dictionary.source", "ingestion.user"})
     @Query("""
         SELECT f
