@@ -27,7 +27,7 @@ class LayerServiceValidationTest {
     @Test void readsFilteredVersionInsteadOfOriginal() throws Exception {
         when(files.findById(1L)).thenReturn(Optional.of(file(1L)));
         Version version = new Version(); version.setLocation("validada/filtered.csv");
-        when(versions.findFirstByFile_IdAndStatusAndLocationStartingWithOrderByVersionNumberDesc(1L, VersionStatus.BRUTA, "validada/")).thenReturn(Optional.of(version));
+        when(versions.findFirstByFile_IdAndStatusInAndLocationStartingWithOrderByVersionNumberDesc(eq(1L), argThat(statuses -> statuses.contains(VersionStatus.TRATADA)), eq("validada/"))).thenReturn(Optional.of(version));
         service.getFileLayer(1L);
         verify(bucket).readCsvAsGeoJson("validada/filtered.csv");
         verify(bucket, never()).readCsvAsGeoJson("bruta/original.csv");
@@ -35,7 +35,7 @@ class LayerServiceValidationTest {
     @Test void listsOnlyApprovedFiles() {
         when(datasets.existsById(4L)).thenReturn(true);
         when(files.findByDatasetId(4L)).thenReturn(List.of(file(1L), file(2L)));
-        when(versions.findFirstByFile_IdAndStatusAndLocationStartingWithOrderByVersionNumberDesc(1L, VersionStatus.BRUTA, "validada/")).thenReturn(Optional.of(new Version()));
+        when(versions.findFirstByFile_IdAndStatusInAndLocationStartingWithOrderByVersionNumberDesc(eq(1L), argThat(statuses -> statuses.contains(VersionStatus.TRATADA)), eq("validada/"))).thenReturn(Optional.of(new Version()));
         assertEquals(1, service.listLayers(4L).size());
     }
 }
