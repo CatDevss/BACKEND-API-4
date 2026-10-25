@@ -58,7 +58,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(PessimisticLockingFailureException.class)
     public ResponseEntity<String> handleBusyResource(PessimisticLockingFailureException ex) {
-        return ResponseEntity.status(HttpStatus.CONFLICT).body("A fonte ou o conjunto está ocupado por outra operação. Aguarde e tente novamente.");
+        return ResponseEntity.status(HttpStatus.CONFLICT).body("O registro está ocupado por outra operação. Aguarde e tente novamente.");
     }
 
     @ExceptionHandler({org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class,
