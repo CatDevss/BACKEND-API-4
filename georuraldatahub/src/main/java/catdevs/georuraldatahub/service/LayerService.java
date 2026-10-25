@@ -23,6 +23,9 @@ import catdevs.georuraldatahub.repository.FileRepository;
 public class LayerService {
 
     private static final Set<String> RENDERABLE = Set.of("geojson", "json", "csv");
+    /** Versões com registros validados: ainda pendentes de carga (BRUTA) ou já carregadas. */
+    private static final Set<VersionStatus> VALIDATED_STATUSES =
+            Set.of(VersionStatus.BRUTA, VersionStatus.TRATADA, VersionStatus.PUBLICADA);
 
     private final FileRepository fileRepository;
     private final DatasetRepository datasetRepository;
@@ -44,8 +47,8 @@ public class LayerService {
         }
         return fileRepository.findByDatasetId(datasetId).stream()
                 .filter(f -> isRenderable(f.getFormatFile()))
-                .filter(f -> versionRepository.findFirstByFile_IdAndStatusAndLocationStartingWithOrderByVersionNumberDesc(
-                        f.getId(), VersionStatus.BRUTA, "validada/").isPresent())
+                .filter(f -> versionRepository.findFirstByFile_IdAndStatusInAndLocationStartingWithOrderByVersionNumberDesc(
+                        f.getId(), VALIDATED_STATUSES, "validada/").isPresent())
                 .map(f -> new LayerInfoDTO(f.getId(), f.getName(), f.getFormatFile(),
                         f.getSize(), f.getReceivedDate()))
                 .toList();
@@ -61,8 +64,8 @@ public class LayerService {
                     "Formato não suportado para visualização: " + file.getFormatFile());
         }
 
-        String location = versionRepository.findFirstByFile_IdAndStatusAndLocationStartingWithOrderByVersionNumberDesc(
-                fileId, VersionStatus.BRUTA, "validada/")
+        String location = versionRepository.findFirstByFile_IdAndStatusInAndLocationStartingWithOrderByVersionNumberDesc(
+                fileId, VALIDATED_STATUSES, "validada/")
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT,
                         "Arquivo sem registros aprovados para visualização.")).getLocation();
         return "csv".equalsIgnoreCase(file.getFormatFile())
