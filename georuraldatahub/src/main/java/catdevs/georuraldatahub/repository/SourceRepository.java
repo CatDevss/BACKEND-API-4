@@ -1,9 +1,15 @@
 package catdevs.georuraldatahub.repository;
 
-import catdevs.georuraldatahub.entity.Source;
+import java.util.Optional;
+
+import jakarta.persistence.LockModeType;
+
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+
+import catdevs.georuraldatahub.entity.Source;
 
 public interface SourceRepository extends JpaRepository<Source, Long> {
 
@@ -13,4 +19,8 @@ public interface SourceRepository extends JpaRepository<Source, Long> {
         WHERE s.name = :name
         """)
     boolean existsByName(@Param("name") String name);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT s FROM Source s WHERE s.id = :id")
+    Optional<Source> findLockedById(@Param("id") Long id);
 }

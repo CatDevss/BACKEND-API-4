@@ -1,41 +1,157 @@
 package catdevs.georuraldatahub.service;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
-import java.util.*;
+
+import java.util.List;
+
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
-import catdevs.georuraldatahub.entity.*;
-import catdevs.georuraldatahub.entity.enums.VersionStatus;
-import catdevs.georuraldatahub.repository.*;
+
+import catdevs.georuraldatahub.dto.LayerInfoDTO;
+import catdevs.georuraldatahub.entity.File;
 
 class LayerServiceValidationTest {
-    private final FileRepository files = mock(FileRepository.class);
-    private final DatasetRepository datasets = mock(DatasetRepository.class);
-    private final BucketService bucket = mock(BucketService.class);
-    private final VersionRepository versions = mock(VersionRepository.class);
-    private final LayerService service = new LayerService(files, datasets, bucket, versions);
-    private File file(Long id) {
-        File file = new File(); file.setId(id); file.setName("test.csv"); file.setFormatFile("csv");
-        file.setLocation("bruta/original.csv"); return file;
+
+    private final FileService fileService = mock(FileService.class);
+    private final BucketService bucketService = mock(BucketService.class);
+
+    private final LayerService service =
+            new LayerService(fileService, bucketService);
+
+    private File file(
+            Long id,
+            String name,
+            String format,
+            String location
+    ) {
+        File file = new File();
+
+        file.setId(id);
+        file.setName(name);
+        file.setFormatFile(format);
+        file.setLocation(location);
+
+        return file;
     }
-    @Test void rejectsLayerWithoutApprovedVersion() {
-        when(files.findById(1L)).thenReturn(Optional.of(file(1L)));
-        assertEquals(409, assertThrows(ResponseStatusException.class, () -> service.getFileLayer(1L)).getStatusCode().value());
-        verifyNoInteractions(bucket);
+
+    @Test
+    void rejectsLayerWithUnsupportedFormat() throws Exception {
+        File unsupportedFile = file(
+                1L,
+                "documento.pdf",
+                "pdf",
+                "documentos/documento.pdf"
+        );
+
+        when(fileService.findEntityById(1L))
+                .thenReturn(unsupportedFile);
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> service.getFileLayer(1L)
+        );
+
+        assertEquals(
+                HttpStatus.UNPROCESSABLE_CONTENT,
+                exception.getStatusCode()
+        );
+
+        verifyNoInteractions(bucketService);
     }
-    @Test void readsFilteredVersionInsteadOfOriginal() throws Exception {
-        when(files.findById(1L)).thenReturn(Optional.of(file(1L)));
-        Version version = new Version(); version.setLocation("validada/filtered.csv");
-        when(versions.findFirstByFile_IdAndStatusAndLocationStartingWithOrderByVersionNumberDesc(1L, VersionStatus.BRUTA, "validada/")).thenReturn(Optional.of(version));
+
+    @Test
+    void readsCsvFromFileLocation() throws Exception {
+        File csvFile = file(
+                1L,
+                "dados.csv",
+                "csv",
+                "dados/dados.csv"
+        );
+
+        when(fileService.findEntityById(1L))
+                .thenReturn(csvFile);
+
         service.getFileLayer(1L);
-        verify(bucket).readCsvAsGeoJson("validada/filtered.csv");
-        verify(bucket, never()).readCsvAsGeoJson("bruta/original.csv");
+
+        verify(bucketService).readCsvAsGeoJson("dados/dados.csv");
+        verify(bucketService, never()).readGeoJson(anyString());
     }
-    @Test void listsOnlyApprovedFiles() {
-        when(datasets.existsById(4L)).thenReturn(true);
-        when(files.findByDatasetId(4L)).thenReturn(List.of(file(1L), file(2L)));
-        when(versions.findFirstByFile_IdAndStatusAndLocationStartingWithOrderByVersionNumberDesc(1L, VersionStatus.BRUTA, "validada/")).thenReturn(Optional.of(new Version()));
-        assertEquals(1, service.listLayers(4L).size());
+
+    @Test
+    void readsGeoJsonFromFileLocation() throws Exception {
+        File geoJsonFile = file(
+                2L,
+                "mapa.geojson",
+                "geojson",
+                "mapas/mapa.geojson"
+        );
+
+        when(fileService.findEntityById(2L))
+                .thenReturn(geoJsonFile);
+
+        service.getFileLayer(2L);
+
+        verify(bucketService).readGeoJson("mapas/mapa.geojson");
+        verify(bucketService, never()).readCsvAsGeoJson(anyString());
+    }
+
+    @Test
+    void listsOnlyRenderableFiles() {
+        File csvFile = file(
+                1L,
+                "dados.csv",
+                "csv",
+                "dados/dados.csv"
+        );
+
+        File pdfFile = file(
+                2L,
+                "relatorio.pdf",
+                "pdf",
+                "documentos/relatorio.pdf"
+        );
+
+        File geoJsonFile = file(
+                3L,
+                "mapa.geojson",
+                "geojson",
+                "mapas/mapa.geojson"
+        );
+
+        when(fileService.findEntitiesByDatasetId(4L))
+                .thenReturn(List.of(csvFile, pdfFile, geoJsonFile));
+
+        List<LayerInfoDTO> result = service.listLayers(4L);
+
+        assertEquals(2, result.size());
+        assertTrue(
+                result.stream().anyMatch(layer -> layer.fileId().equals(1L))
+        );
+        assertTrue(
+                result.stream().anyMatch(layer -> layer.fileId().equals(3L))
+        );
+        assertFalse(
+                result.stream().anyMatch(layer -> layer.fileId().equals(2L))
+        );
+    }
+
+    @Test
+    void supportsJsonFormat() throws Exception {
+        File jsonFile = file(
+                5L,
+                "dados.json",
+                "json",
+                "dados/dados.json"
+        );
+
+        when(fileService.findEntityById(5L))
+                .thenReturn(jsonFile);
+
+        service.getFileLayer(5L);
+
+        verify(bucketService).readGeoJson("dados/dados.json");
     }
 }

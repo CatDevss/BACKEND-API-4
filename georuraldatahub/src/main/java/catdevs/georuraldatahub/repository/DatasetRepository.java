@@ -1,12 +1,15 @@
 package catdevs.georuraldatahub.repository;
 
 import java.util.Optional;
-import catdevs.georuraldatahub.entity.Dataset;
+
 import jakarta.persistence.LockModeType;
+
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+
+import catdevs.georuraldatahub.entity.Dataset;
 
 public interface DatasetRepository extends JpaRepository<Dataset, Long> {
 
@@ -16,4 +19,8 @@ public interface DatasetRepository extends JpaRepository<Dataset, Long> {
         WHERE d.id = :datasetId
         """)
     boolean hasFiles(@Param("datasetId") Long datasetId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT d FROM Dataset d WHERE d.id = :id")
+    Optional<Dataset> findLockedById(@Param("id") Long id);
 }
