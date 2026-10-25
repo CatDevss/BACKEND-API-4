@@ -57,6 +57,7 @@ public class FileService {
     private final FileValidationService validationService;
     private final QuarantineRepository quarantineRepository;
     private final ObjectMapper mapper = new ObjectMapper();
+    private final catdevs.georuraldatahub.processing.GeospatialReader geospatial;
 
     public FileService(
             FileRepository fileRepository,
@@ -67,7 +68,8 @@ public class FileService {
             DictionaryService dictionaryService,
             BucketService bucketService,
             FileValidationService validationService,
-            QuarantineRepository quarantineRepository) {
+            QuarantineRepository quarantineRepository,
+            catdevs.georuraldatahub.processing.GeospatialReader geospatial) {
 
         this.fileRepository = fileRepository;
         this.versionRepository = versionRepository;
@@ -78,6 +80,7 @@ public class FileService {
         this.bucketService = bucketService;
         this.validationService = validationService;
         this.quarantineRepository = quarantineRepository;
+        this.geospatial = geospatial;
     }
 
      /** Envia um arquivo para uma fonte, sem associar a nenhum dataset. */
@@ -143,17 +146,56 @@ public class FileService {
             throw new IllegalArgumentException("Informe um arquivo com extensão de até 10 caracteres.");
 
         var rules = dictionaryService.rules(dictionary);
-        List<RecordValidationResult> records;
-        try (InputStream input = multipartFile.getInputStream()) {
-            records = validationService.validate(input, format, rules);
+        catdevs.georuraldatahub.processing.GeospatialReader.Result prepared = null;
+        List<RecordValidationResult> preparationErrors = null;
+        boolean raster = java.util.Set.of("tif", "tiff").contains(format);
+        int sourceSrid = 0;
+        boolean declaredCrs = false;
+        if (collected != null && collected.metadata() != null
+                && "shapefile.zip".equals(collected.metadata().originFormat())
+                && java.util.Set.of("IBGE_BIOMAS", "IBGE_MUNICIPIOS").contains(collected.metadata().product())) {
+            // O leitor IBGE já verificou SIRGAS 2000 geográfico; converter para GeoJSON não reprojeta o datum.
+            sourceSrid = 4674;
+        } else if (java.util.Set.of("geojson", "json").contains(format)) {
+            try (InputStream input = multipartFile.getInputStream()) {
+                var root = mapper.readTree(input);
+                declaredCrs = root != null && root.hasNonNull("crs")
+                        && java.util.Set.of("FeatureCollection", "Feature").contains(root.path("type").asText());
+            } catch (com.fasterxml.jackson.core.JsonProcessingException ignored) {
+                // O validador abaixo registra o erro estrutural e preserva o original na quarentena.
+            }
         }
-        var report = FileValidationReport.of(
-                dictionary.getId(), dictionary.getVersion(), records);
+        if (raster || java.util.Set.of("zip", "gpkg").contains(format) || sourceSrid != 0 || declaredCrs) {
+            try (InputStream input = multipartFile.getInputStream()) {
+                prepared = geospatial.read(input, format.equals("json") ? "geojson" : format, sourceSrid);
+            } catch (ResponseStatusException e) {
+                if (e.getStatusCode().value() != 422) throw e;
+                preparationErrors = List.of(RecordValidationResult.invalid(-1, "",
+                        List.of("INVALID_GEOSPATIAL_FILE: " + e.getReason())));
+            }
+        }
+        List<RecordValidationResult> records;
+        try (InputStream input = prepared == null ? multipartFile.getInputStream()
+                : new java.io.ByteArrayInputStream(prepared.content())) {
+            records = preparationErrors == null
+                    ? validationService.validate(input, prepared == null ? format : raster ? "json" : "geojson", rules)
+                    : preparationErrors;
+        }
+        var report = FileValidationReport.of(dictionary.getId(), dictionary.getVersion(), records);
         String reportJson = mapper.writeValueAsString(report);
         byte[] accepted;
-        try (InputStream input = multipartFile.getInputStream()) {
-            accepted = validationService.acceptedContent(input, format, records);
+        if (preparationErrors != null) {
+            accepted = new byte[0];
+        } else if (raster) {
+            accepted = report.status().equals("VALIDO") ? mapper.writeValueAsBytes(prepared.metadata()) : new byte[0];
+        } else {
+            try (InputStream input = prepared == null ? multipartFile.getInputStream()
+                    : new java.io.ByteArrayInputStream(prepared.content())) {
+                accepted = validationService.acceptedContent(input, prepared == null ? format : "geojson", records);
+            }
         }
+        String validatedFilename = sanitizedFilename + (prepared == null || java.util.Set.of("json", "geojson").contains(format)
+                ? "" : raster ? ".raster.json" : ".geojson");
         // O conteúdo bruto fica guardado para auditoria. Só o arquivo filtrado segue para tratamento.
         String location = bucketService.uploadToSourceRawZone(multipartFile, sourceId, hash, sanitizedFilename);
 
@@ -174,7 +216,12 @@ public class FileService {
         String reportLocation = bucketService.uploadValidationReport(location, reportJson);
         uploaded.add(reportLocation);
 
-         // Em coletas, guarda também os arquivos originais e os metadados.
+         if (prepared != null) {
+            uploaded.add(bucketService.uploadCollectionArtifact(location + ".geospatial.json",
+                    mapper.writeValueAsBytes(prepared.metadata()), "application/json"));
+        }
+
+        // Em coletas, guarda também os arquivos originais e os metadados.
         if (collected != null) {
             int index = 0;
             for (var original : collected.originals()) {
@@ -184,6 +231,16 @@ public class FileService {
             }
             uploaded.add(bucketService.uploadCollectionArtifact(location + ".collection.json",
                     mapper.writeValueAsBytes(collected.metadata()), "application/json"));
+        }
+
+        if (!report.status().equals("VALIDO")) {
+            // A zona física acompanha a quarentena do banco. O original bruto e o histórico ficam preservados.
+            String quarantineLocation = BucketService.quarantineLocation(location);
+            // Registrar antes do envio também cobre falha de rede após a gravação no OCI.
+            uploaded.add(quarantineLocation);
+            bucketService.uploadToQuarantineZone(multipartFile, location);
+            uploaded.add(quarantineLocation + ".validation.json");
+            bucketService.uploadValidationReport(quarantineLocation, reportJson);
         }
 
          // Salva a ingestão (ERRO se o arquivo foi rejeitado por completo)
@@ -225,7 +282,7 @@ public class FileService {
 
           // Versão 2: só os registros aceitos, se houver algum.
         if (accepted.length > 0) {
-            String acceptedLocation = bucketService.uploadSourceValidatedContent(accepted, sourceId, hash, sanitizedFilename);
+            String acceptedLocation = bucketService.uploadSourceValidatedContent(accepted, sourceId, hash, validatedFilename);
             uploaded.add(acceptedLocation);
             Version validated = new Version();
             validated.setFile(file);
@@ -322,7 +379,14 @@ public class FileService {
                 CollectedData.Metadata.class);
     }
 
-      /** Lista os arquivos de uma fonte, do mais recente para o mais antigo. */
+      @Transactional(readOnly = true)
+    public com.fasterxml.jackson.databind.JsonNode geospatialMetadata(Long fileId) throws Exception {
+        File file = fileRepository.findById(fileId).orElseThrow(() -> new ResponseStatusException(
+                HttpStatus.NOT_FOUND, "Arquivo não encontrado."));
+        return mapper.readTree(bucketService.readGeospatialMetadata(file.getLocation()));
+    }
+
+    /** Lista os arquivos de uma fonte, do mais recente para o mais antigo. */
     @Transactional(readOnly = true)
     public List<FileResponseDTO> findBySourceId(Long sourceId) {
         return fileRepository.findByIngestion_Dictionary_Source_IdOrderByIdDesc(sourceId).stream()

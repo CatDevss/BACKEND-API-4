@@ -11,16 +11,16 @@ import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.node.*;
 
 /** Geographic clipping only. Area calculation must use an equivalent projection later. */
-final class ParanaSpatialFilter {
-    static final String BOUNDARY_URL = "https://servicodados.ibge.gov.br/api/v3/malhas/estados/PR?formato=application%2Fvnd.geo%2Bjson&qualidade=maxima&periodo=2022";
+public final class ParanaSpatialFilter {
+    public static final String BOUNDARY_URL = "https://servicodados.ibge.gov.br/api/v3/malhas/estados/PR?formato=application%2Fvnd.geo%2Bjson&qualidade=maxima&periodo=2022";
     static final String LIMITATION = "Escopo exclusivo do Paraná (UF 41). Recorte espacial usa a malha simplificada IBGE 2022, qualidade máxima; não substitui limite cadastral. Geometrias inválidas podem ser reparadas para a interseção; os originais são preservados. Sem cálculo de área ou reprojeção equivalente nesta etapa.";
     private final OfficialDataClient http;
     private final ObjectMapper mapper = new ObjectMapper();
     private final GeoJsonReader reader = new GeoJsonReader();
     private final GeoJsonWriter writer = new GeoJsonWriter(15);
-    ParanaSpatialFilter(OfficialDataClient http) { this.http = http; writer.setEncodeCRS(false); }
-    record Boundary(Geometry geometry, CollectedData.Original original) {}
-    Boundary boundary() throws IOException, InterruptedException {
+    public ParanaSpatialFilter(OfficialDataClient http) { this.http = http; writer.setEncodeCRS(false); }
+    public record Boundary(Geometry geometry, CollectedData.Original original) {}
+    public Boundary boundary() throws IOException, InterruptedException {
         byte[] data = http.download(URI.create(BOUNDARY_URL));
         JsonNode root = mapper.readTree(data);
         if (root == null || !root.path("type").asText().equals("FeatureCollection") || root.path("features").size() != 1

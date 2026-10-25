@@ -22,19 +22,25 @@ import catdevs.georuraldatahub.repository.FileRepository;
 @Service
 public class LayerService {
 
-    private static final Set<String> RENDERABLE = Set.of("geojson", "json", "csv");
+    private static final Set<String> RENDERABLE = Set.of("geojson", "json", "csv", "zip", "gpkg");
+    /** Versões com registros validados: ainda pendentes de carga (BRUTA) ou já carregadas. */
+    private static final Set<VersionStatus> VALIDATED_STATUSES =
+            Set.of(VersionStatus.BRUTA, VersionStatus.TRATADA, VersionStatus.PUBLICADA);
 
     private final FileRepository fileRepository;
     private final DatasetRepository datasetRepository;
     private final BucketService bucketService;
     private final VersionRepository versionRepository;
+    private final catdevs.georuraldatahub.repository.LayerRepository layerRepository;
 
     public LayerService(FileRepository fileRepository, DatasetRepository datasetRepository,
-            BucketService bucketService, VersionRepository versionRepository) {
+            BucketService bucketService, VersionRepository versionRepository,
+            catdevs.georuraldatahub.repository.LayerRepository layerRepository) {
         this.fileRepository = fileRepository;
         this.datasetRepository = datasetRepository;
         this.bucketService = bucketService;
         this.versionRepository = versionRepository;
+        this.layerRepository = layerRepository;
     }
 
     @Transactional(readOnly = true)
@@ -44,8 +50,8 @@ public class LayerService {
         }
         return fileRepository.findByDatasetId(datasetId).stream()
                 .filter(f -> isRenderable(f.getFormatFile()))
-                .filter(f -> versionRepository.findFirstByFile_IdAndStatusAndLocationStartingWithOrderByVersionNumberDesc(
-                        f.getId(), VersionStatus.BRUTA, "validada/").isPresent())
+                .filter(f -> versionRepository.findFirstByFile_IdAndStatusInAndLocationStartingWithOrderByVersionNumberDesc(
+                        f.getId(), VALIDATED_STATUSES, "validada/").isPresent())
                 .map(f -> new LayerInfoDTO(f.getId(), f.getName(), f.getFormatFile(),
                         f.getSize(), f.getReceivedDate()))
                 .toList();
@@ -61,13 +67,28 @@ public class LayerService {
                     "Formato não suportado para visualização: " + file.getFormatFile());
         }
 
-        String location = versionRepository.findFirstByFile_IdAndStatusAndLocationStartingWithOrderByVersionNumberDesc(
-                fileId, VersionStatus.BRUTA, "validada/")
+        String location = versionRepository.findFirstByFile_IdAndStatusInOrderByVersionNumberDesc(
+                fileId, Set.of(VersionStatus.TRATADA, VersionStatus.PUBLICADA))
+                .or(() -> versionRepository.findFirstByFile_IdAndStatusInAndLocationStartingWithOrderByVersionNumberDesc(
+                fileId, VALIDATED_STATUSES, "validada/"))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT,
                         "Arquivo sem registros aprovados para visualização.")).getLocation();
-        return "csv".equalsIgnoreCase(file.getFormatFile())
+        return location.toLowerCase(Locale.ROOT).endsWith(".csv")
                 ? bucketService.readCsvAsGeoJson(location)
                 : bucketService.readGeoJson(location);
+    }
+
+    @Transactional(readOnly = true)
+    public JsonNode getTreatedLayer(Long layerId) throws IOException {
+        var layer = layerRepository.findById(layerId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Camada não encontrada."));
+        var version = layer.getVersion();
+        if (version == null || !Set.of(VersionStatus.TRATADA, VersionStatus.PUBLICADA).contains(version.getStatus()))
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Camada sem resultado tratado aprovado.");
+        // A versão vinculada à camada é fixa; não buscar a versão mais recente do arquivo aqui.
+        String location = version.getLocation();
+        return location.toLowerCase(Locale.ROOT).endsWith(".csv")
+                ? bucketService.readCsvAsGeoJson(location) : bucketService.readGeoJson(location);
     }
 
     private boolean isRenderable(String format) {

@@ -33,7 +33,8 @@ class ManualJsonUploadTest {
     @BeforeEach void setup() throws Exception {
         TransactionSynchronizationManager.initSynchronization();
         var service = new FileService(files, versions, ingestions, datasets, users, dictionaries, bucket,
-                new FileValidationService(new CsvRecordValidator(), new GeoJsonRecordValidator()), mock(QuarantineRepository.class));
+                new FileValidationService(new CsvRecordValidator(), new GeoJsonRecordValidator()), mock(QuarantineRepository.class),
+                mock(catdevs.georuraldatahub.processing.GeospatialReader.class));
         mvc = MockMvcBuilders.standaloneSetup(new SourceFileController(service, mock(SourceService.class)))
                 .setControllerAdvice(new GlobalExceptionHandler()).build();
         var user = new User(); user.setId(2L); when(users.findEntityById(2L)).thenReturn(user);

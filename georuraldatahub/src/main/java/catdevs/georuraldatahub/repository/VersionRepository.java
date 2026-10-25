@@ -1,5 +1,6 @@
 package catdevs.georuraldatahub.repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -11,9 +12,14 @@ import catdevs.georuraldatahub.entity.Version;
 import catdevs.georuraldatahub.entity.enums.VersionStatus;
 
 public interface VersionRepository extends JpaRepository<Version, Long> {
+    Optional<Version> findFirstByFile_IdOrderByVersionNumberDesc(Long fileId);
+    Optional<Version> findFirstByFile_IdAndStatusInOrderByVersionNumberDesc(Long fileId, Collection<VersionStatus> statuses);
     Optional<Version> findFirstByFile_IdAndStatusAndLocationStartingWithOrderByVersionNumberDesc(
             Long fileId, VersionStatus status, String locationPrefix);
 
+    Optional<Version> findFirstByFile_IdAndStatusInAndLocationStartingWithOrderByVersionNumberDesc(
+            Long fileId, Collection<VersionStatus> statuses, String locationPrefix);
+}
             /**
      * Para cada arquivo, devolve só a versão mais recente (maior número de versão).
      * O status dessa versão é a etapa atual do arquivo.
