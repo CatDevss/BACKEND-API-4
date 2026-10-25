@@ -99,11 +99,21 @@ public class JpaTreatmentStore {
                 .put("outputArtifactSha256", VectorTreatment.hash(outputBytes)).put("outputLocation", outputKey);
         uploads.add(outputKey);
         bucket.uploadCollectionArtifact(outputKey, outputBytes, "application/json");
-        version.setLocation(raster ? input.rawLocation() : outputKey);
+        String dataLocation = outputKey;
+        if (raster) {
+            dataLocation = outputKey.substring(0, outputKey.length() - ".raster.json".length()) + "." + input.format();
+            String dataSource = input.validatedLocation().endsWith(".raster.json") ? input.rawLocation() : input.validatedLocation();
+            uploads.add(dataLocation);
+            bucket.copyWorkingObject(dataSource, dataLocation);
+            if (trace.isObject()) ((com.fasterxml.jackson.databind.node.ObjectNode) trace)
+                    .put("manifestLocation", outputKey).put("manifestSha256", VectorTreatment.hash(outputBytes))
+                    .put("outputLocation", dataLocation).put("outputArtifactSha256", input.originalHash()).put("dataInputLocation", dataSource);
+        }
+        version.setLocation(dataLocation);
         version = versions.saveAndFlush(version);
         if (raster) {
             JsonNode summary = content.path("summary");
-            var record = new RasterMetadata(); record.setVersionId(version.getId()); record.setLocation(input.rawLocation());
+            var record = new RasterMetadata(); record.setVersionId(version.getId()); record.setLocation(dataLocation);
             record.setUserId(request.userId()); record.setSourceSrid(content.path("sourceSrid").asInt()); record.setWidth(summary.path("width").asInt());
             record.setHeight(summary.path("height").asInt()); record.setBandCount(summary.path("bandCount").asInt());
             record.setPixelWidth(summary.path("pixelWidth").asDouble()); record.setPixelHeight(summary.path("pixelHeight").asDouble());

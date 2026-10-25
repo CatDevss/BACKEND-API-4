@@ -76,7 +76,7 @@ public class BucketService {
         private String uploadToRawScope(MultipartFile file, String scope, String hash, String sanitizedFilename)
                         throws IOException {
                 String objectName = "bruta/" + scope + "/" + hash + "_" + sanitizedFilename;
-                return uploadMultipart(file, objectName);
+                return uploadMultipart(file, objectName, hash);
         }
 
         public static String quarantineLocation(String rawLocation) {
@@ -90,6 +90,10 @@ public class BucketService {
         }
 
         private String uploadMultipart(MultipartFile file, String objectName) throws IOException {
+                return uploadMultipart(file, objectName, null);
+        }
+
+        private String uploadMultipart(MultipartFile file, String objectName, String originalHash) throws IOException {
                 try (InputStream body = file.getInputStream()) {
                         PutObjectRequest request = PutObjectRequest.builder()
                                 .namespaceName(props.namespace())
@@ -97,10 +101,35 @@ public class BucketService {
                                 .objectName(objectName)
                                 .putObjectBody(body)
                                 .contentLength(file.getSize())
+                                .ifNoneMatch(originalHash == null ? null : "*")
+                                .opcMeta(originalHash == null ? null : java.util.Map.of("sha256", originalHash))
                                 .build();
-                        client.putObject(request);
+                        try { client.putObject(request); }
+                        catch (com.oracle.bmc.model.BmcException error) {
+                                if (originalHash == null || error.getStatusCode() != 412) throw error;
+                                var existing = client.headObject(com.oracle.bmc.objectstorage.requests.HeadObjectRequest.builder()
+                                        .namespaceName(props.namespace()).bucketName(props.bucketName()).objectName(objectName).build());
+                                String storedHash = existing.getOpcMeta() == null ? null : existing.getOpcMeta().get("sha256");
+                                if (storedHash == null) storedHash = originalHash(objectName);
+                                if (!Long.valueOf(file.getSize()).equals(existing.getContentLength()) || !originalHash.equals(storedHash))
+                                        throw new org.springframework.web.server.ResponseStatusException(
+                                                org.springframework.http.HttpStatus.CONFLICT,
+                                                "Já existe um original bruto neste caminho; ele não será sobrescrito.");
+                        }
                 }
                 return objectName;
+        }
+
+        private String originalHash(String key) throws IOException {
+                try {
+                        var digest = java.security.MessageDigest.getInstance("SHA-256");
+                        var response = client.getObject(GetObjectRequest.builder().namespaceName(props.namespace())
+                                .bucketName(props.bucketName()).objectName(key).build());
+                        try (var input = new java.security.DigestInputStream(response.getInputStream(), digest)) {
+                                input.transferTo(java.io.OutputStream.nullOutputStream());
+                        }
+                        return java.util.HexFormat.of().formatHex(digest.digest());
+                } catch (java.security.NoSuchAlgorithmException error) { throw new IllegalStateException(error); }
         }
 
         public String uploadValidatedContent(byte[] content, Long datasetId, String hash, String filename) {
@@ -144,6 +173,17 @@ public class BucketService {
                                 "Arquivo ainda não possui relatório de validação.");
                         throw e;
                 }
+        }
+
+        public JsonNode readVersionValidationReport(String versionLocation, String rawLocation) throws IOException {
+                String json;
+                try { json = readValidationReport(versionLocation); }
+                catch (org.springframework.web.server.ResponseStatusException error) {
+                        if (error.getStatusCode().value() != 404) throw error;
+                        // Compatibilidade com versões anteriores ao relatório associado à cópia de trabalho.
+                        json = readValidationReport(rawLocation);
+                }
+                return objectMapper.readTree(json);
         }
 
         public String uploadCollectionArtifact(String key, byte[] bytes, String contentType) {
@@ -215,7 +255,32 @@ public class BucketService {
                 }
         }
 
+        public static String workingLocation(String location, String zone) {
+                if (location == null || !location.contains("/")
+                        || !java.util.Set.of("validada/", "quarentena/", "tratada/", "publicada/").contains(zone))
+                        throw new IllegalArgumentException("Localização ou zona de trabalho inválida.");
+                return zone + location.substring(location.indexOf('/') + 1);
+        }
+
+        /** Copia por streaming; a origem é preservada e o destino nunca pode ser a zona bruta. */
+        public String copyWorkingObject(String source, String target) throws IOException {
+                if (source == null || source.equals(target) || target == null
+                        || java.util.Set.of("validada", "quarentena", "tratada", "publicada").stream()
+                                .noneMatch(zone -> target.startsWith(zone + "/")))
+                        throw new IllegalArgumentException("Destino de cópia inválido.");
+                var object = client.getObject(GetObjectRequest.builder().namespaceName(props.namespace())
+                        .bucketName(props.bucketName()).objectName(source).build());
+                try (InputStream input = object.getInputStream()) {
+                        client.putObject(PutObjectRequest.builder().namespaceName(props.namespace()).bucketName(props.bucketName())
+                                .objectName(target).putObjectBody(input).contentLength(object.getContentLength())
+                                .contentType(object.getContentType()).build());
+                }
+                return target;
+        }
+
         public void deleteObject(String objectName) {
+                if (objectName == null || objectName.startsWith("bruta/"))
+                        throw new IllegalArgumentException("O original e seus artefatos brutos são permanentes e não podem ser excluídos.");
                 var request = DeleteObjectRequest.builder()
                                 .namespaceName(props.namespace())
                                 .bucketName(props.bucketName())

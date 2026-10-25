@@ -94,6 +94,10 @@ class GeospatialIngestionTest {
         var manifest = new com.fasterxml.jackson.databind.ObjectMapper().readTree(content.getValue());
         assertEquals("RASTER", manifest.path("kind").asText()); assertEquals(31982, manifest.path("sourceSrid").asInt());
         assertFalse(manifest.has("features")); verifyNoInteractions(datasets, quarantine);
+        verify(bucket).copyWorkingObject("bruta/fontes/4/original", "validada/fontes/4/original");
+        var captured = ArgumentCaptor.forClass(Version.class); verify(versions, times(2)).save(captured.capture());
+        assertEquals("validada/fontes/4/original", captured.getValue().getLocation());
+        assertEquals("bruta/fontes/4/original", captured.getValue().getFile().getLocation());
     }
     @Test void corruptRasterIsPreservedInRawZoneAndQuarantinedWithoutValidatedVersion() throws Exception {
         when(dictionaries.rules(dictionary)).thenReturn(List.of(FieldRule.required("width", FieldType.INTEGER)));

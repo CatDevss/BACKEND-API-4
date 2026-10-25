@@ -19,7 +19,7 @@ public interface VersionRepository extends JpaRepository<Version, Long> {
 
     Optional<Version> findFirstByFile_IdAndStatusInAndLocationStartingWithOrderByVersionNumberDesc(
             Long fileId, Collection<VersionStatus> statuses, String locationPrefix);
-}
+
             /**
      * Para cada arquivo, devolve só a versão mais recente (maior número de versão).
      * O status dessa versão é a etapa atual do arquivo.
@@ -35,4 +35,7 @@ public interface VersionRepository extends JpaRepository<Version, Long> {
         ORDER BY v.file.id DESC
     """)
     List<FileStageDTO> findCurrentStageOfEachFile();
+
+    List<Version> findByFile_IdInAndStatusAndLocationStartingWithOrderByVersionNumberDesc(
+            Collection<Long> fileIds, VersionStatus status, String prefix);
 }

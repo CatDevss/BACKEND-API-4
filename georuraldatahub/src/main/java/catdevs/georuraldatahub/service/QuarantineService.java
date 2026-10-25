@@ -21,10 +21,12 @@ public class QuarantineService {
     private static final String RESOLVED = "RESOLVIDA";
     private final QuarantineRepository quarantines;
     private final UserService users;
+    private final catdevs.georuraldatahub.repository.VersionRepository versions;
 
-    public QuarantineService(QuarantineRepository quarantines, UserService users) {
+    public QuarantineService(QuarantineRepository quarantines, UserService users, catdevs.georuraldatahub.repository.VersionRepository versions) {
         this.quarantines = quarantines;
         this.users = users;
+        this.versions = versions;
     }
 
     @Transactional(readOnly = true)
@@ -36,7 +38,13 @@ public class QuarantineService {
         if (normalizedStatus != null && normalizedStatus.length() > 30) throw new IllegalArgumentException("Status excede 30 caracteres.");
         var result = quarantines.search(normalizedStatus, responsibleId, fileId, unassigned,
                 PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "dateEntry", "id")));
-        return new QuarantinePageDTO(result.getContent().stream().map(this::response).toList(),
+        var fileIds = result.getContent().stream().filter(q -> q.getFile() != null).map(q -> q.getFile().getId()).distinct().toList();
+        java.util.Map<Long, String> locations = new java.util.HashMap<>();
+        if (!fileIds.isEmpty()) for (var version : versions.findByFile_IdInAndStatusAndLocationStartingWithOrderByVersionNumberDesc(
+                fileIds, catdevs.georuraldatahub.entity.enums.VersionStatus.QUARENTENA, "quarentena/"))
+            locations.putIfAbsent(version.getFile().getId(), version.getLocation());
+        return new QuarantinePageDTO(result.getContent().stream()
+                .map(q -> response(q, q.getFile() == null ? null : locations.get(q.getFile().getId()))).toList(),
                 result.getNumber(), result.getSize(), result.getTotalElements(), result.getTotalPages());
     }
 
@@ -116,13 +124,19 @@ public class QuarantineService {
     private ResponseStatusException conflict(String message) { return new ResponseStatusException(HttpStatus.CONFLICT, message); }
 
     private QuarantineResponseDTO response(Quarantine q) {
+        String location = q.getFile() == null ? null : versions
+                .findFirstByFile_IdAndStatusAndLocationStartingWithOrderByVersionNumberDesc(q.getFile().getId(),
+                        catdevs.georuraldatahub.entity.enums.VersionStatus.QUARENTENA, "quarentena/")
+                .map(catdevs.georuraldatahub.entity.Version::getLocation).orElse(null);
+        return response(q, location);
+    }
+
+    private QuarantineResponseDTO response(Quarantine q, String quarantineLocation) {
         var file = q.getFile();
         var ingestion = q.getIngestion();
         var dictionary = ingestion == null ? null : ingestion.getDictionary();
         var source = dictionary == null ? null : dictionary.getSource();
         var user = q.getUser();
-        String quarantineLocation = file != null && file.getLocation() != null && file.getLocation().startsWith("bruta/")
-                ? BucketService.quarantineLocation(file.getLocation()) : null;
         return new QuarantineResponseDTO(q.getId(), ingestion == null ? null : ingestion.getId(),
                 file == null ? null : file.getId(), file == null ? null : file.getName(),
                 source == null ? null : source.getId(), source == null ? null : source.getName(),

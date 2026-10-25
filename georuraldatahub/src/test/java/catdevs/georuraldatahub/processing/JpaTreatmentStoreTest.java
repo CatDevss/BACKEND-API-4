@@ -86,7 +86,7 @@ class JpaTreatmentStoreTest {
         verifyNoInteractions(bucket, layers, features);
     }
     @Test void rasterStoresCoverageAndGridMetadataWithoutVectorFeaturesOrDataset() throws Exception {
-        String location = "validada/original.tif.raster.json";
+        String location = "validada/original.tif";
         original.setLocation(location);
         var rasterInput = new TreatmentInputService.Input(7L, 10L, "original.tif", "tif", "bruta/original.tif",
                 location, 5L, "hash", 2L, 1, List.of());
@@ -100,9 +100,11 @@ class JpaTreatmentStoreTest {
         assertEquals(40L, result.rasterId()); assertNull(result.layerId());
         var captured = ArgumentCaptor.forClass(RasterMetadata.class); verify(rasters).saveAndFlush(captured.capture());
         assertEquals(31982, captured.getValue().getSourceSrid()); assertEquals(4326, captured.getValue().getFootprint().getSRID());
-        assertEquals("bruta/original.tif", captured.getValue().getLocation());
+        assertEquals("tratada/fontes/5/7/execucao-20.tif", captured.getValue().getLocation());
+        verify(bucket).copyWorkingObject("validada/original.tif", "tratada/fontes/5/7/execucao-20.tif");
         var output = ArgumentCaptor.forClass(Version.class); verify(versions, times(2)).saveAndFlush(output.capture());
-        assertEquals("bruta/original.tif", output.getValue().getLocation());
+        assertEquals("tratada/fontes/5/7/execucao-20.tif", output.getValue().getLocation());
+        assertEquals("bruta/original.csv", file.getLocation());
         verifyNoInteractions(datasets, layers, features);
     }
     @Test void catalogSpatialSearchUsesGeographicFilterAndRejectsInvalidBounds() throws Exception {

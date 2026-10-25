@@ -20,19 +20,21 @@ public class LegacySpatialLayerStore {
     private final VersionRepository versions;
     private final LayerRepository layers;
     private final FeatureService features;
+    private final BucketService bucket;
     private final jakarta.persistence.EntityManager entityManager;
 
     public LegacySpatialLayerStore(DatasetRepository datasets, FileRepository files, VersionRepository versions,
-            LayerRepository layers, FeatureService features, jakarta.persistence.EntityManager entityManager) {
+            LayerRepository layers, FeatureService features, jakarta.persistence.EntityManager entityManager, BucketService bucket) {
         this.datasets = datasets;
         this.files = files;
         this.versions = versions;
         this.layers = layers;
         this.features = features;
+        this.bucket = bucket;
         this.entityManager = entityManager;
     }
 
-    public record Input(Long datasetId, Long fileId, Long versionId, String location) { }
+    public record Input(Long datasetId, Long fileId, Long versionId, String location, String rawLocation) { }
 
     @Transactional(readOnly = true)
     public Input load(Long datasetId, Long fileId) {
@@ -47,11 +49,11 @@ public class LegacySpatialLayerStore {
                 fileId, VersionStatus.BRUTA, "validada/")
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT,
                         "Arquivo sem versão validada pendente de carga (ou já carregada)."));
-        return new Input(datasetId, fileId, version.getId(), version.getLocation());
+        return new Input(datasetId, fileId, version.getId(), version.getLocation(), file.getLocation());
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public SpatialLayerService.LayerLoadResult complete(Input input, Extraction extraction) {
+    public SpatialLayerService.LayerLoadResult complete(Input input, Extraction extraction) throws java.io.IOException {
         // Mesma ordem de bloqueio do tratamento novo. A segunda requisição revalida após esperar a primeira.
         var file = files.findLockedById(input.fileId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Arquivo não encontrado."));
@@ -68,6 +70,18 @@ public class LegacySpatialLayerStore {
                 || !file.getId().equals(version.getFile().getId())
                 || dataset.getFiles().stream().noneMatch(f -> f.getId().equals(input.fileId())))
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Arquivo já carregado ou associação/versão alterada durante a leitura.");
+        String target = BucketService.workingLocation(input.location(), "tratada/");
+        org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                new org.springframework.transaction.support.TransactionSynchronization() {
+                    @Override public void afterCompletion(int status) {
+                        if (status == STATUS_ROLLED_BACK) {
+                            try { bucket.deleteObject(target); }
+                            catch (RuntimeException error) { org.slf4j.LoggerFactory.getLogger(LegacySpatialLayerStore.class)
+                                    .error("Falha ao limpar cópia de trabalho {}", target, error); }
+                        }
+                    }
+                });
+        bucket.copyWorkingObject(input.location(), target);
         var layer = new Layer();
         layer.setDataset(dataset);
         layer.setVersion(version);
@@ -76,6 +90,7 @@ public class LegacySpatialLayerStore {
         layer.setSrid(4326);
         layer = layers.saveAndFlush(layer);
         int inserted = features.insertBatch(layer.getId(), 4326, extraction.features());
+        version.setLocation(target);
         version.setStatus(VersionStatus.TRATADA);
         versions.saveAndFlush(version);
         return new SpatialLayerService.LayerLoadResult(layer.getId(), layer.getName(), layer.getGeometryType(), 4326, inserted);

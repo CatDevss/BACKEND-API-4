@@ -16,6 +16,10 @@ class TreatmentServiceTest {
     private final TreatmentRequest request = new TreatmentRequest(1L, 3L, null, false, null);
     private final TreatmentInputService.Input input = new TreatmentInputService.Input(7L, 10L, "arquivo.csv", "csv",
             "bruta/original.csv", "validada/arquivo.csv", 5L, "hash", 2L, 1, List.of());
+    @org.junit.jupiter.api.BeforeEach void approval() throws Exception {
+        when(bucket.readVersionValidationReport(any(), any()))
+                .thenReturn(new ObjectMapper().createObjectNode().put("status", "VALIDO"));
+    }
     @Test void disabledPersistenceDoesNotAccessDatabaseBucketOrVectorTreatment() {
         var service = new TreatmentService(Optional.empty(), inputs, vectors, bucket);
         assertEquals(503, assertThrows(ResponseStatusException.class, () -> service.start(7L, request)).getStatusCode().value());
@@ -61,4 +65,16 @@ class TreatmentServiceTest {
         verify(bucket, never()).readGeospatialMetadata(any());
     }
 
+
+    @Test void legacyApprovedSubsetOfPartialFileCannotBypassWholeFileQuarantineRule() throws Exception {
+        when(inputs.load(7L, 3L)).thenReturn(input); when(store.start(input, request)).thenReturn(20L);
+        when(bucket.readVersionValidationReport(any(), any()))
+                .thenReturn(new ObjectMapper().createObjectNode().put("status", "PARCIAL"));
+        var error = assertThrows(ResponseStatusException.class,
+                () -> new TreatmentService(Optional.of(store), inputs, vectors, bucket).start(7L, request));
+        assertEquals(409, error.getStatusCode().value());
+        verifyNoInteractions(vectors);
+        verify(store).fail(eq(20L), contains("inteiro"));
+        verify(store, never()).complete(any(), any(), any(), any(), any(), anyInt(), anyInt(), anyBoolean());
+    }
 }

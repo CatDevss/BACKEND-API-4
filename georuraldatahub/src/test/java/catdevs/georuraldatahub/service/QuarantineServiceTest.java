@@ -19,8 +19,9 @@ import org.springframework.web.server.ResponseStatusException;
 
 class QuarantineServiceTest {
     private final QuarantineRepository repository = mock(QuarantineRepository.class);
+    private final catdevs.georuraldatahub.repository.VersionRepository versions = mock(catdevs.georuraldatahub.repository.VersionRepository.class);
     private final UserService users = mock(UserService.class);
-    private final QuarantineService service = new QuarantineService(repository, users);
+    private final QuarantineService service = new QuarantineService(repository, users, versions);
     private final Quarantine quarantine = new Quarantine();
     private final User user = new User();
     private final User other = new User();
@@ -36,6 +37,10 @@ class QuarantineServiceTest {
         var dictionary = new Dictionary(); dictionary.setSource(source);
         ingestion.setId(6L); ingestion.setDictionary(dictionary); ingestion.setIngStatus(IngestionStatus.ERRO);
         file.setId(7L); file.setName("original.csv"); file.setLocation("bruta/original.csv"); file.setIngestion(ingestion);
+        var version = new Version(); version.setFile(file); version.setLocation("quarentena/original.csv");
+        version.setStatus(catdevs.georuraldatahub.entity.enums.VersionStatus.QUARENTENA);
+        when(versions.findFirstByFile_IdAndStatusAndLocationStartingWithOrderByVersionNumberDesc(eq(7L), any(), eq("quarentena/")))
+                .thenReturn(Optional.of(version));
         quarantine.setId(1L); quarantine.setIngestion(ingestion); quarantine.setFile(file);
         quarantine.setStatus("ARQUIVO_REJEITADO"); quarantine.setReason("REJEITADO; codigos=INVALID_TYPE");
         when(repository.findById(1L)).thenReturn(Optional.of(quarantine));
@@ -134,5 +139,16 @@ class QuarantineServiceTest {
         assertNull(service.get(1L).fileId()); assertNull(service.get(1L).validationReportUrl());
         assertNull(service.get(1L).quarantineLocation());
         assertNull(service.get(1L).quarantineReportLocation());
+    }
+
+    @Test void quarantineLocationComesFromVersionRatherThanGuessingRawPath() {
+        var version = new Version(); version.setFile(file); version.setLocation("quarentena/revisoes/7/revisao-3.csv");
+        when(versions.findFirstByFile_IdAndStatusAndLocationStartingWithOrderByVersionNumberDesc(eq(7L), any(), any()))
+                .thenReturn(Optional.of(version));
+        assertEquals("quarentena/revisoes/7/revisao-3.csv", service.get(1L).quarantineLocation());
+        assertEquals("bruta/original.csv", file.getLocation());
+        when(versions.findFirstByFile_IdAndStatusAndLocationStartingWithOrderByVersionNumberDesc(eq(7L), any(), any()))
+                .thenReturn(Optional.empty());
+        assertNull(service.get(1L).quarantineLocation(), "Não inventar localização para dados históricos sem versão registrada");
     }
 }

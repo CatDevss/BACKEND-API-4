@@ -10,6 +10,9 @@ import catdevs.georuraldatahub.util.GeoJsonFeatureExtractor;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.*;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
 
 class SpatialLayerCompatibilityTest {
@@ -21,8 +24,14 @@ class SpatialLayerCompatibilityTest {
     private final BucketService bucket = mock(BucketService.class);
     private final TreatmentService treatments = mock(TreatmentService.class);
     private final jakarta.persistence.EntityManager manager = mock(jakarta.persistence.EntityManager.class);
-    private final LegacySpatialLayerStore legacy = new LegacySpatialLayerStore(datasets, files, versions, layers, features, manager);
+    private final LegacySpatialLayerStore legacy = new LegacySpatialLayerStore(datasets, files, versions, layers, features, manager, bucket);
     private final SpatialLayerService service = new SpatialLayerService(legacy, layers, bucket, treatments);
+
+    @BeforeEach void begin() throws Exception {
+        TransactionSynchronizationManager.initSynchronization();
+        when(bucket.readVersionValidationReport(any(), any())).thenReturn(new ObjectMapper().createObjectNode().put("status", "VALIDO"));
+    }
+    @AfterEach void end() { TransactionSynchronizationManager.clearSynchronization(); }
 
     @Test void existingRouteDelegatesToTrackedTreatmentAfterMigration() throws Exception {
         when(treatments.isEnabled()).thenReturn(true);
@@ -43,6 +52,7 @@ class SpatialLayerCompatibilityTest {
         dataset.getFiles().add(file); when(datasets.findById(1L)).thenReturn(Optional.of(dataset));
         when(datasets.findLockedById(1L)).thenReturn(Optional.of(dataset));
         when(files.findLockedById(7L)).thenReturn(Optional.of(file));
+        file.setLocation("bruta/teste.geojson");
         var version = new Version(); version.setId(10L); version.setFile(file); version.setStatus(VersionStatus.BRUTA);
         version.setLocation("validada/teste.geojson");
         when(versions.findFirstByFile_IdAndStatusAndLocationStartingWithOrderByVersionNumberDesc(7L, VersionStatus.BRUTA, "validada/"))
@@ -64,9 +74,12 @@ class SpatialLayerCompatibilityTest {
         when(bucket.readGeoJson(version.getLocation())).thenReturn(content());
         var result = service.createLayerFromFile(1L, 7L, null);
         assertEquals(1, result.featureCount()); assertEquals(VersionStatus.TRATADA, version.getStatus());
+        assertEquals("tratada/teste.geojson", version.getLocation());
+        verify(bucket).copyWorkingObject("validada/teste.geojson", "tratada/teste.geojson");
+        assertEquals("bruta/teste.geojson", version.getFile().getLocation());
         verify(treatments, never()).startForDataset(any(), any(), any());
         var order = inOrder(bucket, files, features, versions);
-        order.verify(bucket).readGeoJson(version.getLocation());
+        order.verify(bucket).readGeoJson("validada/teste.geojson");
         order.verify(files).findLockedById(7L);
         order.verify(features).insertBatch(any(), anyInt(), any());
         order.verify(versions).saveAndFlush(version);
