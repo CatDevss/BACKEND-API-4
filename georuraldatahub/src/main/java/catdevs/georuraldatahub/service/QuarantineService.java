@@ -19,6 +19,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class QuarantineService {
     private static final String IN_ANALYSIS = "EM_ANALISE";
     private static final String RESOLVED = "RESOLVIDA";
+    private static final String CLOSED_WITHOUT_CORRECTION = "ENCERRADA_SEM_CORRECAO";
     private final QuarantineRepository quarantines;
     private final UserService users;
 
@@ -69,14 +70,26 @@ public class QuarantineService {
         return response(quarantines.save(quarantine));
     }
 
-    /** Closes the analysis only: rejected data and its original validation report remain unchanged. */
+    /** A resolução exige uma revisão aprovada e vinculada, ainda pendente da BE-06. */
     @Transactional
     public QuarantineResponseDTO resolve(Long id, Long userId, String treatment) {
         activeUser(userId);
         Quarantine quarantine = locked(id);
         ensureOwner(quarantine, userId);
+        validTreatment(treatment);
+        throw conflict("Não é possível resolver apenas com uma observação. É necessária uma revisão corrigida "
+                + "e aprovada em revalidação vinculada à quarentena; esse fluxo ainda não está disponível. "
+                + "Para encerrar a análise sem corrigir os dados, use a ação encerrar.");
+    }
+
+    /** Encerra a análise sem aprovar dados ou modificar o arquivo e o relatório originais. */
+    @Transactional
+    public QuarantineResponseDTO closeWithoutCorrection(Long id, Long userId, String treatment) {
+        activeUser(userId);
+        Quarantine quarantine = locked(id);
+        ensureOwner(quarantine, userId);
         quarantine.setTreatment(validTreatment(treatment));
-        quarantine.setStatus(RESOLVED);
+        quarantine.setStatus(CLOSED_WITHOUT_CORRECTION);
         quarantine.setDateResolution(LocalDateTime.now());
         return response(quarantines.save(quarantine));
     }
@@ -92,12 +105,13 @@ public class QuarantineService {
         return user;
     }
     private void ensureOpen(Quarantine quarantine) {
-        if (quarantine.getDateResolution() != null || RESOLVED.equals(quarantine.getStatus()))
+        if (quarantine.getDateResolution() != null || RESOLVED.equals(quarantine.getStatus())
+                || CLOSED_WITHOUT_CORRECTION.equals(quarantine.getStatus()))
             throw conflict("A análise desta quarentena já foi encerrada.");
     }
     private void ensureOwner(Quarantine quarantine, Long userId) {
         ensureOpen(quarantine);
-        if (quarantine.getUser() == null) throw conflict("Assuma a correção antes de registrar observações ou resolver.");
+        if (quarantine.getUser() == null) throw conflict("Assuma a quarentena antes de registrar observações, resolver ou encerrar.");
         if (!Objects.equals(quarantine.getUser().getId(), userId))
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Somente o responsável pode alterar esta quarentena.");
     }

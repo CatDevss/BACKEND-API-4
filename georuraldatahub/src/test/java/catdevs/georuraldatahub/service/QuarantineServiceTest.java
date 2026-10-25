@@ -63,14 +63,18 @@ class QuarantineServiceTest {
         assertEquals(409, assertThrows(ResponseStatusException.class, () -> service.claim(1L, 4L)).getStatusCode().value());
         assertSame(user, quarantine.getUser()); verify(repository, never()).save(any());
     }
-    @Test void onlyOwnerCanWriteOrResolveAndUnassignedRecordsMustBeClaimedFirst() {
+    @Test void onlyOwnerCanWriteResolveOrCloseAndUnassignedRecordsMustBeClaimedFirst() {
         assertEquals(409, assertThrows(ResponseStatusException.class,
                 () -> service.updateTreatment(1L, 3L, "Analisando")).getStatusCode().value());
+        assertEquals(409, assertThrows(ResponseStatusException.class,
+                () -> service.closeWithoutCorrection(1L, 3L, "Sem correção")).getStatusCode().value());
         quarantine.setUser(other);
         assertEquals(403, assertThrows(ResponseStatusException.class,
                 () -> service.updateTreatment(1L, 3L, "Analisando")).getStatusCode().value());
         assertEquals(403, assertThrows(ResponseStatusException.class,
                 () -> service.resolve(1L, 3L, "Concluído")).getStatusCode().value());
+        assertEquals(403, assertThrows(ResponseStatusException.class,
+                () -> service.closeWithoutCorrection(1L, 3L, "Sem correção")).getStatusCode().value());
         assertNull(quarantine.getTreatment()); verify(repository, never()).save(any());
     }
     @Test void observationIsTrimmedAndRespectsOracleByteLimitIncludingAccents() {
@@ -83,10 +87,11 @@ class QuarantineServiceTest {
         assertThrows(IllegalArgumentException.class, () -> service.resolve(1L, 3L, null));
         assertEquals(maximum, quarantine.getTreatment()); assertNull(quarantine.getDateResolution());
     }
-    @Test void resolvingClosesAnalysisWithoutApprovingOrChangingOriginalData() {
+    @Test void closingWithoutCorrectionPreservesRejectedDataAndPreventsFurtherChanges() {
         quarantine.setUser(user);
-        var result = service.resolve(1L, 3L, " Correção enviada em outro arquivo para nova validação. ");
-        assertEquals("RESOLVIDA", result.status()); assertNotNull(result.dateResolution());
+        var result = service.closeWithoutCorrection(1L, 3L, " Fonte sem dados suficientes para corrigir. ");
+        assertEquals("ENCERRADA_SEM_CORRECAO", result.status());
+        assertEquals("Fonte sem dados suficientes para corrigir.", result.treatment()); assertNotNull(result.dateResolution());
         assertEquals(3L, result.responsibleId());
         assertEquals("REJEITADO; codigos=INVALID_TYPE", result.reason());
         assertEquals(IngestionStatus.ERRO, ingestion.getIngStatus());
@@ -98,6 +103,46 @@ class QuarantineServiceTest {
         assertEquals(409, assertThrows(ResponseStatusException.class,
                 () -> service.resolve(1L, 3L, "Resolver novamente")).getStatusCode().value());
     }
+    @Test void observationCannotResolveQuarantineEvenWhenItClaimsTheFileWasCorrected() {
+        quarantine.setUser(user); quarantine.setStatus("EM_ANALISE");
+        quarantine.setTreatment("Observação anterior");
+        var error = assertThrows(ResponseStatusException.class,
+                () -> service.resolve(1L, 3L, "Arquivo corrigido e validado"));
+        assertEquals(409, error.getStatusCode().value());
+        assertTrue(error.getReason().contains("revalidação vinculada"));
+        assertEquals("EM_ANALISE", quarantine.getStatus());
+        assertEquals("Observação anterior", quarantine.getTreatment());
+        assertNull(quarantine.getDateResolution());
+        assertEquals(IngestionStatus.ERRO, ingestion.getIngStatus());
+        assertEquals("bruta/original.csv", file.getLocation());
+        verify(repository, never()).save(any());
+    }
+    @Test void closingRequiresJustificationWithinByteLimitAndLeavesStateUntouchedOnFailure() {
+        quarantine.setUser(user); quarantine.setStatus("EM_ANALISE");
+        for (String invalid : List.of(" ", "a".repeat(501), "á".repeat(251)))
+            assertThrows(IllegalArgumentException.class,
+                    () -> service.closeWithoutCorrection(1L, 3L, invalid));
+        assertThrows(IllegalArgumentException.class, () -> service.closeWithoutCorrection(1L, 3L, null));
+        assertEquals("EM_ANALISE", quarantine.getStatus());
+        assertNull(quarantine.getTreatment()); assertNull(quarantine.getDateResolution());
+        verify(repository, never()).save(any());
+    }
+    @Test void terminalStatusesRemainClosedEvenWhenResolutionDateIsMissing() {
+        quarantine.setUser(user);
+        for (String terminal : List.of("RESOLVIDA", "ENCERRADA_SEM_CORRECAO")) {
+            quarantine.setStatus(terminal);
+            assertEquals(409, assertThrows(ResponseStatusException.class,
+                    () -> service.claim(1L, 3L)).getStatusCode().value());
+            assertEquals(409, assertThrows(ResponseStatusException.class,
+                    () -> service.updateTreatment(1L, 3L, "Alterar")).getStatusCode().value());
+            assertEquals(409, assertThrows(ResponseStatusException.class,
+                    () -> service.closeWithoutCorrection(1L, 3L, "Encerrar novamente")).getStatusCode().value());
+            assertEquals(409, assertThrows(ResponseStatusException.class,
+                    () -> service.resolve(1L, 3L, "Resolver")).getStatusCode().value());
+            assertEquals(terminal, quarantine.getStatus());
+        }
+        verify(repository, never()).save(any());
+    }
     @Test void inactiveUsersCannotClaimOrWrite() {
         user.setUserStatus(0);
         assertEquals(403, assertThrows(ResponseStatusException.class,
@@ -105,6 +150,8 @@ class QuarantineServiceTest {
         quarantine.setUser(user);
         assertEquals(403, assertThrows(ResponseStatusException.class,
                 () -> service.updateTreatment(1L, 3L, "Texto")).getStatusCode().value());
+        assertEquals(403, assertThrows(ResponseStatusException.class,
+                () -> service.closeWithoutCorrection(1L, 3L, "Sem correção")).getStatusCode().value());
         verify(repository, never()).findLockedById(any()); verify(repository, never()).save(any());
     }
     @Test void listAppliesFiltersPaginationAndStableOrdering() {

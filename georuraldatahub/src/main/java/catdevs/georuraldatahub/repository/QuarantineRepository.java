@@ -25,7 +25,7 @@ public interface QuarantineRepository extends JpaRepository<Quarantine, Long> {
         where (:status is null or q.status = :status)
           and (:responsibleId is null or responsible.id = :responsibleId)
           and (:fileId is null or file.id = :fileId)
-          and (:unassigned = false or (responsible is null and q.dateResolution is null and q.status <> 'RESOLVIDA'))
+          and (:unassigned = false or (responsible is null and q.dateResolution is null and q.status not in ('RESOLVIDA', 'ENCERRADA_SEM_CORRECAO')))
         """)
     Page<Quarantine> search(@Param("status") String status, @Param("responsibleId") Long responsibleId,
             @Param("fileId") Long fileId, @Param("unassigned") boolean unassigned, Pageable pageable);

@@ -34,7 +34,7 @@ class QuarantineControllerTest {
         mvc = MockMvcBuilders.standaloneSetup(new QuarantineController(new QuarantineService(repository, users)))
                 .setControllerAdvice(new GlobalExceptionHandler()).build();
     }
-    @Test void volunteerWorkflowRecordsPersonObservationAndResolution() throws Exception {
+    @Test void volunteerWorkflowBlocksUnverifiedResolutionAndAllowsClosingWithoutCorrection() throws Exception {
         mvc.perform(get("/quarentenas/1")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("REGISTROS_REJEITADOS"))
                 .andExpect(jsonPath("$.responsibleId").doesNotExist());
@@ -46,7 +46,14 @@ class QuarantineControllerTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.treatment").value("Conferindo os tipos com a fonte"));
         mvc.perform(post("/quarentenas/1/resolver").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"userId\":3,\"treatment\":\"Arquivo corrigido reenviado para validação\"}"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("RESOLVIDA"))
+                .andExpect(status().isConflict());
+        mvc.perform(get("/quarentenas/1")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("EM_ANALISE"))
+                .andExpect(jsonPath("$.treatment").value("Conferindo os tipos com a fonte"))
+                .andExpect(jsonPath("$.dateResolution").doesNotExist());
+        mvc.perform(post("/quarentenas/1/encerrar").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"userId\":3,\"treatment\":\"Dados insuficientes para corrigir\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ENCERRADA_SEM_CORRECAO"))
                 .andExpect(jsonPath("$.dateResolution").exists()).andExpect(jsonPath("$.reason").value("INVALID_TYPE: id"));
         mvc.perform(patch("/quarentenas/1/observacao").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"userId\":3,\"treatment\":\"Alterar\"}")).andExpect(status().isConflict());
@@ -64,6 +71,10 @@ class QuarantineControllerTest {
                     .andExpect(status().isBadRequest());
         mvc.perform(patch("/quarentenas/1/observacao").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"userId\":3,\"treatment\":\" \"}")).andExpect(status().isBadRequest());
+        for (String body : List.of("{}", "{\"userId\":3,\"treatment\":\" \"}",
+                "{\"userId\":0,\"treatment\":\"Justificativa\"}"))
+            mvc.perform(post("/quarentenas/1/encerrar").contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest());
         verify(repository, never()).save(any());
     }
     @Test void missingQuarantineReturns404AndDeletionIsUnavailable() throws Exception {

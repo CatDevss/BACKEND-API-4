@@ -38,4 +38,11 @@ public class QuarantineController {
     public ResponseEntity<QuarantineResponseDTO> resolve(@PathVariable Long id, @Valid @RequestBody QuarantineTreatmentRequestDTO request) {
         return ResponseEntity.status(HttpStatus.OK).body(service.resolve(id, request.userId(), request.treatment()));
     }
+
+    @PostMapping("/{id}/encerrar")
+    public ResponseEntity<QuarantineResponseDTO> closeWithoutCorrection(@PathVariable Long id,
+            @Valid @RequestBody QuarantineTreatmentRequestDTO request) {
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(service.closeWithoutCorrection(id, request.userId(), request.treatment()));
+    }
 }
