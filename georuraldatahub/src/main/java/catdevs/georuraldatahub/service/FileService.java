@@ -184,24 +184,23 @@ public class FileService {
         var report = FileValidationReport.of(dictionary.getId(), dictionary.getVersion(), records);
         String reportJson = mapper.writeValueAsString(report);
         byte[] accepted;
-        if (preparationErrors != null) {
+        if (!report.status().equals("VALIDO")) {
             accepted = new byte[0];
         } else if (raster) {
-            accepted = report.status().equals("VALIDO") ? mapper.writeValueAsBytes(prepared.metadata()) : new byte[0];
+            accepted = mapper.writeValueAsBytes(prepared.metadata());
         } else {
             try (InputStream input = prepared == null ? multipartFile.getInputStream()
                     : new java.io.ByteArrayInputStream(prepared.content())) {
                 accepted = validationService.acceptedContent(input, prepared == null ? format : "geojson", records);
             }
         }
-        String validatedFilename = sanitizedFilename + (prepared == null || java.util.Set.of("json", "geojson").contains(format)
+        String workingFilename = sanitizedFilename + (prepared == null || java.util.Set.of("json", "geojson").contains(format)
                 ? "" : raster ? ".raster.json" : ".geojson");
-        // O conteúdo bruto fica guardado para auditoria. Só o arquivo filtrado segue para tratamento.
+        // O original permanece na zona bruta; somente uma cópia aprovada pode avançar.
         String location = bucketService.uploadToSourceRawZone(multipartFile, sourceId, hash, sanitizedFilename);
 
         List<String> uploaded = new ArrayList<>();
-        uploaded.add(location);
-         // Se a transação der rollback (inclusive no commit), apaga do bucket o que já foi enviado.
+        // O rollback remove apenas cópias de trabalho; o original bruto é permanente.
         TransactionSynchronizationManager.registerSynchronization(
             new TransactionSynchronization() {
                 @Override public void afterCompletion(int status) {
@@ -213,12 +212,11 @@ public class FileService {
                     }
                 }
             });
-        String reportLocation = bucketService.uploadValidationReport(location, reportJson);
-        uploaded.add(reportLocation);
+        bucketService.uploadValidationReport(location, reportJson);
 
          if (prepared != null) {
-            uploaded.add(bucketService.uploadCollectionArtifact(location + ".geospatial.json",
-                    mapper.writeValueAsBytes(prepared.metadata()), "application/json"));
+            bucketService.uploadCollectionArtifact(location + ".geospatial.json",
+                    mapper.writeValueAsBytes(prepared.metadata()), "application/json");
         }
 
         // Em coletas, guarda também os arquivos originais e os metadados.
@@ -227,15 +225,17 @@ public class FileService {
             for (var original : collected.originals()) {
                 String key = location + ".originals/" + String.format(java.util.Locale.ROOT, "%05d_", index++)
                         + sanitizeFilename(original.filename());
-                uploaded.add(bucketService.uploadCollectionArtifact(key, original.content(), original.contentType()));
+                bucketService.uploadCollectionArtifact(key, original.content(), original.contentType());
             }
-            uploaded.add(bucketService.uploadCollectionArtifact(location + ".collection.json",
-                    mapper.writeValueAsBytes(collected.metadata()), "application/json"));
+            bucketService.uploadCollectionArtifact(location + ".collection.json",
+                    mapper.writeValueAsBytes(collected.metadata()), "application/json");
         }
 
+        String quarantineLocation = null;
         if (!report.status().equals("VALIDO")) {
+            // Qualquer rejeição bloqueia a cópia inteira; somente outra validação poderá liberá-la.
             // A zona física acompanha a quarentena do banco. O original bruto e o histórico ficam preservados.
-            String quarantineLocation = BucketService.quarantineLocation(location);
+            quarantineLocation = BucketService.quarantineLocation(location);
             // Registrar antes do envio também cobre falha de rede após a gravação no OCI.
             uploaded.add(quarantineLocation);
             bucketService.uploadToQuarantineZone(multipartFile, location);
@@ -243,13 +243,13 @@ public class FileService {
             bucketService.uploadValidationReport(quarantineLocation, reportJson);
         }
 
-         // Salva a ingestão (ERRO se o arquivo foi rejeitado por completo)
+        // Qualquer rejeição, inclusive parcial, marca a ingestão com erro.
         DataIngestion ingestion = new DataIngestion();
         ingestion.setDictionary(dictionary);
         ingestion.setUser(user);
         ingestion.setType(ingestionType);
         ingestion.setConnector(connector);
-        ingestion.setIngStatus(report.status().equals("REJEITADO") ? IngestionStatus.ERRO : IngestionStatus.CONCLUIDO);
+        ingestion.setIngStatus(report.status().equals("VALIDO") ? IngestionStatus.CONCLUIDO : IngestionStatus.ERRO);
         ingestion = ingestionRepository.save(ingestion);
 
         // Salva o arquivo.
@@ -280,18 +280,35 @@ public class FileService {
             quarantineRepository.save(quarantine);
         }
 
-          // Versão 2: só os registros aceitos, se houver algum.
-        if (accepted.length > 0) {
-            String acceptedLocation = bucketService.uploadSourceValidatedContent(accepted, sourceId, hash, validatedFilename);
-            uploaded.add(acceptedLocation);
-            Version validated = new Version();
-            validated.setFile(file);
-            validated.setVersionNumber(2);
-            // Filtrar só valida os registros; não significa que já foi tratado ou publicado.
-            validated.setStatus(VersionStatus.BRUTA);
-            validated.setLocation(acceptedLocation);
-            versionRepository.save(validated);
+        // A versão 1 representa o original. A versão 2 rastreia a cópia de trabalho no bucket.
+        Version working = new Version();
+        working.setFile(file);
+        working.setVersionNumber(2);
+        if (quarantineLocation != null) {
+            working.setStatus(VersionStatus.QUARENTENA);
+            working.setLocation(quarantineLocation);
+        } else if (raster) {
+            String rasterLocation = BucketService.workingLocation(location, "tratada/");
+            uploaded.add(rasterLocation);
+            bucketService.copyWorkingObject(location, rasterLocation);
+            uploaded.add(rasterLocation + ".raster.json");
+            bucketService.uploadSourceTreatedContent(accepted, sourceId, hash, workingFilename);
+            working.setStatus(VersionStatus.TRATADA);
+            working.setLocation(rasterLocation);
+        } else {
+            if (accepted.length == 0) throw new IllegalArgumentException("Arquivo sem conteúdo aprovado para gerar a cópia de trabalho.");
+            String expectedLocation = BucketService.workingLocation(location, "tratada/")
+                    + (prepared == null || java.util.Set.of("json", "geojson").contains(format) ? "" : ".geojson");
+            uploaded.add(expectedLocation);
+            String acceptedLocation = bucketService.uploadSourceTreatedContent(accepted, sourceId, hash, workingFilename);
+            working.setStatus(VersionStatus.TRATADA);
+            working.setLocation(acceptedLocation);
         }
+        if (quarantineLocation == null) {
+            uploaded.add(working.getLocation() + ".validation.json");
+            bucketService.uploadValidationReport(working.getLocation(), reportJson);
+        }
+        versionRepository.save(working);
 
          // Associa ao dataset, se informado.
         if (dataset != null) dataset.getFiles().add(file);

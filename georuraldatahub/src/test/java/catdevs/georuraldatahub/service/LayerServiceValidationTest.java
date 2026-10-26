@@ -27,16 +27,16 @@ class LayerServiceValidationTest {
     }
     @Test void readsFilteredVersionInsteadOfOriginal() throws Exception {
         when(files.findById(1L)).thenReturn(Optional.of(file(1L)));
-        Version version = new Version(); version.setLocation("validada/filtered.csv");
-        when(versions.findFirstByFile_IdAndStatusInAndLocationStartingWithOrderByVersionNumberDesc(eq(1L), argThat(statuses -> statuses.contains(VersionStatus.TRATADA)), eq("validada/"))).thenReturn(Optional.of(version));
+        Version version = new Version(); version.setStatus(VersionStatus.TRATADA); version.setLocation("tratada/filtered.csv");
+        when(versions.findFirstByFile_IdOrderByVersionNumberDesc(1L)).thenReturn(Optional.of(version));
         service.getFileLayer(1L);
-        verify(bucket).readCsvAsGeoJson("validada/filtered.csv");
+        verify(bucket).readCsvAsGeoJson("tratada/filtered.csv");
         verify(bucket, never()).readCsvAsGeoJson("bruta/original.csv");
     }
     @Test void usesTreatedGeoJsonInsteadOfCsvInputWhenAResultExists() throws Exception {
         when(files.findById(1L)).thenReturn(Optional.of(file(1L)));
-        var version = new Version(); version.setLocation("tratada/fontes/4/1/execucao-20.geojson");
-        when(versions.findFirstByFile_IdAndStatusInOrderByVersionNumberDesc(eq(1L), any()))
+        var version = new Version(); version.setStatus(VersionStatus.TRATADA); version.setLocation("tratada/fontes/4/1/execucao-20.geojson");
+        when(versions.findFirstByFile_IdOrderByVersionNumberDesc(1L))
                 .thenReturn(Optional.of(version));
         service.getFileLayer(1L);
         verify(bucket).readGeoJson(version.getLocation());
@@ -46,7 +46,7 @@ class LayerServiceValidationTest {
     @Test void listsOnlyApprovedFiles() {
         when(datasets.existsById(4L)).thenReturn(true);
         when(files.findByDatasetId(4L)).thenReturn(List.of(file(1L), file(2L)));
-        when(versions.findFirstByFile_IdAndStatusInAndLocationStartingWithOrderByVersionNumberDesc(eq(1L), argThat(statuses -> statuses.contains(VersionStatus.TRATADA)), eq("validada/"))).thenReturn(Optional.of(new Version()));
+        when(versions.findFirstByFile_IdOrderByVersionNumberDesc(1L)).thenReturn(Optional.of(approvedVersion()));
         assertEquals(1, service.listLayers(4L).size());
     }
 
@@ -66,6 +66,19 @@ class LayerServiceValidationTest {
         when(layers.findById(5L)).thenReturn(Optional.of(layer));
         assertEquals(409, assertThrows(ResponseStatusException.class, () -> service.getTreatedLayer(5L)).getStatusCode().value());
         assertEquals(404, assertThrows(ResponseStatusException.class, () -> service.getTreatedLayer(99L)).getStatusCode().value());
+        verifyNoInteractions(bucket);
+    }
+
+    private Version approvedVersion() {
+        var version = new Version(); version.setStatus(VersionStatus.TRATADA); version.setLocation("tratada/test.csv");
+        return version;
+    }
+
+    @Test void latestQuarantineVersionBlocksFilePreviewInsteadOfReusingOldApprovedCopy() {
+        when(files.findById(1L)).thenReturn(Optional.of(file(1L)));
+        var current = new Version(); current.setStatus(VersionStatus.QUARENTENA); current.setLocation("quarentena/test.csv");
+        when(versions.findFirstByFile_IdOrderByVersionNumberDesc(1L)).thenReturn(Optional.of(current));
+        assertEquals(409, assertThrows(ResponseStatusException.class, () -> service.getFileLayer(1L)).getStatusCode().value());
         verifyNoInteractions(bucket);
     }
 }

@@ -52,7 +52,7 @@ public class JpaTreatmentStore {
         var parameters = mapper.createObjectNode();
         parameters.set("request", mapper.valueToTree(request));
         parameters.put("dictionaryId", input.dictionaryId()).put("dictionaryVersion", input.dictionaryVersion())
-                .put("originalSha256", input.originalHash()).put("inputLocation", input.validatedLocation())
+                .put("originalSha256", input.originalHash()).put("inputLocation", input.workingLocation())
                 .put("format", input.format()).put("sourceId", input.sourceId()).put("targetSrid", 4326).put("engineVersion", "BE-07-v1");
         parameters.set("dictionaryRules", mapper.valueToTree(input.rules()));
         execution.setParameters(parameters.toString());
@@ -68,10 +68,10 @@ public class JpaTreatmentStore {
         entityManager.refresh(file);
         var source = versions.findById(input.inputVersionId()).orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "Versão de entrada removida."));
         entityManager.refresh(source);
-        if (!Objects.equals(source.getFile().getId(), file.getId()) || !Objects.equals(source.getLocation(), input.validatedLocation())
-                || !Objects.equals(file.getHash(), input.originalHash()) || !source.getLocation().startsWith("validada/")
-                || !Set.of(VersionStatus.BRUTA, VersionStatus.TRATADA, VersionStatus.PUBLICADA).contains(source.getStatus()))
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "A versão de entrada não corresponde à revisão validada.");
+        if (!Objects.equals(source.getFile().getId(), file.getId()) || !Objects.equals(source.getLocation(), input.workingLocation())
+                || !Objects.equals(file.getHash(), input.originalHash()) || !source.getLocation().startsWith("tratada/")
+                || !Set.of(VersionStatus.TRATADA, VersionStatus.PUBLICADA).contains(source.getStatus()))
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "A versão de entrada não corresponde à cópia tratada aprovada.");
         Dataset dataset = null;
         if (!raster) {
             if (request.datasetId() == null) throw new IllegalArgumentException("Selecione o conjunto para criar a camada vetorial.");
@@ -99,11 +99,21 @@ public class JpaTreatmentStore {
                 .put("outputArtifactSha256", VectorTreatment.hash(outputBytes)).put("outputLocation", outputKey);
         uploads.add(outputKey);
         bucket.uploadCollectionArtifact(outputKey, outputBytes, "application/json");
-        version.setLocation(raster ? input.rawLocation() : outputKey);
+        String dataLocation = outputKey;
+        if (raster) {
+            dataLocation = outputKey.substring(0, outputKey.length() - ".raster.json".length()) + "." + input.format();
+            String dataSource = input.workingLocation().endsWith(".raster.json") ? input.rawLocation() : input.workingLocation();
+            uploads.add(dataLocation);
+            bucket.copyWorkingObject(dataSource, dataLocation);
+            if (trace.isObject()) ((com.fasterxml.jackson.databind.node.ObjectNode) trace)
+                    .put("manifestLocation", outputKey).put("manifestSha256", VectorTreatment.hash(outputBytes))
+                    .put("outputLocation", dataLocation).put("outputArtifactSha256", input.originalHash()).put("dataInputLocation", dataSource);
+        }
+        version.setLocation(dataLocation);
         version = versions.saveAndFlush(version);
         if (raster) {
             JsonNode summary = content.path("summary");
-            var record = new RasterMetadata(); record.setVersionId(version.getId()); record.setLocation(input.rawLocation());
+            var record = new RasterMetadata(); record.setVersionId(version.getId()); record.setLocation(dataLocation);
             record.setUserId(request.userId()); record.setSourceSrid(content.path("sourceSrid").asInt()); record.setWidth(summary.path("width").asInt());
             record.setHeight(summary.path("height").asInt()); record.setBandCount(summary.path("bandCount").asInt());
             record.setPixelWidth(summary.path("pixelWidth").asDouble()); record.setPixelHeight(summary.path("pixelHeight").asDouble());
@@ -122,7 +132,7 @@ public class JpaTreatmentStore {
         }
         String traceKey = outputKey + ".processing.json";
         uploads.add(traceKey); bucket.uploadCollectionArtifact(traceKey, mapper.writeValueAsBytes(trace), "application/json");
-        // Criamos outra versão; a revisão validada e os tratamentos anteriores continuam preservados.
+        // Criamos outra versão; a cópia de entrada e os tratamentos anteriores continuam preservados.
         version.setStatus(VersionStatus.TRATADA); versions.saveAndFlush(version);
         execution.setOutputVersionId(version.getId()); execution.setStatus("CONCLUIDO"); execution.setFinishedAt(LocalDateTime.now());
         execution.setInputCount(inputCount); execution.setOutputCount(outputCount); execution.setProvenance(trace.toString());

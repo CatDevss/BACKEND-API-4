@@ -20,6 +20,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class QuarantineControllerTest {
     private final QuarantineRepository repository = mock(QuarantineRepository.class);
+    private final catdevs.georuraldatahub.repository.VersionRepository versions = mock(catdevs.georuraldatahub.repository.VersionRepository.class);
     private final UserService users = mock(UserService.class);
     private final Quarantine quarantine = new Quarantine();
     private MockMvc mvc;
@@ -31,7 +32,7 @@ class QuarantineControllerTest {
         when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         var user = new User(); user.setId(3L); user.setName("Analista"); user.setUserStatus(1);
         when(users.findEntityById(3L)).thenReturn(user);
-        mvc = MockMvcBuilders.standaloneSetup(new QuarantineController(new QuarantineService(repository, users)))
+        mvc = MockMvcBuilders.standaloneSetup(new QuarantineController(new QuarantineService(repository, users, versions)))
                 .setControllerAdvice(new GlobalExceptionHandler()).build();
     }
     @Test void volunteerWorkflowRecordsPersonObservationAndResolution() throws Exception {

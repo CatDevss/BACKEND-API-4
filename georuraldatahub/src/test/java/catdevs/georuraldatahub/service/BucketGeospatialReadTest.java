@@ -24,16 +24,16 @@ class BucketGeospatialReadTest {
     @Test void limitsBytesBeforeBuildingEntireVectorTree() {
         response("{\"type\":\"FeatureCollection\",\"features\":[]}" + " ".repeat(1000));
         limits.setMaxOutputBytes(20);
-        assertThrows(IllegalArgumentException.class, () -> service.readGeoJson("validada/test.json"));
+        assertThrows(IllegalArgumentException.class, () -> service.readGeoJson("tratada/test.json"));
         response("lat,lon,nome\n-25,-51," + "a".repeat(1000));
-        assertThrows(IllegalArgumentException.class, () -> service.readCsvAsGeoJson("validada/test.csv"));
+        assertThrows(IllegalArgumentException.class, () -> service.readCsvAsGeoJson("tratada/test.csv"));
     }
 
     @Test void limitsCsvRecordsAndParsesApprovedGeometryColumn() throws Exception {
         response("lat,lon\n-25,-51\n-24,-50\n"); limits.setMaxFeatures(1);
-        assertThrows(IllegalArgumentException.class, () -> service.readCsvAsGeoJson("validada/test.csv"));
+        assertThrows(IllegalArgumentException.class, () -> service.readCsvAsGeoJson("tratada/test.csv"));
         response("geometry,nome\n\"{\"\"type\"\":\"\"Point\"\",\"\"coordinates\"\":[-51,-25]}\",teste\n");
-        var feature = service.readCsvAsGeoJson("validada/test.csv").path("features").get(0);
+        var feature = service.readCsvAsGeoJson("tratada/test.csv").path("features").get(0);
         assertEquals("Point", feature.path("geometry").path("type").asText());
         assertEquals("teste", feature.path("properties").path("nome").asText());
         assertFalse(feature.path("properties").has("geometry"));
@@ -41,11 +41,11 @@ class BucketGeospatialReadTest {
 
     @Test void readsApprovedRasterManifestAndRejectsOversizedMetadata() throws Exception {
         response("{\"kind\":\"RASTER\"}");
-        assertEquals("RASTER", service.readRasterManifest("validada/test.raster.json").path("kind").asText());
-        verify(client).getObject(argThat(r -> r.getObjectName().equals("validada/test.raster.json")));
+        assertEquals("RASTER", service.readRasterManifest("tratada/test.raster.json").path("kind").asText());
+        verify(client).getObject(argThat(r -> r.getObjectName().equals("tratada/test.raster.json")));
         assertThrows(IllegalArgumentException.class, () -> service.readRasterManifest("bruta/test.tif"));
         response(" ".repeat(ProcessingProperties.MAX_METADATA_BYTES + 1));
-        assertThrows(IllegalArgumentException.class, () -> service.readRasterManifest("validada/test.raster.json"));
+        assertThrows(IllegalArgumentException.class, () -> service.readRasterManifest("tratada/test.raster.json"));
         assertThrows(IllegalArgumentException.class, () -> service.readGeospatialMetadata("bruta/test.tif"));
     }
 }

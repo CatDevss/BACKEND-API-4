@@ -35,4 +35,7 @@ public interface VersionRepository extends JpaRepository<Version, Long> {
         ORDER BY v.file.id DESC
     """)
     List<FileStageDTO> findCurrentStageOfEachFile();
+
+    List<Version> findByFile_IdInAndStatusAndLocationStartingWithOrderByVersionNumberDesc(
+            Collection<Long> fileIds, VersionStatus status, String prefix);
 }

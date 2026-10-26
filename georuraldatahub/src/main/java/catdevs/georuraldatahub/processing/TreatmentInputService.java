@@ -20,7 +20,7 @@ public class TreatmentInputService {
         this.files = files; this.versions = versions; this.users = users; this.dictionaries = dictionaries;
     }
     public record Input(Long fileId, Long inputVersionId, String name, String format, String rawLocation,
-            String validatedLocation, Long sourceId, String originalHash, Long dictionaryId,
+            String workingLocation, Long sourceId, String originalHash, Long dictionaryId,
             Integer dictionaryVersion, List<FieldRule> rules) { }
     @Transactional(readOnly = true)
     public Long uploaderId(Long fileId) {
@@ -33,9 +33,11 @@ public class TreatmentInputService {
         if (users.findEntityById(userId).getUserStatus() != 1)
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Usuário inativo não pode iniciar tratamento.");
         var file = files.findById(fileId).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Arquivo não encontrado."));
-        var version = versions.findFirstByFile_IdAndStatusInAndLocationStartingWithOrderByVersionNumberDesc(
-                fileId, Set.of(VersionStatus.BRUTA, VersionStatus.TRATADA, VersionStatus.PUBLICADA), "validada/")
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "Arquivo sem registros ou metadados aprovados para tratamento."));
+        var version = versions.findFirstByFile_IdOrderByVersionNumberDesc(fileId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "Arquivo sem cópia de trabalho."));
+        if (version.getStatus() != VersionStatus.TRATADA || version.getLocation() == null
+                || !version.getLocation().startsWith("tratada/"))
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "A versão atual precisa estar aprovada na zona tratada.");
         var dictionary = file.getIngestion().getDictionary();
         return new Input(fileId, version.getId(), file.getName(), file.getFormatFile().toLowerCase(Locale.ROOT),
                 file.getLocation(), version.getLocation(), dictionary.getSource().getId(), file.getHash(),

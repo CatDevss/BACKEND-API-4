@@ -38,10 +38,10 @@ public class File {
     @Column(name = "arq_tamanho")
     private Long size;
 
-    @Column(name = "arq_hash")
+    @Column(name = "arq_hash", updatable = false)
     private String hash;
 
-    @Column(name = "arq_localizacao")
+    @Column(name = "arq_localizacao", updatable = false)
     private String location;
 
     @CreationTimestamp 
@@ -107,6 +107,10 @@ public class File {
     }
 
     public void setLocation(String location) {
+        if (location == null || !location.startsWith("bruta/"))
+            throw new IllegalArgumentException("ARQUIVO deve apontar para o original na zona bruta.");
+        if (this.location != null && !this.location.equals(location))
+            throw new IllegalStateException("A localização do original é imutável; atualize a cópia na versão.");
         this.location = location;
     }
 

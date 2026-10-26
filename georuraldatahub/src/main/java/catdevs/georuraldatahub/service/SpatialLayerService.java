@@ -35,6 +35,10 @@ public class SpatialLayerService {
             return new LayerLoadResult(layer.getId(), layer.getName(), layer.getGeometryType(), layer.getSrid(), result.outputCount());
         }
         var input = legacy.load(datasetId, fileId);
+        var approval = bucket.readVersionValidationReport(input.location(), input.rawLocation());
+        if (approval == null || !"VALIDO".equals(approval.path("status").asText()))
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT,
+                    "O arquivo inteiro precisa passar na validação antes do tratamento.");
         var content = input.location().toLowerCase(Locale.ROOT).endsWith(".csv")
                 ? bucket.readCsvAsGeoJson(input.location()) : bucket.readGeoJson(input.location());
         return legacy.complete(input, GeoJsonFeatureExtractor.extract(content));

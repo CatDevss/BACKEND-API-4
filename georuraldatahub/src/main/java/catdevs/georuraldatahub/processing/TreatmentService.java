@@ -33,11 +33,17 @@ public class TreatmentService {
         var input = inputs.load(fileId, request.userId());
         Long id = persistence.start(input, request);
         try {
+            JsonNode approval = bucket.readVersionValidationReport(input.workingLocation(), input.rawLocation());
+            if (approval == null || !"VALIDO".equals(approval.path("status").asText()))
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "O arquivo inteiro precisa passar na validação; rejeição parcial também bloqueia o tratamento.");
             if (Set.of("tif", "tiff").contains(input.format())) {
                 if (request.dissolve() || !request.dissolveBy().isEmpty() || !request.attributes().isEmpty())
                     throw new IllegalArgumentException("Raster usa catálogo de metadados; regras vetoriais não se aplicam às células.");
-                JsonNode metadata = bucket.readRasterManifest(input.validatedLocation());
-                if (!input.validatedLocation().endsWith(".raster.json") || !"RASTER".equals(metadata.path("kind").asText()))
+                String manifestLocation = input.workingLocation().endsWith(".raster.json")
+                        ? input.workingLocation() : input.workingLocation() + ".raster.json";
+                JsonNode metadata = bucket.readRasterManifest(manifestLocation);
+                if (!"RASTER".equals(metadata.path("kind").asText()))
                     throw new IllegalArgumentException("Raster sem metadados aprovados pelo fluxo específico.");
                 var envelope = mapper.createObjectNode().put("type", "FeatureCollection");
                 var feature = envelope.putArray("features").addObject().put("type", "Feature").put("id", "coverage");
@@ -53,8 +59,8 @@ public class TreatmentService {
             }
             if (!Set.of("csv", "json", "geojson", "zip", "gpkg").contains(input.format()))
                 throw new IllegalArgumentException("Formato não suportado para tratamento vetorial.");
-            JsonNode content = input.validatedLocation().toLowerCase(Locale.ROOT).endsWith(".csv")
-                    ? bucket.readCsvAsGeoJson(input.validatedLocation()) : bucket.readGeoJson(input.validatedLocation());
+            JsonNode content = input.workingLocation().toLowerCase(Locale.ROOT).endsWith(".csv")
+                    ? bucket.readCsvAsGeoJson(input.workingLocation()) : bucket.readGeoJson(input.workingLocation());
             var result = vectors.apply(content, input.rules(), request);
             try {
                 String metadata = bucket.readGeospatialMetadata(input.rawLocation());

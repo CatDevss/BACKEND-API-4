@@ -23,9 +23,9 @@ import catdevs.georuraldatahub.repository.FileRepository;
 public class LayerService {
 
     private static final Set<String> RENDERABLE = Set.of("geojson", "json", "csv", "zip", "gpkg");
-    /** Versões com registros validados: ainda pendentes de carga (BRUTA) ou já carregadas. */
-    private static final Set<VersionStatus> VALIDATED_STATUSES =
-            Set.of(VersionStatus.BRUTA, VersionStatus.TRATADA, VersionStatus.PUBLICADA);
+    /** Apenas cópias aprovadas para visualização; o original bruto nunca é usado como camada. */
+    private static final Set<VersionStatus> APPROVED_STATUSES =
+            Set.of(VersionStatus.TRATADA, VersionStatus.PUBLICADA);
 
     private final FileRepository fileRepository;
     private final DatasetRepository datasetRepository;
@@ -50,8 +50,7 @@ public class LayerService {
         }
         return fileRepository.findByDatasetId(datasetId).stream()
                 .filter(f -> isRenderable(f.getFormatFile()))
-                .filter(f -> versionRepository.findFirstByFile_IdAndStatusInAndLocationStartingWithOrderByVersionNumberDesc(
-                        f.getId(), VALIDATED_STATUSES, "validada/").isPresent())
+                .filter(f -> versionRepository.findFirstByFile_IdOrderByVersionNumberDesc(f.getId()).filter(this::approvedWorkingCopy).isPresent())
                 .map(f -> new LayerInfoDTO(f.getId(), f.getName(), f.getFormatFile(),
                         f.getSize(), f.getReceivedDate()))
                 .toList();
@@ -67,10 +66,8 @@ public class LayerService {
                     "Formato não suportado para visualização: " + file.getFormatFile());
         }
 
-        String location = versionRepository.findFirstByFile_IdAndStatusInOrderByVersionNumberDesc(
-                fileId, Set.of(VersionStatus.TRATADA, VersionStatus.PUBLICADA))
-                .or(() -> versionRepository.findFirstByFile_IdAndStatusInAndLocationStartingWithOrderByVersionNumberDesc(
-                fileId, VALIDATED_STATUSES, "validada/"))
+        String location = versionRepository.findFirstByFile_IdOrderByVersionNumberDesc(fileId)
+                .filter(this::approvedWorkingCopy)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT,
                         "Arquivo sem registros aprovados para visualização.")).getLocation();
         return location.toLowerCase(Locale.ROOT).endsWith(".csv")
@@ -89,6 +86,11 @@ public class LayerService {
         String location = version.getLocation();
         return location.toLowerCase(Locale.ROOT).endsWith(".csv")
                 ? bucketService.readCsvAsGeoJson(location) : bucketService.readGeoJson(location);
+    }
+
+    private boolean approvedWorkingCopy(catdevs.georuraldatahub.entity.Version version) {
+        return APPROVED_STATUSES.contains(version.getStatus()) && version.getLocation() != null
+                && (version.getLocation().startsWith("tratada/") || version.getLocation().startsWith("publicada/"));
     }
 
     private boolean isRenderable(String format) {

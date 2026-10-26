@@ -10,6 +10,9 @@ import catdevs.georuraldatahub.util.GeoJsonFeatureExtractor;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.*;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
 
 class SpatialLayerCompatibilityTest {
@@ -21,8 +24,14 @@ class SpatialLayerCompatibilityTest {
     private final BucketService bucket = mock(BucketService.class);
     private final TreatmentService treatments = mock(TreatmentService.class);
     private final jakarta.persistence.EntityManager manager = mock(jakarta.persistence.EntityManager.class);
-    private final LegacySpatialLayerStore legacy = new LegacySpatialLayerStore(datasets, files, versions, layers, features, manager);
+    private final LegacySpatialLayerStore legacy = new LegacySpatialLayerStore(datasets, files, versions, layers, features, manager, bucket);
     private final SpatialLayerService service = new SpatialLayerService(legacy, layers, bucket, treatments);
+
+    @BeforeEach void begin() throws Exception {
+        TransactionSynchronizationManager.initSynchronization();
+        when(bucket.readVersionValidationReport(any(), any())).thenReturn(new ObjectMapper().createObjectNode().put("status", "VALIDO"));
+    }
+    @AfterEach void end() { TransactionSynchronizationManager.clearSynchronization(); }
 
     @Test void existingRouteDelegatesToTrackedTreatmentAfterMigration() throws Exception {
         when(treatments.isEnabled()).thenReturn(true);
@@ -43,9 +52,16 @@ class SpatialLayerCompatibilityTest {
         dataset.getFiles().add(file); when(datasets.findById(1L)).thenReturn(Optional.of(dataset));
         when(datasets.findLockedById(1L)).thenReturn(Optional.of(dataset));
         when(files.findLockedById(7L)).thenReturn(Optional.of(file));
-        var version = new Version(); version.setId(10L); version.setFile(file); version.setStatus(VersionStatus.BRUTA);
-        version.setLocation("validada/teste.geojson");
-        when(versions.findFirstByFile_IdAndStatusAndLocationStartingWithOrderByVersionNumberDesc(7L, VersionStatus.BRUTA, "validada/"))
+        file.setLocation("bruta/teste.geojson");
+        var version = new Version(); version.setId(10L); version.setFile(file); version.setStatus(VersionStatus.TRATADA);
+        version.setLocation("tratada/teste.geojson"); version.setVersionNumber(2);
+        when(versions.findFirstByFile_IdOrderByVersionNumberDesc(7L)).thenReturn(Optional.of(version));
+        when(versions.saveAndFlush(any())).thenAnswer(call -> {
+            Version output = call.getArgument(0); output.setId(11L);
+            when(versions.findFirstByFile_IdOrderByVersionNumberDesc(7L)).thenReturn(Optional.of(output));
+            return output;
+        });
+        when(versions.findFirstByFile_IdAndStatusAndLocationStartingWithOrderByVersionNumberDesc(7L, VersionStatus.TRATADA, "tratada/"))
                 .thenReturn(Optional.of(version));
         when(versions.findById(10L)).thenReturn(Optional.of(version));
         when(layers.saveAndFlush(any())).thenAnswer(i -> { Layer layer = i.getArgument(0); layer.setId(30L); return layer; });
@@ -64,12 +80,16 @@ class SpatialLayerCompatibilityTest {
         when(bucket.readGeoJson(version.getLocation())).thenReturn(content());
         var result = service.createLayerFromFile(1L, 7L, null);
         assertEquals(1, result.featureCount()); assertEquals(VersionStatus.TRATADA, version.getStatus());
+        assertEquals("tratada/teste.geojson", version.getLocation());
+        verify(bucket).copyWorkingObject("tratada/teste.geojson", "tratada/legado/7/versao-3/teste.geojson");
+        assertEquals("bruta/teste.geojson", version.getFile().getLocation());
         verify(treatments, never()).startForDataset(any(), any(), any());
         var order = inOrder(bucket, files, features, versions);
-        order.verify(bucket).readGeoJson(version.getLocation());
+        order.verify(bucket).readGeoJson("tratada/teste.geojson");
         order.verify(files).findLockedById(7L);
         order.verify(features).insertBatch(any(), anyInt(), any());
-        order.verify(versions).saveAndFlush(version);
+        order.verify(versions).saveAndFlush(argThat(output -> output != version
+                && output.getVersionNumber() == 3 && "tratada/legado/7/versao-3/teste.geojson".equals(output.getLocation())));
     }
 
     @Test void secondLoadOfSameSnapshotCannotCreateDuplicateLayer() throws Exception {
@@ -87,17 +107,19 @@ class SpatialLayerCompatibilityTest {
         var version = prepare();
         when(bucket.readGeoJson(version.getLocation())).thenThrow(new java.io.IOException("Storage offline"));
         assertThrows(java.io.IOException.class, () -> service.createLayerFromFile(1L, 7L, null));
-        assertEquals(VersionStatus.BRUTA, version.getStatus());
-        verifyNoInteractions(layers, features, files);
+        assertEquals(VersionStatus.TRATADA, version.getStatus());
+        verifyNoInteractions(features, files);
+        verify(layers, never()).saveAndFlush(any());
         verify(versions, never()).saveAndFlush(any());
     }
 
     @Test void refreshesStateAfterLockToDetectConcurrentCompletionHiddenByRequestCache() throws Exception {
         var version = prepare();
         var input = legacy.load(1L, 7L);
-        doAnswer(call -> { version.setStatus(VersionStatus.TRATADA); return null; }).when(manager).refresh(version);
+        doAnswer(call -> { version.setStatus(VersionStatus.QUARENTENA); return null; }).when(manager).refresh(version);
         assertEquals(409, assertThrows(ResponseStatusException.class,
                 () -> legacy.complete(input, GeoJsonFeatureExtractor.extract(content()))).getStatusCode().value());
-        verifyNoInteractions(layers, features);
+        verifyNoInteractions(features);
+        verify(layers, never()).saveAndFlush(any());
     }
 }
