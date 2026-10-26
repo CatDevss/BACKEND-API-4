@@ -1,0 +1,7 @@
+{
+  "ibge-municipio.geojson": {"origin": "https://servicodados.ibge.gov.br/api/v3/malhas/municipios/4106902?formato=application/vnd.geo%2Bjson&qualidade=minima&periodo=2022", "scope": "Curitiba/PR; resposta completa, edição 2022"},
+  "ibge-parana-2022.geojson": {"origin": "https://servicodados.ibge.gov.br/api/v3/malhas/estados/PR?formato=application%2Fvnd.geo%2Bjson&qualidade=maxima&periodo=2022", "scope": "Limite oficial simplificado do Paraná, usado no recorte"},
+  "ibge-biomas-2004.zip": {"origin": "https://geoftp.ibge.gov.br/informacoes_ambientais/estudos_ambientais/biomas/vetores/Biomas_5000mil.zip", "scope": "Arquivo nacional histórico completo para testar o leitor e o recorte; conectores usam edições 2019/2025 em 1:250.000 e só encaminham polígonos dentro do Paraná."},
+  "inpe-prodes-page.geojson": {"origin": "https://terrabrasilis.dpi.inpe.br/geoserver/ows?service=WFS&version=2.0.0&request=GetFeature&typeNames=prodes-mata-atlantica-nb:yearly_deforestation&outputFormat=application%2Fjson&srsName=CRS%3A84&count=2&CQL_FILTER=year%3D2023%20AND%20state%3D%27PR%27&sortBy=uuid", "scope": "Resposta oficial de uma página com duas feições paranaenses da Mata Atlântica, ano 2023; não é a base completa"},
+  "inpe-focos-sample.csv": {"origin": "https://dataserver-coids.inpe.br/queimadas/queimadas/focos/csv/diario/Brasil/focos_diario_br_20261018.csv", "scope": "Cabeçalho e até 20 registros reais com estado_id=41, sem alterar os valores"}
+}

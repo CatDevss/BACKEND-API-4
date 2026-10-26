@@ -2,8 +2,13 @@ package catdevs.georuraldatahub.entity;
 
 import java.time.LocalDateTime;
 
+import org.hibernate.annotations.CreationTimestamp;
+
+import catdevs.georuraldatahub.entity.enums.VersionStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -22,23 +27,24 @@ public class Version {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "con_id", referencedColumnName = "con_id")
-    private Dataset dataset;
+    @JoinColumn(name = "arq_id", referencedColumnName = "arq_id")
+    private File file;
 
-    @Column(name = "ver_data_criacao")
+    @Column (name = "ver_numero")
+    private Integer versionNumber;
+
+    @Enumerated (EnumType.STRING)
+    @Column (name = "ver_status")
+    private VersionStatus status;
+
+    @Column (name = "ver_localizacao")
+    private String location;
+
+    @CreationTimestamp 
+    @Column(name = "ver_criada_em")
     private LocalDateTime dateCreation;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "ver_usr_criacao", referencedColumnName = "usr_id")
-    private User user;
-
     public Version(){
-    }
-
-    public Version(Dataset dataset, LocalDateTime dateCreation, User user) {
-        this.dataset = dataset;
-        this.dateCreation = dateCreation;
-        this.user = user;
     }
 
     public Long getId() {
@@ -49,12 +55,36 @@ public class Version {
         this.id = id;
     }
 
-    public Dataset getDataset() {
-        return dataset;
+    public File getFile() {
+        return file;
     }
 
-    public void setDataset(Dataset dataset) {
-        this.dataset = dataset;
+    public void setFile(File file) {
+        this.file = file;
+    }
+
+    public Integer getVersionNumber() {
+        return versionNumber;
+    }
+
+    public void setVersionNumber(Integer versionNumber) {
+        this.versionNumber = versionNumber;
+    }
+
+    public VersionStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(VersionStatus status) {
+        this.status = status;
+    }
+
+    public String getLocation() {
+        return location;
+    }
+
+    public void setLocation(String location) {
+        this.location = location;
     }
 
     public LocalDateTime getDateCreation() {
@@ -63,13 +93,5 @@ public class Version {
 
     public void setDateCreation(LocalDateTime dateCreation) {
         this.dateCreation = dateCreation;
-    }
-
-    public User getUser() {
-        return user;
-    }
-
-    public void setUser(User user) {
-        this.user = user;
     }
 }

@@ -1,6 +1,19 @@
 package catdevs.georuraldatahub.entity;
 
-import jakarta.persistence.*;
+import java.util.ArrayList;
+import java.util.List;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.JoinTable;
+import jakarta.persistence.ManyToMany;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
 
 @Entity
 @Table(name = "conjunto")
@@ -11,19 +24,18 @@ public class Dataset {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "con_nome", nullable = false)
+    @Column(name = "con_nome")
     private String name;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "fon_id", nullable = false)
-    private Source source;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "usr_id", referencedColumnName = "usr_id")
+    private User user;
+
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(name = "conjunto_arquivo", joinColumns = @JoinColumn(name = "con_id"), inverseJoinColumns = @JoinColumn(name = "arq_id"))
+    private List<File> files = new ArrayList<>();
 
     public Dataset() {
-    }
-
-    public Dataset(String name, Source source) {
-        this.name = name;
-        this.source = source;
     }
 
     public Long getId() {
@@ -42,11 +54,22 @@ public class Dataset {
         this.name = name;
     }
 
-    public Source getSource() {
-        return source;
+    public User getUser() {
+        return user;
     }
 
-    public void setSource(Source source) {
-        this.source = source;
+    public void setUser(User user) {
+        this.user = user;
     }
+
+    public List<File> getFiles() {
+        return files;
+    }
+
+    public void setFiles(List<File> files) {
+        this.files = files;
+    }
+
+    
+
 }

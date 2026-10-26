@@ -1,13 +1,13 @@
+
 package catdevs.georuraldatahub.service;
 
 import catdevs.georuraldatahub.dto.DatasetCreateRequestDTO;
 import catdevs.georuraldatahub.dto.DatasetResponseDTO;
-import catdevs.georuraldatahub.dto.FileResponseDTO;
+import catdevs.georuraldatahub.dto.DatasetUpdateRequestDTO;
 import catdevs.georuraldatahub.entity.Dataset;
-import catdevs.georuraldatahub.entity.Source;
+import catdevs.georuraldatahub.entity.User;
+import catdevs.georuraldatahub.exception.DataSetNotFoundException;
 import catdevs.georuraldatahub.repository.DatasetRepository;
-import catdevs.georuraldatahub.repository.FileRepository;
-import catdevs.georuraldatahub.repository.SourceRepository;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -20,70 +20,99 @@ import java.util.List;
 public class DatasetService {
 
         private final DatasetRepository datasetRepository;
-        private final SourceRepository sourceRepository;
-        private final FileRepository fileRepository;
+        private final UserService userService;
 
         public DatasetService(
                         DatasetRepository datasetRepository,
-                        SourceRepository sourceRepository,
-                        FileRepository fileRepository) {
+                        UserService userService) {
                 this.datasetRepository = datasetRepository;
-                this.sourceRepository = sourceRepository;
-                this.fileRepository = fileRepository;
+                this.userService = userService;
         }
 
         @Transactional
         public DatasetResponseDTO create(DatasetCreateRequestDTO request) {
 
-                Source source = sourceRepository.findById(request.sourceId())
-                                .orElseThrow(() -> new ResponseStatusException(
-                                                HttpStatus.BAD_REQUEST,
-                                                "Fonte não encontrada"));
+                User user = userService.findEntityById(request.userId());
 
-                Dataset dataset = new Dataset(
-                                request.name().trim(),
-                                source);
+                Dataset dataset = new Dataset();
+                dataset.setName(validName(request.name()));
+                dataset.setUser(user);
 
-                Dataset savedDataset = datasetRepository.save(dataset);
+                Dataset saved = datasetRepository.save(dataset);
 
-                return new DatasetResponseDTO(
-                                savedDataset.getId(),
-                                savedDataset.getName(),
-                                savedDataset.getSource().getId());
+                return toDto(saved);
         }
 
+        @Transactional(readOnly = true)
         public List<DatasetResponseDTO> listAll() {
+
                 return datasetRepository.findAll()
                                 .stream()
-                                .map(dataset -> new DatasetResponseDTO(
-                                                dataset.getId(),
-                                                dataset.getName(),
-                                                dataset.getSource().getId()))
+                                .map(this::toDto)
                                 .toList();
         }
 
-        public List<FileResponseDTO> listFiles(Long datasetId) {
+        @Transactional(readOnly = true)
+        public Dataset findEntityById(Long id) {
 
-                Dataset dataset = datasetRepository.findById(datasetId)
-                                .orElseThrow(() -> new ResponseStatusException(
-                                                HttpStatus.NOT_FOUND,
-                                                "Conjunto não encontrado"));
+                return datasetRepository.findById(id)
+                                .orElseThrow(() -> new DataSetNotFoundException(
+                                                "Conjunto não encontrado."));
+        }
 
-                return fileRepository
-                                .findByVersion_Dataset_IdOrderByIdDesc(dataset.getId())
-                                .stream()
-                                .map(file -> new FileResponseDTO(
-                                                file.getId(),
-                                                file.getName(),
-                                                file.getFormatFile(),
-                                                file.getSize(),
-                                                file.getHash(),
-                                                file.getLocation(),
-                                                file.getVersion().getId(),
-                                                file.getVersion().getDateCreation(),
-                                                file.getVersion().getUser() != null
-                                                                ? file.getVersion().getUser().getId()
-                                                                : null))
-                                .toList();
+        @Transactional
+        public Dataset findLockedEntityById(Long id) {
+                return datasetRepository.findLockedById(id)
+                                .orElseThrow(() -> new DataSetNotFoundException("Conjunto não encontrado."));
+        }
+
+        @Transactional(readOnly = true)
+        public DatasetResponseDTO findById(Long id) {
+
+                return toDto(findEntityById(id));
+        }
+
+        @Transactional
+        public DatasetResponseDTO update(
+                        Long id,
+                        DatasetUpdateRequestDTO request) {
+
+                Dataset dataset = findEntityById(id);
+                dataset.setName(validName(request.name()));
+
+                // A entidade gerenciada é atualizada no commit da transação.
+                return toDto(dataset);
+        }
+
+        @Transactional
+        public void delete(Long id) {
+
+                Dataset dataset = findLockedEntityById(id);
+
+                if (!dataset.getFiles().isEmpty()) {
+                        throw new ResponseStatusException(
+                                        HttpStatus.CONFLICT,
+                                        "Conjunto possui arquivos e não pode ser excluído.");
+                }
+
+                datasetRepository.delete(dataset);
+        }
+
+        private String validName(String value) {
+                if (value == null || value.isBlank()) throw new IllegalArgumentException("Nome do conjunto é obrigatório.");
+                String name = value.trim();
+                if (name.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 100)
+                        throw new IllegalArgumentException("Nome do conjunto excede o limite de 100 bytes do banco atual.");
+                return name;
+        }
+
+        private DatasetResponseDTO toDto(Dataset dataset) {
+
+                return new DatasetResponseDTO(
+                                dataset.getId(),
+                                dataset.getName(),
+                                dataset.getUser() != null
+                                                ? dataset.getUser().getId()
+                                                : null);
         }
 }

@@ -2,6 +2,7 @@ package catdevs.georuraldatahub.repository;
 
 import catdevs.georuraldatahub.entity.File;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -9,14 +10,32 @@ import java.util.List;
 
 public interface FileRepository extends JpaRepository<File, Long> {
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.QueryHints(
+        @jakarta.persistence.QueryHint(name = "jakarta.persistence.lock.timeout", value = "10000"))
+    @Query("select f from File f where f.id = :id")
+    java.util.Optional<File> findLockedById(@Param("id") Long id);
+
+    boolean existsByHashAndIngestion_Dictionary_Source_Id(String hash, Long sourceId);
+
+    @EntityGraph(attributePaths = {"ingestion", "ingestion.user"})
+    List<File> findByIngestion_Dictionary_Source_IdOrderByIdDesc(Long sourceId);
+
+
     @Query("""
         SELECT CASE WHEN COUNT(f) > 0 THEN true ELSE false END
-        FROM File f
-        WHERE f.version.dataset.id = :datasetId
+        FROM Dataset d JOIN d.files f
+        WHERE d.id = :datasetId
         AND f.hash = :hash
     """)
     boolean existsByHashInDataset(@Param("datasetId") Long datasetId, @Param("hash") String hash);
 
-    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = "version")
-    List<File> findByVersion_Dataset_IdOrderByIdDesc(Long datasetId);
+    @EntityGraph(attributePaths = {"ingestion.dictionary.source", "ingestion.user"})
+    @Query("""
+        SELECT f
+        FROM Dataset d JOIN d.files f
+        WHERE d.id = :datasetId
+        ORDER BY f.id DESC
+    """)
+    List<File> findByDatasetId(@Param("datasetId") Long datasetId);
 }

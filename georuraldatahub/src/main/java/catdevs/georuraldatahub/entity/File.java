@@ -1,5 +1,10 @@
 package catdevs.georuraldatahub.entity;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
+import org.hibernate.annotations.CreationTimestamp;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -7,6 +12,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToMany;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
@@ -20,8 +26,8 @@ public class File {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "ver_id", referencedColumnName = "ver_id")
-    private Version version;
+    @JoinColumn(name = "ing_id", referencedColumnName = "ing_id")
+    private DataIngestion ingestion;
 
     @Column(name = "arq_nome")
     private String name;
@@ -29,7 +35,7 @@ public class File {
     @Column(name = "arq_formato")
     private String formatFile;
 
-    @Column(name = "arq_tamanho", nullable = false)
+    @Column(name = "arq_tamanho")
     private Long size;
 
     @Column(name = "arq_hash")
@@ -38,16 +44,14 @@ public class File {
     @Column(name = "arq_localizacao")
     private String location;
 
-    public File(){
-    }
+    @CreationTimestamp 
+    @Column(name = "arq_data_recebimento")
+    private LocalDateTime receivedDate;
 
-    public File(Version version, String name, String formatFile, Long size, String hash, String location) {
-        this.version = version;
-        this.name = name;
-        this.formatFile = formatFile;
-        this.size = size;
-        this.hash = hash;
-        this.location = location;
+    @ManyToMany (mappedBy = "files")
+    private List<Dataset> datasets;
+
+    public File(){
     }
 
     public Long getId() {
@@ -58,12 +62,12 @@ public class File {
         this.id = id;
     }
 
-    public Version getVersion() {
-        return version;
+    public DataIngestion getIngestion() {
+        return ingestion;
     }
 
-    public void setVersion(Version version) {
-        this.version = version;
+    public void setIngestion(DataIngestion ingestion) {
+        this.ingestion = ingestion;
     }
 
     public String getName() {
@@ -104,5 +108,21 @@ public class File {
 
     public void setLocation(String location) {
         this.location = location;
+    }
+
+    public LocalDateTime getReceivedDate() {
+        return receivedDate;
+    }
+
+    public void setReceivedDate(LocalDateTime receivedDate) {
+        this.receivedDate = receivedDate;
+    }
+
+    public List<Dataset> getDatasets() {
+        return datasets;
+    }
+
+    public void setDatasets(List<Dataset> datasets) {
+        this.datasets = datasets;
     }
 }

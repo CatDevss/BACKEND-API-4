@@ -12,7 +12,7 @@ import catdevs.georuraldatahub.service.UserService;
 
 @RestController 
 @CrossOrigin 
-@RequestMapping ("usuarios")
+@RequestMapping ("/usuarios")
 public class UserController {
 
     private final UserService userService;
