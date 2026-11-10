@@ -21,7 +21,7 @@ public class SpatialLayerController {
         this.spatialLayerService = spatialLayerService;
     }
 
-    /** Carrega os registros validados do arquivo para o Oracle Spatial e cria a camada. */
+    /** Cria a camada Oracle Spatial a partir de um arquivo já tratado pelo dicionário. */
     @PostMapping("/conjuntos/{datasetId}/arquivos/{fileId}/camada")
     public ResponseEntity<LayerLoadResult> createLayer(@PathVariable Long datasetId,
             @PathVariable Long fileId, @org.springframework.web.bind.annotation.RequestParam(required = false) Long userId) throws Exception {

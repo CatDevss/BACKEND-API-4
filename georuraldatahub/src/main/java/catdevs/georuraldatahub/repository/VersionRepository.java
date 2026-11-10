@@ -12,6 +12,8 @@ import catdevs.georuraldatahub.entity.Version;
 import catdevs.georuraldatahub.entity.enums.VersionStatus;
 
 public interface VersionRepository extends JpaRepository<Version, Long> {
+    Optional<Version> findFirstByFile_IdAndStatusInAndLocationStartingWithOrderByVersionNumberAsc(
+            Long fileId, Collection<VersionStatus> statuses, String locationPrefix);
     Optional<Version> findFirstByFile_IdOrderByVersionNumberDesc(Long fileId);
     Optional<Version> findFirstByFile_IdAndStatusInOrderByVersionNumberDesc(Long fileId, Collection<VersionStatus> statuses);
     Optional<Version> findFirstByFile_IdAndStatusAndLocationStartingWithOrderByVersionNumberDesc(

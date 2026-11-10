@@ -22,7 +22,7 @@ public class TreatmentService {
         Long actor = userId == null ? inputs.uploaderId(fileId) : userId;
         var input = inputs.load(fileId, actor);
         if (Set.of("tif", "tiff").contains(input.format())) throw new IllegalArgumentException("Raster usa o endpoint de tratamentos e o catálogo; não cria feições vetoriais.");
-        return start(fileId, new TreatmentRequest(datasetId, actor, null, false, null));
+        return execute(enabledStore(), input, new TreatmentRequest(datasetId, actor, null, false, null));
     }
     public JpaTreatmentStore enabledStore() {
         return store.orElseThrow(() -> new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
@@ -31,13 +31,17 @@ public class TreatmentService {
     public JpaTreatmentStore.View start(Long fileId, TreatmentRequest request) throws Exception {
         var persistence = enabledStore();
         var input = inputs.load(fileId, request.userId());
+        return execute(persistence, input, request);
+    }
+    private JpaTreatmentStore.View execute(JpaTreatmentStore persistence, TreatmentInputService.Input input,
+            TreatmentRequest request) throws Exception {
         Long id = persistence.start(input, request);
         try {
             if (Set.of("tif", "tiff").contains(input.format())) {
                 if (request.dissolve() || !request.dissolveBy().isEmpty() || !request.attributes().isEmpty())
                     throw new IllegalArgumentException("Raster usa catálogo de metadados; regras vetoriais não se aplicam às células.");
-                JsonNode metadata = bucket.readRasterManifest(input.validatedLocation());
-                if (!input.validatedLocation().endsWith(".raster.json") || !"RASTER".equals(metadata.path("kind").asText()))
+                JsonNode metadata = bucket.readRasterManifest(input.treatedLocation());
+                if (!input.treatedLocation().endsWith(".raster.json") || !"RASTER".equals(metadata.path("kind").asText()))
                     throw new IllegalArgumentException("Raster sem metadados aprovados pelo fluxo específico.");
                 var envelope = mapper.createObjectNode().put("type", "FeatureCollection");
                 var feature = envelope.putArray("features").addObject().put("type", "Feature").put("id", "coverage");
@@ -53,8 +57,8 @@ public class TreatmentService {
             }
             if (!Set.of("csv", "json", "geojson", "zip", "gpkg").contains(input.format()))
                 throw new IllegalArgumentException("Formato não suportado para tratamento vetorial.");
-            JsonNode content = input.validatedLocation().toLowerCase(Locale.ROOT).endsWith(".csv")
-                    ? bucket.readCsvAsGeoJson(input.validatedLocation()) : bucket.readGeoJson(input.validatedLocation());
+            JsonNode content = input.treatedLocation().toLowerCase(Locale.ROOT).endsWith(".csv")
+                    ? bucket.readCsvAsGeoJson(input.treatedLocation()) : bucket.readGeoJson(input.treatedLocation());
             var result = vectors.apply(content, input.rules(), request);
             try {
                 String metadata = bucket.readGeospatialMetadata(input.rawLocation());
