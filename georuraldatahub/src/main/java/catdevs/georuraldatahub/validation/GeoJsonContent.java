@@ -45,7 +45,7 @@ public final class GeoJsonContent {
             var latitude = find(fields, "latitude", "lat", "nu_latitude");
             var longitude = find(fields, "longitude", "lon", "lng", "long", "nu_longitude");
             if (latitude == null || longitude == null) throw new IllegalArgumentException(
-                    "Arquivo validado, mas sem geometria ou latitude/longitude para exibir no mapa (registro " + index + ").");
+                    "Arquivo tratado, mas sem geometria ou latitude/longitude para exibir no mapa (registro " + index + ").");
             double lat = number(latitude, index), lon = number(longitude, index);
             if (Math.abs(lat) > 90 || Math.abs(lon) > 180) throw new IllegalArgumentException("Coordenadas fora dos limites no registro " + index + ".");
             var point = MAPPER.createObjectNode().put("type", "Point");
