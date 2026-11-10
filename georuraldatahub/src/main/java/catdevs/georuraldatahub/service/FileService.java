@@ -146,34 +146,10 @@ public class FileService {
             throw new IllegalArgumentException("Informe um arquivo com extensão de até 10 caracteres.");
 
         var rules = dictionaryService.rules(dictionary);
-        catdevs.georuraldatahub.processing.GeospatialReader.Result prepared = null;
-        List<RecordValidationResult> preparationErrors = null;
         boolean raster = java.util.Set.of("tif", "tiff").contains(format);
-        int sourceSrid = 0;
-        boolean declaredCrs = false;
-        if (collected != null && collected.metadata() != null
-                && "shapefile.zip".equals(collected.metadata().originFormat())
-                && java.util.Set.of("IBGE_BIOMAS", "IBGE_MUNICIPIOS").contains(collected.metadata().product())) {
-            // O leitor IBGE já verificou SIRGAS 2000 geográfico; converter para GeoJSON não reprojeta o datum.
-            sourceSrid = 4674;
-        } else if (java.util.Set.of("geojson", "json").contains(format)) {
-            try (InputStream input = multipartFile.getInputStream()) {
-                var root = mapper.readTree(input);
-                declaredCrs = root != null && root.hasNonNull("crs")
-                        && java.util.Set.of("FeatureCollection", "Feature").contains(root.path("type").asText());
-            } catch (com.fasterxml.jackson.core.JsonProcessingException ignored) {
-                // O validador abaixo registra o erro estrutural e preserva o original na quarentena.
-            }
-        }
-        if (raster || java.util.Set.of("zip", "gpkg").contains(format) || sourceSrid != 0 || declaredCrs) {
-            try (InputStream input = multipartFile.getInputStream()) {
-                prepared = geospatial.read(input, format.equals("json") ? "geojson" : format, sourceSrid);
-            } catch (ResponseStatusException e) {
-                if (e.getStatusCode().value() != 422) throw e;
-                preparationErrors = List.of(RecordValidationResult.invalid(-1, "",
-                        List.of("INVALID_GEOSPATIAL_FILE: " + e.getReason())));
-            }
-        }
+        var preparation = IngestionContent.prepare(multipartFile, format, collected, geospatial);
+        var prepared = preparation.content();
+        var preparationErrors = preparation.errors();
         List<RecordValidationResult> records;
         try (InputStream input = prepared == null ? multipartFile.getInputStream()
                 : new java.io.ByteArrayInputStream(prepared.content())) {
@@ -182,21 +158,22 @@ public class FileService {
                     : preparationErrors;
         }
         var report = FileValidationReport.of(dictionary.getId(), dictionary.getVersion(), records);
+        boolean approved = report.status().equals("VALIDO");
         String reportJson = mapper.writeValueAsString(report);
         byte[] accepted;
-        if (preparationErrors != null) {
+        if (!approved) {
             accepted = new byte[0];
         } else if (raster) {
-            accepted = report.status().equals("VALIDO") ? mapper.writeValueAsBytes(prepared.metadata()) : new byte[0];
+            accepted = mapper.writeValueAsBytes(prepared.metadata());
         } else {
             try (InputStream input = prepared == null ? multipartFile.getInputStream()
                     : new java.io.ByteArrayInputStream(prepared.content())) {
                 accepted = validationService.acceptedContent(input, prepared == null ? format : "geojson", records);
             }
         }
-        String validatedFilename = sanitizedFilename + (prepared == null || java.util.Set.of("json", "geojson").contains(format)
+        String treatedFilename = sanitizedFilename + (prepared == null || java.util.Set.of("json", "geojson").contains(format)
                 ? "" : raster ? ".raster.json" : ".geojson");
-        // O conteúdo bruto fica guardado para auditoria. Só o arquivo filtrado segue para tratamento.
+        // O original é preservado para auditoria; aprovação exige o arquivo inteiro válido.
         String location = bucketService.uploadToSourceRawZone(multipartFile, sourceId, hash, sanitizedFilename);
 
         List<String> uploaded = new ArrayList<>();
@@ -233,9 +210,9 @@ public class FileService {
                     mapper.writeValueAsBytes(collected.metadata()), "application/json"));
         }
 
-        if (!report.status().equals("VALIDO")) {
+        String quarantineLocation = BucketService.quarantineLocation(location);
+        if (!approved) {
             // A zona física acompanha a quarentena do banco. O original bruto e o histórico ficam preservados.
-            String quarantineLocation = BucketService.quarantineLocation(location);
             // Registrar antes do envio também cobre falha de rede após a gravação no OCI.
             uploaded.add(quarantineLocation);
             bucketService.uploadToQuarantineZone(multipartFile, location);
@@ -243,13 +220,13 @@ public class FileService {
             bucketService.uploadValidationReport(quarantineLocation, reportJson);
         }
 
-         // Salva a ingestão (ERRO se o arquivo foi rejeitado por completo)
+         // Qualquer reprovação impede a aprovação integral do arquivo.
         DataIngestion ingestion = new DataIngestion();
         ingestion.setDictionary(dictionary);
         ingestion.setUser(user);
         ingestion.setType(ingestionType);
         ingestion.setConnector(connector);
-        ingestion.setIngStatus(report.status().equals("REJEITADO") ? IngestionStatus.ERRO : IngestionStatus.CONCLUIDO);
+        ingestion.setIngStatus(approved ? IngestionStatus.CONCLUIDO : IngestionStatus.ERRO);
         ingestion = ingestionRepository.save(ingestion);
 
         // Salva o arquivo.
@@ -271,27 +248,29 @@ public class FileService {
         versionRepository.save(version);
 
           // Se não for totalmente válido, vai para a quarentena.
-        if (!report.status().equals("VALIDO")) {
+        if (!approved) {
             var quarantine = new Quarantine();
             quarantine.setIngestion(ingestion);
             quarantine.setFile(file);
-            quarantine.setStatus(report.status().equals("REJEITADO") ? "ARQUIVO_REJEITADO" : "REGISTROS_REJEITADOS");
+            quarantine.setStatus("ARQUIVO_REJEITADO");
             quarantine.setReason(quarantineSummary(report));
             quarantineRepository.save(quarantine);
         }
 
-          // Versão 2: só os registros aceitos, se houver algum.
-        if (accepted.length > 0) {
-            String acceptedLocation = bucketService.uploadSourceValidatedContent(accepted, sourceId, hash, validatedFilename);
-            uploaded.add(acceptedLocation);
-            Version validated = new Version();
-            validated.setFile(file);
-            validated.setVersionNumber(2);
-            // Filtrar só valida os registros; não significa que já foi tratado ou publicado.
-            validated.setStatus(VersionStatus.BRUTA);
-            validated.setLocation(acceptedLocation);
-            versionRepository.save(validated);
+        // Versão 2: resultado integral da validação do dicionário.
+        Version outcome = new Version();
+        outcome.setFile(file);
+        outcome.setVersionNumber(2);
+        if (approved) {
+            String treatedLocation = bucketService.uploadSourceTreatedContent(accepted, sourceId, hash, treatedFilename);
+            uploaded.add(treatedLocation);
+            outcome.setStatus(VersionStatus.TRATADA);
+            outcome.setLocation(treatedLocation);
+        } else {
+            outcome.setStatus(VersionStatus.QUARENTENA);
+            outcome.setLocation(quarantineLocation);
         }
+        versionRepository.save(outcome);
 
          // Associa ao dataset, se informado.
         if (dataset != null) dataset.getFiles().add(file);
@@ -322,12 +301,7 @@ public class FileService {
 
         }
 
-          // Converte os bytes do hash para texto hexadecimal.
-        StringBuilder sb = new StringBuilder();
-        for (byte b : digest.digest()) {
-            sb.append(String.format("%02x", b));
-        }
-        return sb.toString();
+        return java.util.HexFormat.of().formatHex(digest.digest());
     }
 
       /** Retorna a extensão do arquivo em minúsculas, ou null se não tiver. */

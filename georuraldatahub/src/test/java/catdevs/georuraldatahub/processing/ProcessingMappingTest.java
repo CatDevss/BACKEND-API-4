@@ -16,7 +16,9 @@ import org.springframework.orm.jpa.persistenceunit.PersistenceManagedTypesScanne
 class ProcessingMappingTest {
     @Test void oracleMappingsAndJpaQueriesBuildWithoutConnectingToOracle() {
         var registry = new StandardServiceRegistryBuilder()
-                .applySetting("hibernate.dialect", "org.hibernate.dialect.OracleDialect")
+                .applySetting("jakarta.persistence.database-product-name", "Oracle")
+                .applySetting("jakarta.persistence.database-major-version", 23)
+                .applySetting("hibernate.connection.provider_class", "org.hibernate.engine.jdbc.connections.internal.UserSuppliedConnectionProviderImpl")
                 .applySetting("hibernate.boot.allow_jdbc_metadata_access", false)
                 .applySetting("hibernate.hbm2ddl.auto", "none").build();
         try {

@@ -10,5 +10,8 @@ public record CollectionRequest(@NotNull Product product, @Positive Long dataset
             String municipality, String biome, List<Double> bbox) {
         this(product, datasetId, userId, competence, municipality, biome, bbox, null);
     }
-    public enum Product { IBGE_MUNICIPIOS, IBGE_BIOMAS, INPE_PRODES, INPE_QUEIMADAS }
+    public enum Product {
+        IBGE_MUNICIPIOS, IBGE_BIOMAS, INPE_PRODES, INPE_QUEIMADAS,
+        ICMBIO, ICMBIO_EMBARGOS, MMA, FUNAI, INCRA, SFB, IBAMA
+    }
 }

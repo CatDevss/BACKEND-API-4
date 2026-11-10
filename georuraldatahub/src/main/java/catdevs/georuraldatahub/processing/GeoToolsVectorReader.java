@@ -24,7 +24,7 @@ final class GeoToolsVectorReader {
 
     GeoToolsVectorReader(ProcessingProperties limits) { this.limits = limits; }
 
-    GeospatialReader.Result read(Path path, String format, int override, long deadline) throws Exception {
+    GeospatialReader.Result read(Path path, String format, int override, long deadline, org.locationtech.jts.geom.Envelope bounds) throws Exception {
         if (format.equals("json") || format.equals("geojson")) return json(path, override, deadline);
         DataStore store;
         if (format.equals("zip")) {
@@ -59,8 +59,11 @@ final class GeoToolsVectorReader {
                     GeospatialReader.checkDeadline(deadline);
                     if (++count > limits.getMaxFeatures()) throw GeospatialReader.invalid("Camada excede o limite de feições.");
                     var original = iterator.next();
+                    Geometry sourceGeometry = (Geometry) original.getDefaultGeometry();
+                    Geometry geographic = sourceGeometry == null ? null : JTS.transform(sourceGeometry, transform);
+                    if (bounds != null && (geographic == null || !geographic.getEnvelopeInternal().intersects(bounds))) continue;
                     ObjectNode feature = mapper.createObjectNode().put("type", "Feature").put("id", original.getID());
-                    feature.set("geometry", geometry((Geometry) original.getDefaultGeometry(), transform));
+                    feature.set("geometry", geometry(geographic));
                     var properties = feature.putObject("properties");
                     for (var descriptor : original.getFeatureType().getAttributeDescriptors()) {
                         if (descriptor.equals(original.getFeatureType().getGeometryDescriptor())) continue;
@@ -105,7 +108,7 @@ final class GeoToolsVectorReader {
                 if (!original.isObject()) throw GeospatialReader.invalid("Feição GeoJSON inválida.");
                 var feature = ((ObjectNode) original).deepCopy();
                 JsonNode value = original.get("geometry");
-                feature.set("geometry", geometry(value == null || value.isNull() ? null : new GeoJsonReader().read(value.toString()), transform));
+                feature.set("geometry", geometry(value == null || value.isNull() ? null : JTS.transform(new GeoJsonReader().read(value.toString()), transform)));
                 // Bbox/CRS anteriores não descrevem as coordenadas reprojetadas.
                 feature.remove(List.of("bbox", "crs"));
                 generator.writeTree(feature);
@@ -127,9 +130,8 @@ final class GeoToolsVectorReader {
         return CRS.findMathTransform(crs, CRS.decode("EPSG:4326", true), true);
     }
 
-    private JsonNode geometry(Geometry original, MathTransform transform) throws Exception {
-        if (original == null) return mapper.nullNode();
-        Geometry geographic = JTS.transform(original, transform);
+    private JsonNode geometry(Geometry geographic) throws Exception {
+        if (geographic == null) return mapper.nullNode();
         for (var coordinate : geographic.getCoordinates())
             if (!Double.isFinite(coordinate.x) || !Double.isFinite(coordinate.y)
                     || Math.abs(coordinate.x) > 180 || Math.abs(coordinate.y) > 90)

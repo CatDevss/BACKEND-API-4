@@ -19,9 +19,9 @@ class FeatureServiceTest {
         String properties = "{\"texto\":\"" + "á".repeat(3000) + "\"}";
         int total = new FeatureService(repository, layers, mock(jakarta.persistence.EntityManager.class)).insertBatch(10L, 4326, List.of(new NewFeature("origem-1", json, properties)));
         assertEquals(1, total);
-        @SuppressWarnings("unchecked") var captor = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<Feature>> captor = ArgumentCaptor.captor();
         verify(repository).saveAllAndFlush(captor.capture());
-        Feature feature = (Feature) captor.getValue().getFirst();
+        Feature feature = captor.getValue().getFirst();
         assertSame(layer, feature.getLayer()); assertEquals(4326, feature.getGeometry().getSRID());
         assertEquals(geometry.getNumPoints(), feature.getGeometry().getNumPoints()); assertEquals(properties, feature.getAttributes());
     }

@@ -30,7 +30,7 @@ public class DatasetStructureService {
     public DatasetStructureDTO get(Long datasetId) {
         var dataset = datasets.findEntityById(datasetId);
         var associated = files.findByDatasetId(datasetId);
-        Map<Long, List<LayerInfoDTO>> previews = layers.listLayers(datasetId).stream()
+        Map<Long, List<LayerInfoDTO>> previews = layers.listLayers(datasetId, associated).stream()
                 .collect(Collectors.groupingBy(LayerInfoDTO::fileId));
         // Group by source ID, never name: files from different dictionary versions share a source.
         Map<Long, List<File>> grouped = new LinkedHashMap<>();

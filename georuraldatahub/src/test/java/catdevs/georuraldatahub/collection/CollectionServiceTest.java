@@ -20,7 +20,7 @@ class CollectionServiceTest {
     private final CollectionService service = new CollectionService(sources,datasets,users,dictionaries,connectors,files);
     private final CollectionRequest request = new CollectionRequest(Product.IBGE_MUNICIPIOS,1L,2L,"2022","4106902",null,null);
     private void source(String url) {
-        Source source = new Source(); source.setId(3L); source.setUrl(url);
+        Source source = new Source(); source.setId(3L); source.setUrl(url); source.setStatus(1);
         when(sources.findEntityById(3L)).thenReturn(source);
     }
     @Test void reusesExistingSourcesDictionaryAndUpload() throws Exception {
@@ -96,5 +96,18 @@ class CollectionServiceTest {
         var resolved = CollectionScheduler.resolved(daily);
         assertEquals(java.time.LocalDate.now(java.time.ZoneId.of("America/Sao_Paulo")).minusDays(1).toString(),resolved.competence());
         assertSame(request,CollectionScheduler.resolved(request));
+    }
+    @Test void inactiveSourcePreventsDownloadAndUpload() {
+        source("https://www.ibge.gov.br/");
+        sources.findEntityById(3L).setStatus(0);
+        assertThrows(IllegalArgumentException.class, () -> service.collect(3L,request));
+        verifyNoInteractions(connectors,files);
+    }
+    @Test void recognizesOfficialAgencyPagesAndDelegatedIcmbioService() {
+        assertTrue(CollectionService.matchesAgency("https://www.gov.br/funai/pt-br", Product.FUNAI));
+        assertTrue(CollectionService.matchesAgency("https://geoservicos.inde.gov.br/geoserver/ICMBio/ows", Product.ICMBIO));
+        assertFalse(CollectionService.matchesAgency("https://geoservicos.inde.gov.br/geoserver/FUNAI/ows", Product.ICMBIO));
+        assertTrue(CollectionService.matchesAgency("https://WWW.IBGE.GOV.BR/", Product.IBGE_MUNICIPIOS));
+        assertFalse(CollectionService.matchesAgency("https://www.gov.br/funai-outro", Product.FUNAI));
     }
 }

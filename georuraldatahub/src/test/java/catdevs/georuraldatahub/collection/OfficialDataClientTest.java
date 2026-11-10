@@ -98,4 +98,20 @@ class OfficialDataClientTest {
                 .thenReturn(CompletableFuture.failedFuture(new java.io.IOException("connection reset")));
         assertTrue(assertThrows(java.io.IOException.class, () -> client.download(official)).getMessage().contains("connection reset"));
     }
+    @Test void totalBudgetCoversMultipleDownloadsAndIsReleasedAfterFailure() throws Exception {
+        limits.setMaxDownloadBytes(10); limits.setMaxTotalBytes(5);
+        reply(response(200, "123", Map.of()));
+        try (var budget = client.collectionBudget()) {
+            assertEquals(3, client.download(official).length);
+            try (var nested = client.collectionBudget()) {
+                assertThrows(ResponseStatusException.class, () -> client.download(official));
+            }
+            assertThrows(ResponseStatusException.class, () -> client.download(official));
+        }
+        assertEquals(3, client.download(official).length);
+    }
+    @Test void rejectsHtmlEvenWithMisleadingContentType() {
+        reply(response(200, "\uFEFF  <!DOCTYPE html><html>Login</html>", Map.of("Content-Type", List.of("application/octet-stream"))));
+        assertTrue(assertThrows(ResponseStatusException.class, () -> client.download(official)).getReason().contains("HTML"));
+    }
 }

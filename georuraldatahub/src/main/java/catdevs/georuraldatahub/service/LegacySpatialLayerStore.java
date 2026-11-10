@@ -44,9 +44,11 @@ public class LegacySpatialLayerStore {
         if (!Set.of("geojson", "json", "csv", "zip", "gpkg").contains(format))
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT, "Formato não suportado para carga espacial: " + format);
         var version = versions.findFirstByFile_IdAndStatusAndLocationStartingWithOrderByVersionNumberDesc(
-                fileId, VersionStatus.BRUTA, "validada/")
+                fileId, VersionStatus.TRATADA, "tratada/")
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT,
-                        "Arquivo sem versão validada pendente de carga (ou já carregada)."));
+                        "Arquivo sem versão tratada pelo dicionário."));
+        if (layers.existsByVersion_File_Id(fileId))
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Arquivo já possui camada espacial.");
         return new Input(datasetId, fileId, version.getId(), version.getLocation());
     }
 
@@ -63,21 +65,31 @@ public class LegacySpatialLayerStore {
         // Open EntityManager in View pode manter entidades da leitura anterior no cache da requisição.
         entityManager.refresh(dataset);
         entityManager.refresh(version);
-        if (version.getStatus() != VersionStatus.BRUTA || !input.location().equals(version.getLocation())
-                || !input.location().startsWith("validada/")
+        if (version.getStatus() != VersionStatus.TRATADA || !input.location().equals(version.getLocation())
+                || !input.location().startsWith("tratada/")
                 || !file.getId().equals(version.getFile().getId())
-                || dataset.getFiles().stream().noneMatch(f -> f.getId().equals(input.fileId())))
+                || dataset.getFiles().stream().noneMatch(f -> f.getId().equals(input.fileId()))
+                || layers.existsByVersion_File_Id(file.getId()))
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Arquivo já carregado ou associação/versão alterada durante a leitura.");
+        // O banco protege feições de versões tratadas. Construir uma nova revisão na
+        // transação evita rebaixar ou modificar a saída já aprovada pelo dicionário.
+        var output = new catdevs.georuraldatahub.entity.Version();
+        output.setFile(file);
+        output.setVersionNumber(versions.findFirstByFile_IdOrderByVersionNumberDesc(file.getId())
+                .map(v -> v.getVersionNumber() + 1).orElseThrow());
+        output.setLocation(version.getLocation());
+        output.setStatus(VersionStatus.BRUTA);
+        output = versions.saveAndFlush(output);
         var layer = new Layer();
         layer.setDataset(dataset);
-        layer.setVersion(version);
+        layer.setVersion(output);
         layer.setName(file.getName());
         layer.setGeometryType(extraction.geometryType());
         layer.setSrid(4326);
         layer = layers.saveAndFlush(layer);
         int inserted = features.insertBatch(layer.getId(), 4326, extraction.features());
-        version.setStatus(VersionStatus.TRATADA);
-        versions.saveAndFlush(version);
+        output.setStatus(VersionStatus.TRATADA);
+        versions.saveAndFlush(output);
         return new SpatialLayerService.LayerLoadResult(layer.getId(), layer.getName(), layer.getGeometryType(), 4326, inserted);
     }
 }

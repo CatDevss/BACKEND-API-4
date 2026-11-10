@@ -20,13 +20,12 @@ class JsonAndCsvRegressionTest {
         assertTrue(mapper.readTree(service.acceptedContent(input(text), "json", rows)).isObject());
         assertEquals(1, mapper.readTree(service.acceptedContent(input(text), "json", rows)).path("id").asInt());
     }
-    @Test void ordinaryJsonArrayPreservesOnlyValidRowsAndRejectsUnknownFieldsDuplicatesAndWrongTypes() throws Exception {
+    @Test void ordinaryJsonArrayRejectsWholeFileWithUnknownFieldsDuplicatesOrWrongTypes() throws Exception {
         String text = "[{\"id\":1},{\"id\":1},{\"id\":\"2\"},{\"id\":2,\"extra\":0},null,{\"id\":3}]";
         var rows = service.validate(input(text), "json", rules);
         assertEquals(2, rows.stream().filter(RecordValidationResult::valid).count());
-        var accepted = mapper.readTree(service.acceptedContent(input(text), "json", rows));
-        assertTrue(accepted.isArray()); assertEquals(2, accepted.size()); assertEquals(3, accepted.get(1).path("id").asInt());
-        assertEquals("PARCIAL", FileValidationReport.of(1L, 1, rows).status());
+        assertEquals(0,service.acceptedContent(input(text), "json", rows).length);
+        assertEquals("REJEITADO", FileValidationReport.of(1L, 1, rows).status());
     }
     @Test void malformedJsonDuplicateKeysTrailingDocumentsAndScalarsNeverPass() throws Exception {
         for (String text : List.of("{broken", "{\"id\":1,\"id\":2}", "{\"id\":1} {}", "null", "42", "[]")) {

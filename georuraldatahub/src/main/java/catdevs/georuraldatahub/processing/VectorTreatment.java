@@ -170,7 +170,7 @@ public class VectorTreatment {
             if (result.isEmpty() || !result.isValid()) throw new IllegalArgumentException("Geometria inválida.");
             for (Coordinate c : result.getCoordinates())
                 if (!Double.isFinite(c.x) || !Double.isFinite(c.y) || Math.abs(c.x) > 180 || Math.abs(c.y) > 90)
-                    throw new IllegalArgumentException("A camada validada precisa estar em EPSG:4326.");
+                    throw new IllegalArgumentException("A camada tratada precisa estar em EPSG:4326.");
             return result;
         } catch (org.locationtech.jts.io.ParseException e) { throw new IOException("Geometria inválida no tratamento.", e); }
     }
