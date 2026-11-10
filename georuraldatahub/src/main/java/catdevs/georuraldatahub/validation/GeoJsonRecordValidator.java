@@ -26,7 +26,7 @@ public class GeoJsonRecordValidator {
             return fileError("INVALID_FILE_STRUCTURE");
         if (root.path("features").isEmpty()) return fileError("EMPTY_FILE");
         List<RecordValidationResult> results = new ArrayList<>();
-        RuleValidationState state = new RuleValidationState();
+        RuleValidationState state = new RuleValidationState(rules);
         int index = 0;
         for (JsonNode feature : root.get("features")) {
             List<String> errors = new ArrayList<>();
@@ -39,7 +39,7 @@ public class GeoJsonRecordValidator {
             for (FieldRule r : rules) if (r.type() == FieldType.GEOMETRY && r.name().equals("geometry"))
                 row.put("geometry", feature.get("geometry"));
             // Reserve uniqueness only when the feature envelope and geometry are valid.
-            List<String> fieldErrors = (errors.isEmpty() ? state : new RuleValidationState()).validate(row, rules, false, feature.path("geometry").toString());
+            List<String> fieldErrors = state.validate(row, false, feature.path("geometry").toString(), errors.isEmpty());
             errors.addAll(fieldErrors);
             String raw = feature.toString();
             results.add(errors.isEmpty() ? RecordValidationResult.ok(index, raw) : RecordValidationResult.invalid(index, raw, errors));

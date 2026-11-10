@@ -11,7 +11,7 @@ import com.fasterxml.jackson.databind.node.TextNode;
 public class CsvRecordValidator {
     public List<RecordValidationResult> validate(InputStream inputStream, List<FieldRule> rules) throws IOException {
         List<RecordValidationResult> results = new ArrayList<>();
-        RuleValidationState state = new RuleValidationState();
+        RuleValidationState state = new RuleValidationState(rules);
         try (var reader = new TableReader(inputStream)) {
             List<String> headers = reader.readRecord();
             if (headers == null) return fileError("EMPTY_FILE");
@@ -36,7 +36,7 @@ public class CsvRecordValidator {
                 }
                 Map<String, JsonNode> row = new LinkedHashMap<>();
                 for (int i = 0; i < headers.size(); i++) row.put(headers.get(i), TextNode.valueOf(values.get(i).trim()));
-                List<String> errors = state.validate(row, rules, true);
+                List<String> errors = state.validate(row, true);
                 results.add(errors.isEmpty() ? RecordValidationResult.ok(index, raw)
                         : RecordValidationResult.invalid(index, raw, errors));
                 index++;
@@ -47,7 +47,7 @@ public class CsvRecordValidator {
     private List<RecordValidationResult> fileError(String error) {
         return List.of(RecordValidationResult.invalid(-1, "", List.of(error)));
     }
-    public static void skipBom(PushbackReader reader) throws IOException {
+    private static void skipBom(PushbackReader reader) throws IOException {
         int first = reader.read();
         if (first != -1 && first != '\uFEFF') reader.unread(first);
     }
@@ -93,9 +93,6 @@ public class CsvRecordValidator {
         }
     }
     // RFC 4180: escaped quotes and multiline fields. Ambiguous framing rejects the whole file.
-    public static List<String> readRecord(PushbackReader reader) throws IOException {
-        return readRecord(reader, ',');
-    }
     private static List<String> readRecord(PushbackReader reader, char delimiter) throws IOException {
         List<String> fields = new ArrayList<>();
         StringBuilder field = new StringBuilder();

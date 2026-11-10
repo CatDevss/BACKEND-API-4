@@ -21,7 +21,7 @@ public class JsonRecordValidator {
         if (root == null || !root.isObject() && !root.isArray()) return error("INVALID_FILE_STRUCTURE: JSON deve conter um objeto ou uma lista de objetos.");
         if (root.isArray() && root.isEmpty()) return error("EMPTY_FILE");
         List<RecordValidationResult> results = new ArrayList<>();
-        var state = new RuleValidationState();
+        var state = new RuleValidationState(rules);
         Iterable<JsonNode> rows = root.isArray() ? root : List.of(root);
         int index = 0;
         for (JsonNode row : rows) {
@@ -30,7 +30,7 @@ public class JsonRecordValidator {
             else {
                 Map<String, JsonNode> values = new TreeMap<>();
                 row.properties().forEach(field -> values.put(field.getKey(), field.getValue()));
-                errors = state.validate(values, rules, false);
+                errors = state.validate(values, false);
             }
             results.add(errors.isEmpty() ? RecordValidationResult.ok(index, row.toString())
                     : RecordValidationResult.invalid(index, row.toString(), errors));

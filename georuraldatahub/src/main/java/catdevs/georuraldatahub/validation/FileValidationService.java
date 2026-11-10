@@ -23,30 +23,29 @@ public class FileValidationService {
             default -> List.of(RecordValidationResult.invalid(-1, "", List.of("UNSUPPORTED_FORMAT: " + format)));
         };
     }
-    /** Produces the only content eligible for treatment, preserving CSV headers / GeoJSON envelope. */
+    /** Produz conteúdo tratado apenas quando todos os registros passam pelo dicionário. */
     public byte[] acceptedContent(InputStream original, String format, List<RecordValidationResult> records) throws Exception {
-        var valid = records.stream().filter(RecordValidationResult::valid).toList();
-        if (valid.isEmpty() || records.stream().anyMatch(r -> r.recordIndex() < 0)) return new byte[0];
+        if (records.isEmpty() || records.stream().anyMatch(r -> !r.valid() || r.recordIndex() < 0)) return new byte[0];
         if (normalize(format).equals("csv")) {
             try (var reader = new CsvRecordValidator.TableReader(original)) {
                 List<String> headers = reader.readRecord().stream().map(String::trim).toList();
                 StringBuilder out = new StringBuilder(CsvRecordValidator.encode(headers)).append('\n');
-                valid.forEach(r -> out.append(r.rawContent()).append('\n'));
+                records.forEach(r -> out.append(r.rawContent()).append('\n'));
                 return out.toString().getBytes(StandardCharsets.UTF_8);
             }
         }
         ObjectMapper mapper = JsonRecordValidator.MAPPER;
         var originalRoot = mapper.readTree(original);
         if (normalize(format).equals("json") && !JsonRecordValidator.isGeoJson(originalRoot)) {
-            if (originalRoot.isObject()) return mapper.writeValueAsBytes(mapper.readTree(valid.getFirst().rawContent()));
+            if (originalRoot.isObject()) return mapper.writeValueAsBytes(mapper.readTree(records.getFirst().rawContent()));
             var array = mapper.createArrayNode();
-            for (var record : valid) array.add(mapper.readTree(record.rawContent()));
+            for (var record : records) array.add(mapper.readTree(record.rawContent()));
             return mapper.writeValueAsBytes(array);
         }
         var root = mapper.createObjectNode().put("type", "FeatureCollection");
         if (originalRoot != null && originalRoot.has("crs")) root.set("crs", originalRoot.get("crs"));
         var features = root.putArray("features");
-        for (var record : valid) features.add(mapper.readTree(record.rawContent()));
+        for (var record : records) features.add(mapper.readTree(record.rawContent()));
         return mapper.writeValueAsBytes(root);
     }
     private String normalize(String format) { return format == null ? "" : format.toLowerCase(Locale.ROOT); }
