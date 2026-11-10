@@ -59,15 +59,6 @@ public class BucketService {
                                 .toList();
         }
 
-        /**
-         * Envia o arquivo para a zona bruta do bucket, no formato
-         * "bruta/{datasetId}/{hash}_{nomeOriginal}", e retorna o nome do objeto salvo.
-         */
-        public String uploadToRawZone(MultipartFile file, Long datasetId, String hash, String sanitizedFilename)
-                        throws IOException {
-                return uploadToRawScope(file, datasetId.toString(), hash, sanitizedFilename);
-        }
-
         public String uploadToSourceRawZone(MultipartFile file, Long sourceId, String hash, String filename)
                         throws IOException {
                 return uploadToRawScope(file, "fontes/" + sourceId, hash, filename);
@@ -103,34 +94,16 @@ public class BucketService {
                 return objectName;
         }
 
-        public String uploadValidatedContent(byte[] content, Long datasetId, String hash, String filename) {
-                return uploadValidatedScope(content, datasetId.toString(), hash, filename);
+        public String uploadSourceTreatedContent(byte[] content, Long sourceId, String hash, String filename) {
+                return uploadTreatedScope(content, "fontes/" + sourceId, hash, filename);
         }
 
-        public String uploadSourceValidatedContent(byte[] content, Long sourceId, String hash, String filename) {
-                return uploadValidatedScope(content, "fontes/" + sourceId, hash, filename);
-        }
-
-        private String uploadValidatedScope(byte[] content, String scope, String hash, String filename) {
-                String key = "validada/" + scope + "/" + hash + "_" + filename;
-                try (var input = new java.io.ByteArrayInputStream(content)) {
-                        client.putObject(PutObjectRequest.builder()
-                                .namespaceName(props.namespace()).bucketName(props.bucketName())
-                                .objectName(key).putObjectBody(input).contentLength((long) content.length).build());
-                } catch (IOException e) { throw new java.io.UncheckedIOException(e); }
-                return key;
+        private String uploadTreatedScope(byte[] content, String scope, String hash, String filename) {
+                return uploadCollectionArtifact("tratada/" + scope + "/" + hash + "_" + filename, content, null);
         }
 
         public String uploadValidationReport(String rawLocation, String json) {
-                String key = rawLocation + ".validation.json";
-                byte[] content = json.getBytes(StandardCharsets.UTF_8);
-                try (var input = new java.io.ByteArrayInputStream(content)) {
-                        client.putObject(PutObjectRequest.builder()
-                                .namespaceName(props.namespace()).bucketName(props.bucketName())
-                                .objectName(key).putObjectBody(input).contentLength((long) content.length)
-                                .contentType("application/json").build());
-                } catch (IOException e) { throw new java.io.UncheckedIOException(e); }
-                return key;
+                return uploadCollectionArtifact(rawLocation + ".validation.json", json.getBytes(StandardCharsets.UTF_8), "application/json");
         }
 
         public String readValidationReport(String rawLocation) throws IOException {
@@ -203,7 +176,7 @@ public class BucketService {
         }
 
         public JsonNode readRasterManifest(String location) throws IOException {
-                if (location == null || !location.startsWith("validada/") || !location.endsWith(".raster.json"))
+                if (location == null || !location.startsWith("tratada/") || !location.endsWith(".raster.json"))
                         throw new IllegalArgumentException("Informe o manifesto da versão raster aprovada.");
                 var request = GetObjectRequest.builder().namespaceName(props.namespace()).bucketName(props.bucketName())
                         .objectName(location).build();
