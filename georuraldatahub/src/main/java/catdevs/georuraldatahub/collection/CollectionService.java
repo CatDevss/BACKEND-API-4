@@ -28,13 +28,14 @@ public class CollectionService {
         if (sourceId == null || request == null || request.product() == null
                 || request.userId() == null) throw new IllegalArgumentException("Fonte, produto e usuário são obrigatórios.");
         var source = sources.findEntityById(sourceId);
+        if (!Integer.valueOf(1).equals(source.getStatus())) throw new IllegalArgumentException("Fonte inativa; ative-a antes de coletar.");
         if (!matchesAgency(source.getUrl(), request.product())) throw new IllegalArgumentException(
                 "A URL da fonte cadastrada não corresponde ao órgão do conector. Use o CRUD de fontes existente.");
         if (request.datasetId() != null) datasets.findEntityById(request.datasetId());
         users.findEntityById(request.userId());
         dictionaries.rules(dictionaries.findForValidation(sourceId, request.dictionaryId()));
         var log = org.slf4j.LoggerFactory.getLogger(CollectionService.class);
-        log.info("Iniciando coleta manual: fonte={}, produto={}, competência={}", sourceId, request.product(), request.competence());
+        log.info("Iniciando coleta: fonte={}, produto={}, competência={}", sourceId, request.product(), request.competence());
         CollectedData data;
         try { data = connectors.collect(request); }
         catch (InterruptedException e) {
@@ -48,15 +49,26 @@ public class CollectionService {
                 file == null ? null : file.id());
         return new Result(file, data.metadata());
     }
-    static boolean matchesAgency(String value, CollectionRequest.Product product) {
+    public static boolean matchesAgency(String value, CollectionRequest.Product product) {
         try {
             URI uri = URI.create(value);
-            String host = uri.getHost();
+            String host = uri.getHost() == null ? null : uri.getHost().toLowerCase(java.util.Locale.ROOT);
             if (host == null || uri.getUserInfo() != null || !("https".equals(uri.getScheme()) || "http".equals(uri.getScheme()))) return false;
-            boolean ibge = product == CollectionRequest.Product.IBGE_BIOMAS || product == CollectionRequest.Product.IBGE_MUNICIPIOS;
-            String agency = ibge ? "ibge.gov.br" : "inpe.br";
+            String agency = switch (product) {
+                case IBGE_BIOMAS, IBGE_MUNICIPIOS -> "ibge.gov.br";
+                case INPE_PRODES, INPE_QUEIMADAS -> "inpe.br";
+                case ICMBIO, ICMBIO_EMBARGOS -> "icmbio.gov.br";
+                case MMA -> "mma.gov.br";
+                case FUNAI -> "funai.gov.br";
+                case INCRA -> "incra.gov.br";
+                case SFB -> "florestal.gov.br";
+                case IBAMA -> "ibama.gov.br";
+            };
             if (host.equals(agency) || host.endsWith("." + agency)) return true;
-            return !ibge && host.equals("www.gov.br") && (uri.getPath().equals("/inpe") || uri.getPath().startsWith("/inpe/"));
+            if ((product == CollectionRequest.Product.ICMBIO || product == CollectionRequest.Product.ICMBIO_EMBARGOS)
+                    && host.equals("geoservicos.inde.gov.br") && uri.getPath().startsWith("/geoserver/ICMBio/")) return true;
+            String slug = agency.substring(0, agency.indexOf('.'));
+            return host.equals("www.gov.br") && (uri.getPath().equals("/" + slug) || uri.getPath().startsWith("/" + slug + "/"));
         } catch (IllegalArgumentException | NullPointerException e) { return false; }
     }
 }

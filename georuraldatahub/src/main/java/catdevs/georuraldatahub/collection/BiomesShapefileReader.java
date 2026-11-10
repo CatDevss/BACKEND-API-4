@@ -23,7 +23,8 @@ public class BiomesShapefileReader {
     public byte[] toGeoJson(byte[] archive) throws IOException {
         Map<String, byte[]> files = new HashMap<>();
         long expanded = 0;
-        try (var zip = new ZipInputStream(new ByteArrayInputStream(archive))) {
+        // ZIP legado sem flag UTF-8 usa CP437; a flag UTF-8 continua tendo precedência.
+        try (var zip = new ZipInputStream(new ByteArrayInputStream(archive), Charset.forName("IBM437"))) {
             ZipEntry entry; int entries = 0;
             while ((entry = zip.getNextEntry()) != null) {
                 if (++entries > 100) throw invalid("ZIP com componentes demais.");

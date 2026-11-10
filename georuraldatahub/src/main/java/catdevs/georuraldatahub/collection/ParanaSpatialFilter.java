@@ -20,6 +20,13 @@ public final class ParanaSpatialFilter {
     private final GeoJsonWriter writer = new GeoJsonWriter(15);
     public ParanaSpatialFilter(OfficialDataClient http) { this.http = http; writer.setEncodeCRS(false); }
     public record Boundary(Geometry geometry, CollectedData.Original original) {}
+    Boundary restrict(Boundary boundary, List<Double> bbox) {
+        if (bbox == null) return boundary;
+        Geometry rectangle = new GeometryFactory().toGeometry(new Envelope(bbox.get(0), bbox.get(2), bbox.get(1), bbox.get(3)));
+        Geometry intersection = OverlayNGRobust.overlay(boundary.geometry(), rectangle, OverlayNG.INTERSECTION);
+        if (intersection.isEmpty()) throw new IllegalArgumentException("O bbox não intersecta o Paraná.");
+        return new Boundary(intersection, boundary.original());
+    }
     public Boundary boundary() throws IOException, InterruptedException {
         byte[] data = http.download(URI.create(BOUNDARY_URL));
         JsonNode root = mapper.readTree(data);

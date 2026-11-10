@@ -20,6 +20,17 @@ public class GeospatialReader {
     public record Result(byte[] content, JsonNode metadata) { }
 
     public Result read(InputStream input, String format, int sourceSrid) throws IOException {
+        return read(input, format, sourceSrid, null);
+    }
+
+    /** Filtro espacial de coleta, após reprojeção; o leitor de uploads mantém seu contrato. */
+    public Result read(InputStream input, String format, int sourceSrid, org.locationtech.jts.geom.Envelope bounds) throws IOException {
+        return read(input, format, sourceSrid, bounds, false);
+    }
+
+    /** Seletor explícito para arquivos oficiais que incluem uma camada auxiliar de pontos. */
+    public Result read(InputStream input, String format, int sourceSrid, org.locationtech.jts.geom.Envelope bounds,
+            boolean polygonLayer) throws IOException {
         if (!Set.of("zip", "gpkg", "json", "geojson", "tif", "tiff").contains(format))
             throw new IllegalArgumentException("Formato não suportado pelo leitor geoespacial.");
         if (limits.getMaxInputBytes() < 1 || limits.getMaxOutputBytes() < 1
@@ -37,8 +48,8 @@ public class GeospatialReader {
                 if (format.equals("tif") || format.equals("tiff")) {
                     result = new GeoTiffMetadataReader().read(source, deadline);
                 } else {
-                    if (format.equals("zip")) source = unpack(source, deadline);
-                    result = new GeoToolsVectorReader(limits).read(source, format, sourceSrid, deadline);
+                    if (format.equals("zip")) source = unpack(source, deadline, polygonLayer);
+                    result = new GeoToolsVectorReader(limits).read(source, format, sourceSrid, deadline, bounds);
                 }
                 checkDeadline(deadline);
                 if (result.content().length > limits.getMaxOutputBytes()
@@ -60,13 +71,13 @@ public class GeospatialReader {
         }
     }
 
-    private Path unpack(Path source, long deadline) throws IOException {
+    private Path unpack(Path source, long deadline, boolean polygonLayer) throws IOException {
         Path destination = Files.createDirectory(source.getParent().resolve("shapefile"));
         long total = 0;
         int entries = 0;
         Set<Path> seen = new HashSet<>();
         List<Path> shapes = new ArrayList<>();
-        try (var archive = new ZipInputStream(Files.newInputStream(source))) {
+        try (var archive = new ZipInputStream(Files.newInputStream(source), java.nio.charset.Charset.forName("IBM437"))) {
             java.util.zip.ZipEntry entry;
             while ((entry = archive.getNextEntry()) != null) {
                 checkDeadline(deadline);
@@ -80,12 +91,20 @@ public class GeospatialReader {
                 if (entry.isDirectory()) { Files.createDirectories(target); continue; }
                 Files.createDirectories(target.getParent());
                 try (var output = Files.newOutputStream(target, StandardOpenOption.CREATE_NEW)) {
-                    total += copy(archive, output, limits.getMaxOutputBytes() - total, deadline);
+                    total += copy(archive, output, limits.getMaxExpandedBytes() - total, deadline);
                 }
-                if (name.toLowerCase(Locale.ROOT).endsWith(".shp")) shapes.add(target);
+                if (name.toLowerCase(Locale.ROOT).endsWith(".shp")) {
+                    if (!polygonLayer) shapes.add(target);
+                    else try (var header = Files.newInputStream(target)) {
+                        byte[] bytes = header.readNBytes(36);
+                        if (bytes.length != 36) throw invalid("Cabeçalho SHP truncado.");
+                        int type = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN).getInt(32);
+                        if (Set.of(5, 15, 25).contains(type)) shapes.add(target);
+                    }
+                }
             }
         }
-        if (shapes.size() != 1) throw invalid("Envie um ZIP com exatamente um Shapefile e seus componentes.");
+        if (shapes.size() != 1) throw invalid("Envie um ZIP com exatamente um Shapefile e seus componentes, ou selecione a camada publicada.");
         return shapes.getFirst();
     }
 

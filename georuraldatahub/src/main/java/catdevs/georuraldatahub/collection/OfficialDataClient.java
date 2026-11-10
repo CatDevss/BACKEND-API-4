@@ -16,14 +16,20 @@ import org.springframework.web.server.ResponseStatusException;
 @Component
 public class OfficialDataClient {
     private static final Set<String> HOSTS = Set.of("servicodados.ibge.gov.br", "geoftp.ibge.gov.br",
-            "terrabrasilis.dpi.inpe.br", "dataserver-coids.inpe.br");
+            "terrabrasilis.dpi.inpe.br", "dataserver-coids.inpe.br",
+            "geoservicos.inde.gov.br", "geoserver.funai.gov.br", "dados.mma.gov.br",
+            "cnuc-mapserv.mma.gov.br", "mmabr-my.sharepoint.com", "dados.florestal.gov.br",
+            "mapas.florestal.gov.br", "smapas.florestal.gov.br", "pamgia.ibama.gov.br",
+            "certificacao.incra.gov.br");
     private final HttpClient client;
     private final CollectionProperties properties;
     private final ThreadLocal<Long> collectionDeadline = new ThreadLocal<>();
+    private final ThreadLocal<Long> collectionBytes = new ThreadLocal<>();
 
     @org.springframework.beans.factory.annotation.Autowired
     public OfficialDataClient(CollectionProperties properties) {
         this(properties, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15))
+                .sslContext(OfficialTls.context())
                 .followRedirects(HttpClient.Redirect.NEVER).build());
     }
     OfficialDataClient(CollectionProperties properties, HttpClient client) {
@@ -39,9 +45,13 @@ public class OfficialDataClient {
     /** One budget per collection/request thread; concurrent collections do not share deadlines. */
     public CollectionBudget collectionBudget() {
         Long previous = collectionDeadline.get();
+        if (previous == null) collectionBytes.set(0L);
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(properties.getMaxDurationSeconds());
         collectionDeadline.set(previous == null ? deadline : Math.min(previous, deadline));
-        return () -> { if (previous == null) collectionDeadline.remove(); else collectionDeadline.set(previous); };
+        return () -> {
+            if (previous == null) { collectionDeadline.remove(); collectionBytes.remove(); }
+            else collectionDeadline.set(previous);
+        };
     }
     public void checkCollectionDeadline() {
         Long deadline = collectionDeadline.get();
@@ -53,6 +63,17 @@ public class OfficialDataClient {
 
     /** The deadline covers headers, response body, redirects and retries, not just connecting. */
     public byte[] download(URI uri) throws IOException, InterruptedException {
+        return download(uri, false);
+    }
+
+    /** Listagens são usadas somente para descobrir arquivos no diretório oficial do IBGE/INPE. */
+    byte[] listing(URI uri) throws IOException, InterruptedException {
+        if (!("geoftp.ibge.gov.br".equals(uri.getHost()) || "dataserver-coids.inpe.br".equals(uri.getHost())))
+            throw new IllegalArgumentException("Canal sem listagem oficial autorizada.");
+        return download(uri, true);
+    }
+
+    private byte[] download(URI uri, boolean listing) throws IOException, InterruptedException {
         checkUri(uri);
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(properties.getRequestTimeoutSeconds());
         Long collectionEnd = collectionDeadline.get();
@@ -66,7 +87,11 @@ public class OfficialDataClient {
                 var request = HttpRequest.newBuilder(target).timeout(Duration.ofNanos(remaining))
                         .header("User-Agent", "GeoRuralDataHub/1.0 (public environmental data collection)")
                         .header("Accept", "application/json, text/csv, application/zip, */*").GET().build();
-                CompletableFuture<HttpResponse<byte[]>> pending = client.sendAsync(request, this::body);
+                Long used = collectionBytes.get();
+                int maximum = (int) Math.min(properties.getMaxDownloadBytes(), used == null
+                        ? properties.getMaxDownloadBytes() : properties.getMaxTotalBytes() - used);
+                if (maximum <= 0) throw upstream("Coleta excede o limite total de downloads.");
+                CompletableFuture<HttpResponse<byte[]>> pending = client.sendAsync(request, info -> body(info, maximum));
                 HttpResponse<byte[]> response;
                 try { response = pending.get(remaining, TimeUnit.NANOSECONDS); }
                 catch (TimeoutException e) { pending.cancel(true); throw timeout(uri); }
@@ -97,19 +122,22 @@ public class OfficialDataClient {
                 if (status != 200) throw upstream("Fonte respondeu HTTP " + status + ": " + uri);
                 byte[] bytes = response.body();
                 if (bytes.length == 0) throw upstream("Fonte retornou arquivo vazio: " + uri);
-                if (bytes.length > properties.getMaxDownloadBytes()) throw upstream("Arquivo excede o limite configurado para coleta.");
+                if (bytes.length > maximum) throw upstream("Arquivo excede o limite configurado para coleta.");
                 String type = response.headers().firstValue("Content-Type").orElse("").toLowerCase(java.util.Locale.ROOT);
-                if (type.contains("text/html")) throw upstream("O canal retornou uma página HTML, não um arquivo de dados: " + uri);
+                String prefix = new String(bytes, 0, Math.min(bytes.length, 512), java.nio.charset.StandardCharsets.UTF_8)
+                        .replace("\uFEFF", "").stripLeading().toLowerCase(java.util.Locale.ROOT);
+                if (!listing && (type.contains("text/html") || prefix.startsWith("<!doctype html") || prefix.startsWith("<html")))
+                    throw upstream("O canal retornou uma página HTML, não um arquivo de dados: " + uri);
+                if (used != null) collectionBytes.set(used + bytes.length);
                 return bytes;
             }
         }
         throw upstream("Fonte indisponível após três tentativas: " + uri);
     }
 
-    private HttpResponse.BodySubscriber<byte[]> body(HttpResponse.ResponseInfo info) {
+    private HttpResponse.BodySubscriber<byte[]> body(HttpResponse.ResponseInfo info, int maximum) {
         // Error/redirect bodies are discarded instead of retained in memory.
         if (info.statusCode() != 200) return HttpResponse.BodySubscribers.mapping(HttpResponse.BodySubscribers.discarding(), ignored -> new byte[0]);
-        int maximum = properties.getMaxDownloadBytes();
         if (maximum < 1) throw upstream("Limite de download inválido.");
         try {
             if (info.headers().firstValueAsLong("Content-Length").orElse(0) > maximum)

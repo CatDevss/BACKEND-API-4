@@ -8,10 +8,15 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class CollectionProperties {
     @jakarta.validation.constraints.Min(1)
     @jakarta.validation.constraints.Max(268435456)
-    private int maxDownloadBytes = 64 * 1024 * 1024;
+    private int maxDownloadBytes = 256 * 1024 * 1024;
     @jakarta.validation.constraints.Min(1)
     @jakarta.validation.constraints.Max(536870912)
-    private int maxTotalBytes = 128 * 1024 * 1024;
+    private int maxTotalBytes = 512 * 1024 * 1024;
+    @jakarta.validation.constraints.Min(1)
+    @jakarta.validation.constraints.Max(2147483648L)
+    private long maxExpandedBytes = 2147483648L;
+    public long getMaxExpandedBytes() { return maxExpandedBytes; }
+    public void setMaxExpandedBytes(long value) { maxExpandedBytes = value; }
     @jakarta.validation.constraints.Min(1)
     @jakarta.validation.constraints.Max(10000)
     private int pageSize = 1000;
@@ -28,8 +33,8 @@ public class CollectionProperties {
     private int maxDurationSeconds = 180;
     public int getMaxDurationSeconds() { return maxDurationSeconds; }
     public void setMaxDurationSeconds(int value) { maxDurationSeconds = value; }
-    @jakarta.validation.Valid
-    private List<Job> jobs = List.of();
+    @jakarta.validation.constraints.NotNull
+    private List<@jakarta.validation.constraints.NotNull @jakarta.validation.Valid Job> jobs = List.of();
     public int getMaxDownloadBytes() { return maxDownloadBytes; }
     public void setMaxDownloadBytes(int value) { maxDownloadBytes = value; }
     public int getMaxTotalBytes() { return maxTotalBytes; }

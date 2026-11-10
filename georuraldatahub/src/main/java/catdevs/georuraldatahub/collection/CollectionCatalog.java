@@ -10,11 +10,10 @@ import org.springframework.stereotype.Component;
 @Component
 public class CollectionCatalog {
     public record Entry(String id, String agency, String product, String access, String documentation, String limitations) {}
-    public List<Entry> list() {
-        return List.of(
+    private static final List<Entry> ENTRIES = List.of(
             new Entry("IBGE_MUNICIPIOS", "IBGE", "Malha municipal do Paraná", "AUTOMATICO",
                 "https://servicodados.ibge.gov.br/api/docs/malhas?versao=3",
-                "Até 2022 usa a API simplificada; a partir de 2023 usa o ZIP estadual da Malha Municipal Digital, em SIRGAS 2000 geográfico. Saída preserva todos os atributos do Shapefile e acrescenta codarea como alias de CD_MUN; o ZIP original também é preservado. Exige edição publicada e código municipal iniciado por 41; não substitui cadastro fundiário."),
+                "API simplificada até 2022 com alternativa ZIP da mesma edição; desde 2023 usa ZIP estadual. Descobre diretórios históricos e preserva atributos, codarea e original. Malhas antigas são reprojetadas apenas com referência geográfica identificável ou documentada; ZIPs de 2000/2001 sem PRJ exigem confirmação do datum. Não substitui cadastro fundiário."),
             new Entry("IBGE_BIOMAS", "IBGE", "Limites dos biomas no Paraná", "AUTOMATICO",
                 "https://geoftp.ibge.gov.br/informacoes_ambientais/estudos_ambientais/biomas/vetores/",
                 "Edições 2019 e 2025, escala 1:250.000, recortadas pelo limite IBGE do Paraná. Mantém coordenadas SIRGAS 2000; cálculo de área exige projeção equivalente posterior."),
@@ -24,29 +23,32 @@ public class CollectionCatalog {
             new Entry("INPE_QUEIMADAS", "INPE", "Focos diários no Paraná", "AUTOMATICO",
                 "https://dataserver-coids.inpe.br/queimadas/queimadas/focos/csv/diario/Brasil/",
                 "CSV diário nacional preservado, saída filtrada por estado_id=41 e município paranaense, todos os satélites; disponibilidade limitada à retenção do servidor. Focos não equivalem a área queimada."),
-            new Entry("ICMBIO", "ICMBio", "UCs federais e embargos", "AGUARDA_HOMOLOGACAO",
+            new Entry("ICMBIO", "ICMBio", "Unidades de conservação federais", "AUTOMATICO",
                 "https://www.gov.br/icmbio/pt-br/dados-icmbio/dados_geoespaciais",
-                "Página oficial publica WFS na INDE e downloads SHP. Selecionar produto/camada e homologar antes de ativar; upload manual disponível."),
-            new Entry("MMA", "MMA", "Unidades de conservação do CNUC", "AGUARDA_HOMOLOGACAO",
+                "WFS oficial na INDE, paginado e recortado ao Paraná. competence=ATUAL; não há série histórica anual neste canal. Reservas particulares não integram esta camada."),
+            new Entry("ICMBIO_EMBARGOS", "ICMBio", "Áreas embargadas", "AUTOMATICO",
+                "https://www.gov.br/icmbio/pt-br/dados-icmbio/dados_geoespaciais",
+                "WFS na INDE, base atual; não confundir ano da autuação com edição histórica. Atributos pessoais não são solicitados."),
+            new Entry("MMA", "MMA", "Unidades de conservação do CNUC", "AUTOMATICO",
                 "https://dados.mma.gov.br/dataset/unidadesdeconservacao",
-                "Recursos ZIP por edição, incluindo links SharePoint sujeitos a mudanças. Não tratar página HTML como dado; upload manual disponível."),
-            new Entry("FUNAI", "FUNAI", "Terras indígenas", "AGUARDA_HOMOLOGACAO",
+                "ATUAL usa WFS/GML do CNUC; edições YYYY-MM são descobertas no catálogo CKAN. YYYY seleciona a última edição publicada daquele ano. Links SharePoint podem exigir acesso manual; não há substituição silenciosa por outra edição."),
+            new Entry("FUNAI", "FUNAI", "Terras indígenas", "AUTOMATICO",
                 "https://www.gov.br/funai/pt-br/atuacao/terras-indigenas/geoprocessamento-e-mapas/geprocessamento",
-                "GeoServer e downloads oficiais com atualização mensal; distinguir áreas em estudo das demais fases. Upload manual disponível."),
-            new Entry("INCRA", "INCRA", "Territórios e assentamentos", "AGUARDA_HOMOLOGACAO",
-                "https://acervofundiario.incra.gov.br/acervo/login.php",
-                "Portal informa autenticação gov.br. Acesso automatizado sem autenticação não foi confirmado; upload manual disponível."),
-            new Entry("SFB", "SFB", "Cadastro Nacional de Florestas Públicas", "AGUARDA_HOMOLOGACAO",
+                "WFS de terras indígenas poligonais, base ATUAL. Áreas em estudo pontuais não estão incluídas. Exige certificado TLS válido no servidor; falhas de certificado são reportadas, nunca ignoradas."),
+            new Entry("INCRA", "INCRA", "Assentamentos rurais", "AUTOMATICO",
+                "https://www.gov.br/incra/pt-br/assuntos/sistemas",
+                "ZIP público de assentamentos no canal de certificação, base ATUAL, recortado ao Paraná. Não inclui territórios quilombolas ou áreas certificadas de outros produtos. Não representa série histórica anual."),
+            new Entry("SFB", "SFB", "Cadastro Nacional de Florestas Públicas", "AUTOMATICO",
                 "https://dados.florestal.gov.br/pt_BR/dataset/cadastro-nacional-de-florestas-publicas-cnfp",
-                "Catálogo publica recursos por edição e geosserviços; CSV estatístico não substitui polígonos. Upload manual disponível."),
-            new Entry("IBAMA", "IBAMA", "Áreas embargadas", "AGUARDA_HOMOLOGACAO",
+                "Edições geográficas descobertas no catálogo CKAN e baixadas do portal oficial. Não existe publicação para todos os anos. Arquivos nacionais podem superar 250 MiB; configure os limites de coleta conforme o ambiente."),
+            new Entry("IBAMA", "IBAMA", "Áreas embargadas", "AUTOMATICO",
                 "https://pamgia.ibama.gov.br/server/rest/services/01_Publicacoes_Bases/adm_embargos_ibama_a/OGCFeatureServer/collections?f=html",
-                "Serviço OGC público documentado; homologar camada, vigência e paginação. Não coletar dados pessoais além do necessário; upload manual disponível."),
+                "Serviço ArcGIS público, com total verificável e paginação ordenada, base ATUAL. Não representa histórico anual. Atributos pessoais não são solicitados."),
             new Entry("CAR_SICAR", "CAR/SICAR", "Imóvel, APP, reserva legal e vegetação declarada", "MANUAL",
-                "https://www.car.gov.br/publico/",
+                "https://consulta.car.gov.br/",
                 "Mantido upload existente; nenhuma automação de login, captcha ou download não autorizado.")
         );
-    }
+    public List<Entry> list() { return ENTRIES; }
     /** Suggested rules only. Applying them is an explicit dictionary CRUD operation. */
     public DictionaryRequestDTO dictionaryTemplate(CollectionRequest.Product product, String competence) {
         List<FieldRule> rules = new ArrayList<>();
@@ -78,6 +80,8 @@ public class CollectionCatalog {
                 for (String field : List.of("path_row", "main_class", "class_name", "image_date", "source", "satellite", "sensor", "publish_year", "pub_date", "update_at"))
                     rules.add(optional(field, FieldType.STRING));
             }
+            case ICMBIO, ICMBIO_EMBARGOS, MMA, FUNAI, INCRA, SFB, IBAMA ->
+                rules.add(FieldRule.required("geometry", FieldType.GEOMETRY));
             case INPE_QUEIMADAS -> {
                 rules.add(new FieldRule("id", true, FieldType.STRING, List.of(), true));
                 rules.add(FieldRule.required("lat", FieldType.LATITUDE));
