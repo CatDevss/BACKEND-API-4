@@ -9,6 +9,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
+@CrossOrigin
 @RestController
 @ConditionalOnProperty(name = "environmental.enabled", havingValue = "true")
 public class EnvironmentalIndicatorController {
@@ -17,6 +18,26 @@ public class EnvironmentalIndicatorController {
 
     public EnvironmentalIndicatorController(EnvironmentalIndicatorService service) {
         this.service = service;
+    }
+
+    @GetMapping("/ambiental/camadas")
+    public Object layers(@RequestParam(defaultValue="") String busca,
+            @RequestParam(defaultValue="0") int page, @RequestParam(defaultValue="20") int size) {
+        checkPage(page,size);
+        return service.layers(busca,page,size);
+    }
+
+    @GetMapping("/ambiental/camadas/{layerId}/feicoes")
+    public Object features(@PathVariable long layerId, @RequestParam(defaultValue="") String busca,
+            @RequestParam(required=false) String campo, @RequestParam(defaultValue="0") int page,
+            @RequestParam(defaultValue="20") int size) {
+        checkPage(page,size);
+        return service.features(layerId,busca,campo,page,size);
+    }
+
+    private void checkPage(int page,int size) {
+        if (page<0 || page>100000 || size<1 || size>100)
+            throw new org.springframework.web.server.ResponseStatusException(HttpStatus.BAD_REQUEST,"Paginacao invalida.");
     }
 
     public record CombinedLayerRequest(String nome, java.util.List<Long> camadas) {}

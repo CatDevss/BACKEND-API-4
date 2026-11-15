@@ -14,6 +14,58 @@ public class EnvironmentalIndicatorRepository {
         this.jdbc = jdbc;
     }
 
+    public record Page<T>(java.util.List<T> items, long total, int page, int size) {}
+    public record LayerOption(long id, String name, long datasetId, String dataset,
+            long versionId, String file, String source, String geometry, long features, long polygons) {}
+    public record FeatureOption(long id, String name, String attributes) {}
+
+    public Page<LayerOption> layers(String search, int page, int size) {
+        String from = " FROM camada c JOIN conjunto co ON co.con_id=c.con_id "
+            + "JOIN versao v ON v.ver_id=c.ver_id JOIN arquivo a ON a.arq_id=v.arq_id "
+            + "JOIN ingestao i ON i.ing_id=a.ing_id JOIN dicionario d ON d.dic_id=i.dic_id JOIN fonte s ON s.fon_id=d.fon_id WHERE v.ver_status IN ('TRATADA','PUBLICADA') "
+            + "AND EXISTS (SELECT 1 FROM feicao f WHERE f.cam_id=c.cam_id) "
+            + "AND (LOWER(c.cam_nome) LIKE ? OR LOWER(co.con_nome) LIKE ?)";
+        String term = "%" + search.toLowerCase(java.util.Locale.ROOT) + "%";
+        long total = jdbc.queryForObject("SELECT COUNT(*)" + from, Long.class, term, term);
+        var items = jdbc.query("SELECT c.cam_id,c.cam_nome,c.con_id,co.con_nome,c.ver_id,a.arq_nome,CASE WHEN EXISTS (SELECT 1 FROM camada_origem o WHERE o.cam_id=c.cam_id) THEN 'Composta (fontes no resultado)' ELSE s.fon_nome END,c.cam_tipo_geom,"
+            + "(SELECT COUNT(*) FROM feicao f WHERE f.cam_id=c.cam_id),"
+            + "(SELECT COUNT(*) FROM feicao f WHERE f.cam_id=c.cam_id AND MOD(f.fei_geometria.sdo_gtype,100) IN (3,7))"
+            + from + " ORDER BY c.cam_nome,c.cam_id OFFSET ? ROWS FETCH NEXT ? ROWS ONLY",
+            (r,n) -> new LayerOption(r.getLong(1),r.getString(2),r.getLong(3),r.getString(4),r.getLong(5),
+                r.getString(6),r.getString(7),r.getString(8),r.getLong(9),r.getLong(10)),term,term,page*size,size);
+        return new Page<>(items,total,page,size);
+    }
+
+    public Page<FeatureOption> features(long layer, String search, String field, int page, int size) {
+        String name;
+        if (field != null && !field.isBlank()) {
+            if (!field.matches("[\\p{L}\\p{N}_]{1,100}"))
+                throw new IllegalArgumentException("Campo de nome invalido.");
+            name = "COALESCE(JSON_VALUE(f.fei_atributos, '$.\"" + field + "\"' RETURNING VARCHAR2(4000) NULL ON ERROR),f.fei_id_origem,TO_CHAR(f.fei_id))";
+        } else {
+            name = "COALESCE(" + java.util.stream.Stream.of("NM_MUN","nm_mun","NM_MUNICIP","nome","NOME","name","NAME","nom_imovel","NOM_IMOVEL","NM_BIOMA","Bioma")
+                .map(k -> "JSON_VALUE(f.fei_atributos, '$." + k + "' RETURNING VARCHAR2(4000) NULL ON ERROR)")
+                .collect(java.util.stream.Collectors.joining(",")) + ",f.fei_id_origem,TO_CHAR(f.fei_id))";
+        }
+        String from = " FROM feicao f JOIN camada c ON c.cam_id=f.cam_id JOIN versao v ON v.ver_id=c.ver_id "
+            + "WHERE f.cam_id=? AND v.ver_status IN ('TRATADA','PUBLICADA') "
+            + "AND MOD(f.fei_geometria.sdo_gtype,100) IN (3,7) AND LOWER(" + name + ") LIKE ?";
+        String term = "%" + search.toLowerCase(java.util.Locale.ROOT) + "%";
+        long total = jdbc.queryForObject("SELECT COUNT(*)" + from,Long.class,layer,term);
+        var items = jdbc.query("SELECT f.fei_id," + name + ",f.fei_atributos" + from
+            + " ORDER BY 2,f.fei_id OFFSET ? ROWS FETCH NEXT ? ROWS ONLY",
+            (r,n) -> new FeatureOption(r.getLong(1),r.getString(2),r.getString(3)),layer,term,page*size,size);
+        return new Page<>(items,total,page,size);
+    }
+
+    public java.util.Map<String,Object> sourceMetadata(long layer) {
+        var rows = jdbc.queryForList("SELECT c.cam_nome AS NOME, a.arq_nome AS ARQUIVO, s.fon_nome AS FONTE "
+            + "FROM camada c JOIN versao v ON v.ver_id=c.ver_id JOIN arquivo a ON a.arq_id=v.arq_id "
+            + "JOIN ingestao i ON i.ing_id=a.ing_id JOIN dicionario d ON d.dic_id=i.dic_id "
+            + "JOIN fonte s ON s.fon_id=d.fon_id WHERE c.cam_id=?",layer);
+        return rows.isEmpty() ? java.util.Map.of() : rows.getFirst();
+    }
+
     public record ImportedLayer(long camadaId, int quantidade) {
     }
 

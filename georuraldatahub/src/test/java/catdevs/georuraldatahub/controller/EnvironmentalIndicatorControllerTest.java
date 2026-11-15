@@ -9,6 +9,18 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 class EnvironmentalIndicatorControllerTest {
+    @Test void queriesRealLayersAndRejectsUnboundedPages() throws Exception {
+        var repository = mock(EnvironmentalIndicatorRepository.class);
+        when(repository.layers("Mun",0,20)).thenReturn(new EnvironmentalIndicatorRepository.Page<>(java.util.List.of(),0,0,20));
+        var mvc = MockMvcBuilders.standaloneSetup(new EnvironmentalIndicatorController(new EnvironmentalIndicatorService(repository))).build();
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/ambiental/camadas").param("busca","Mun"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(0));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/ambiental/camadas").param("size","10000"))
+            .andExpect(status().isBadRequest());
+        verify(repository).layers("Mun",0,20);
+        verifyNoMoreInteractions(repository);
+    }
+
     @Test void createsCombinedLayerThroughService() throws Exception {
         var repository = mock(EnvironmentalIndicatorRepository.class);
         when(repository.combineLayers(21, "Focos", "[43,44]"))

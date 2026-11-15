@@ -196,6 +196,13 @@ CREATE TABLE IF NOT EXISTS camada (
                                    'MULTIPOLYGON', 'MIXED' ) )
 );
 
+CREATE TABLE IF NOT EXISTS camada_origem (
+    cam_id NUMBER NOT NULL REFERENCES camada(cam_id),
+    cam_origem_id NUMBER NOT NULL REFERENCES camada(cam_id),
+    PRIMARY KEY (cam_id, cam_origem_id),
+    CHECK (cam_id <> cam_origem_id)
+);
+
 CREATE TABLE IF NOT EXISTS feicao (
     fei_id        NUMBER
         GENERATED AS IDENTITY

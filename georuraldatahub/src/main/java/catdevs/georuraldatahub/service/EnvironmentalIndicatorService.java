@@ -23,6 +23,17 @@ public class EnvironmentalIndicatorService {
         this.repository = repository;
     }
 
+    @Transactional(readOnly=true)
+    public EnvironmentalIndicatorRepository.Page<EnvironmentalIndicatorRepository.LayerOption> layers(String search,int page,int size) {
+        return repository.layers(search,page,size);
+    }
+
+    @Transactional(readOnly=true)
+    public EnvironmentalIndicatorRepository.Page<EnvironmentalIndicatorRepository.FeatureOption> features(long layer,String search,String field,int page,int size) {
+        positive(layer);
+        return repository.features(layer,search,field,page,size);
+    }
+
     @Transactional
     public EnvironmentalIndicatorRepository.ImportedLayer combineLayers(
             long datasetId, String name, java.util.List<Long> layers) {
@@ -55,7 +66,7 @@ public class EnvironmentalIndicatorService {
         if (parameters == null || !parameters.isObject())
             throw new IllegalArgumentException("Informe os parametros em um objeto JSON.");
         try {
-            return mapper.readTree(repository.calculate(propertyId, parameters.toString()));
+            return withSources(repository.calculate(propertyId, parameters.toString()));
         } catch (DataAccessException e) {
             throw translate(e);
         } catch (java.io.IOException e) {
@@ -69,7 +80,7 @@ public class EnvironmentalIndicatorService {
         if (parameters == null || !parameters.isObject())
             throw new IllegalArgumentException("Informe os parametros em um objeto JSON.");
         try {
-            return mapper.readTree(repository.calculateIcv(propertyId, parameters.toString()));
+            return withSources(repository.calculateIcv(propertyId, parameters.toString()));
         } catch (DataAccessException e) {
             throw translate(e);
         } catch (java.io.IOException e) {
@@ -113,12 +124,25 @@ public class EnvironmentalIndicatorService {
         if (parameters == null || !parameters.isObject())
             throw new IllegalArgumentException("Informe os parametros em um objeto JSON.");
         try {
-            return mapper.readTree(repository.calculateIndicator(propertyId, parameters.toString(), indicator));
+            return withSources(repository.calculateIndicator(propertyId, parameters.toString(), indicator));
         } catch (DataAccessException e) {
             throw translate(e);
         } catch (java.io.IOException e) {
             throw new IllegalStateException("Oracle retornou JSON invalido.", e);
         }
+    }
+
+    private JsonNode withSources(String json) throws java.io.IOException {
+        JsonNode result = mapper.readTree(json);
+        var cache = new java.util.HashMap<Long,java.util.Map<String,Object>>();
+        if (result.path("fontes").isArray()) for (JsonNode source : result.path("fontes")) {
+            if (source instanceof com.fasterxml.jackson.databind.node.ObjectNode obj && source.path("camadaId").canConvertToLong()) {
+                var metadata = cache.computeIfAbsent(source.path("camadaId").asLong(),repository::sourceMetadata);
+                for (var entry : metadata.entrySet()) if (entry.getValue()!=null)
+                    obj.put(entry.getKey().toLowerCase(java.util.Locale.ROOT),entry.getValue().toString());
+            }
+        }
+        return result;
     }
 
     private static void positive(long id) {
