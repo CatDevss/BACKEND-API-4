@@ -11,7 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import catdevs.georuraldatahub.collection.CollectionRequest.Product;
 import catdevs.georuraldatahub.validation.CsvRecordValidator;
 
-/** Auditoria opt-in: amostra PRODES por ano/bioma e conversão de cada CSV diário retido. */
+/** Teste opcional: amostra PRODES por ano/bioma e conversão de cada CSV diário retido. */
 @EnabledIfSystemProperty(named = "collection.inpe.live", matches = "true")
 class LiveInpeEditionsTest {
     private final CollectionProperties limits = new CollectionProperties();

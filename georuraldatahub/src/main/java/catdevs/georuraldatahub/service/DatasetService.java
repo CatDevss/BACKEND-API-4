@@ -99,10 +99,12 @@ public class DatasetService {
         }
 
         private String validName(String value) {
-                if (value == null || value.isBlank()) throw new IllegalArgumentException("Nome do conjunto é obrigatório.");
+                if (value == null || value.isBlank())
+                        throw new IllegalArgumentException("Nome do conjunto é obrigatório.");
                 String name = value.trim();
                 if (name.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 100)
-                        throw new IllegalArgumentException("Nome do conjunto excede o limite de 100 bytes do banco atual.");
+                        throw new IllegalArgumentException(
+                                        "Nome do conjunto excede o limite de 100 bytes do banco atual.");
                 return name;
         }
 

@@ -19,7 +19,7 @@ import catdevs.georuraldatahub.repository.*;
 import catdevs.georuraldatahub.service.*;
 import catdevs.georuraldatahub.validation.*;
 
-/** Exercises multipart -> real validation/service -> response; only database/OCI dependencies are mocked. */
+/** Testa o envio e a validação reais; simula apenas o banco e o OCI. */
 class ManualJsonUploadTest {
     private final FileRepository files = mock(FileRepository.class);
     private final VersionRepository versions = mock(VersionRepository.class);

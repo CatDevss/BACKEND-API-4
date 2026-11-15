@@ -18,14 +18,44 @@ public class ProcessingProperties {
     private long maxExpandedBytes = 134217728L;
     @jakarta.validation.constraints.Positive
     private int maxFeatures = 100000;
-    public int getTimeoutSeconds() { return timeoutSeconds; }
-    public void setTimeoutSeconds(int value) { timeoutSeconds = value; }
-    public long getMaxInputBytes() { return maxInputBytes; }
-    public void setMaxInputBytes(long value) { maxInputBytes = value; }
-    public int getMaxOutputBytes() { return maxOutputBytes; }
-    public void setMaxOutputBytes(int value) { maxOutputBytes = value; }
-    public long getMaxExpandedBytes() { return maxExpandedBytes; }
-    public void setMaxExpandedBytes(long value) { maxExpandedBytes = value; }
-    public int getMaxFeatures() { return maxFeatures; }
-    public void setMaxFeatures(int value) { maxFeatures = value; }
+
+    public int getTimeoutSeconds() {
+        return timeoutSeconds;
+    }
+
+    public void setTimeoutSeconds(int value) {
+        timeoutSeconds = value;
+    }
+
+    public long getMaxInputBytes() {
+        return maxInputBytes;
+    }
+
+    public void setMaxInputBytes(long value) {
+        maxInputBytes = value;
+    }
+
+    public int getMaxOutputBytes() {
+        return maxOutputBytes;
+    }
+
+    public void setMaxOutputBytes(int value) {
+        maxOutputBytes = value;
+    }
+
+    public long getMaxExpandedBytes() {
+        return maxExpandedBytes;
+    }
+
+    public void setMaxExpandedBytes(long value) {
+        maxExpandedBytes = value;
+    }
+
+    public int getMaxFeatures() {
+        return maxFeatures;
+    }
+
+    public void setMaxFeatures(int value) {
+        maxFeatures = value;
+    }
 }

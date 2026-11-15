@@ -116,6 +116,47 @@ public class EnvironmentalIndicatorService {
         }
     }
 
+    @Transactional(readOnly = true)
+    public Object history(String search, String indicator, int page, int size) {
+        return repository.history(search, indicator, page, size);
+    }
+
+    @Transactional(readOnly = true)
+    public Object historyDetail(long id) {
+        positive(id);
+        try {
+            var saved = repository.historyDetail(id);
+            var result = (com.fasterxml.jackson.databind.node.ObjectNode) withSources(saved.result());
+            result.put("calculoId", saved.calculation().id());
+            return java.util.Map.of("calculation", saved.calculation(), "parameters",
+                    mapper.readTree(saved.parameters()), "result", result);
+        } catch (org.springframework.dao.EmptyResultDataAccessException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Calculo nao encontrado.");
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("Historico contem JSON invalido.", e);
+        }
+    }
+
+    @Transactional(isolation = Isolation.SERIALIZABLE)
+    public JsonNode calculateAndSave(long featureId, String indicator, JsonNode parameters) {
+        positive(featureId);
+        if (!java.util.Set.of("icv", "irl", "iapp", "isap", "iae", "idesmat", "ifc").contains(indicator)
+                || parameters == null || !parameters.isObject())
+            throw new IllegalArgumentException("Indicador ou parametros invalidos.");
+        try {
+            return withSources(repository.calculateAndSave(featureId, indicator, parameters.toString()));
+        } catch (DataAccessException e) {
+            for (Throwable cause = e; cause != null; cause = cause.getCause())
+                if (cause instanceof SQLException sql
+                        && java.util.Set.of(6550, 4043, 4063, 6508).contains(sql.getErrorCode()))
+                    throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                            "Gravacao individual indisponivel. Instale e confira geodatalake_historico.sql no Oracle.");
+            throw translate(e);
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("Oracle retornou resultado invalido.", e);
+        }
+    }
+
     @Transactional(isolation = Isolation.SERIALIZABLE)
     public JsonNode calculate(long propertyId, JsonNode parameters) {
         positive(propertyId);

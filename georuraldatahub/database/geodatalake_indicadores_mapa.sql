@@ -1,4 +1,4 @@
--- GEORURAL DATAHUB | INDICADORES AMBIENTAIS
+-- GEORURAL DATAHUB | INDICADORES AMBIENTAIS e MAPA
 DECLARE
     v_n NUMBER;
 BEGIN
@@ -201,8 +201,6 @@ EXCEPTION
 END;
 /
 
--- Auxiliar de referencia espacial.
--- Declara o cadastro e a consulta da projecao de calculo.
 CREATE OR REPLACE PACKAGE pkg_ambiental_crs AUTHID definer AS
     -- Confere o cadastro da projecao local e retorna o SRID usado nos calculos.
     FUNCTION srid_calculo RETURN NUMBER;
@@ -210,10 +208,8 @@ CREATE OR REPLACE PACKAGE pkg_ambiental_crs AUTHID definer AS
 END;
 /
 
--- Implementa o cadastro e a consulta da projecao de calculo.
 CREATE OR REPLACE PACKAGE BODY pkg_ambiental_crs AS
 
-    -- Confere o cadastro da projecao local e retorna o SRID usado nos calculos.
 
     FUNCTION srid_calculo RETURN NUMBER IS
         v_n NUMBER;
@@ -443,7 +439,6 @@ END;
 
 --Historico imutavel e calculos ambientais.
 
--- Declara os calculos ambientais executados com Oracle Spatial.
 CREATE OR REPLACE PACKAGE pkg_indicadores_ambientais AUTHID definer AS
     -- Projeta a geometria e retorna sua area em hectares (m2 / 10000).
     FUNCTION area_ha (
@@ -452,19 +447,40 @@ CREATE OR REPLACE PACKAGE pkg_indicadores_ambientais AUTHID definer AS
 
     -- ICV: area da vegetacao nativa no imovel / area do imovel * 100; retorna tambem hectares.
 
-    FUNCTION icv(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB;
+    FUNCTION icv (
+        p_imovel_id NUMBER,
+        p_config    CLOB
+    ) RETURN CLOB;
     -- IRL: area de RL no imovel / area do imovel * 100. Deficit = max(areaImovel * minimo/100 - areaRL, 0); excedente = max(areaRL - areaImovel * minimo/100, 0).
-    FUNCTION irl(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB;
+    FUNCTION irl (
+        p_imovel_id NUMBER,
+        p_config    CLOB
+    ) RETURN CLOB;
     -- IAPP: area(APP intersectada com vegetacao no imovel) / area(APP no imovel) * 100; passivoHa = areaAPP - areaConservada.
-    FUNCTION iapp(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB;
+    FUNCTION iapp (
+        p_imovel_id NUMBER,
+        p_config    CLOB
+    ) RETURN CLOB;
     -- ISAP: area da uniao das areas protegidas intersectada com o imovel / area do imovel * 100; retorna hectares.
-    FUNCTION isap(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB;
+    FUNCTION isap (
+        p_imovel_id NUMBER,
+        p_config    CLOB
+    ) RETURN CLOB;
     -- IAE: area da uniao dos embargos intersectada com o imovel / area do imovel * 100; retorna hectares.
-    FUNCTION iae(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB;
+    FUNCTION iae (
+        p_imovel_id NUMBER,
+        p_config    CLOB
+    ) RETURN CLOB;
     -- IDesmat: area de supressao no imovel / area do imovel * 100, e hectares; janelas desde 22/07/2008, 31/07/2019 e 31/12/2020 ate fim (inclusivos).
-    FUNCTION idesmat(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB;
+    FUNCTION idesmat (
+        p_imovel_id NUMBER,
+        p_config    CLOB
+    ) RETURN CLOB;
     -- IFC: quantidade de id_evento unicos no imovel entre inicio e fim / area do imovel em ha * 1000; inclui pontos na borda.
-    FUNCTION ifc(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB;
+    FUNCTION ifc (
+        p_imovel_id NUMBER,
+        p_config    CLOB
+    ) RETURN CLOB;
 
     -- Calcula os sete indicadores, grava o historico e retorna JSON; a transacao e confirmada pelo chamador.
 
@@ -477,7 +493,6 @@ CREATE OR REPLACE PACKAGE pkg_indicadores_ambientais AUTHID definer AS
 END;
 /
 
--- Implementa os calculos ambientais executados com Oracle Spatial.
 CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
 
     c_tol   CONSTANT NUMBER := 0.01; -- metros em SIRGAS2000 / Albers Brasil local
@@ -502,6 +517,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
         ELSE
             v_geom := sdo_cs.transform(p_geom, v_srid);
         END IF;
+
         IF nvl(
             sdo_geom.validate_geometry_with_context(v_geom, c_tol),
             'INVALID'
@@ -532,7 +548,6 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
         RETURN sdo_geom.sdo_area(p_geom, c_tol, 'unit=SQ_METER') / 10000;
     END;
 
-    -- Projeta a geometria e retorna sua area em hectares (m2 / 10000).
 
     FUNCTION area_ha (
         p_geometria mdsys.sdo_geometry
@@ -559,7 +574,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
 
     FUNCTION resultado (
         p_imovel_id NUMBER,
-        p_config CLOB,
+        p_config    CLOB,
         p_indicador VARCHAR2
     ) RETURN CLOB IS
 
@@ -624,16 +639,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
             v_location VARCHAR2(500);
             v_dic      NUMBER;
             v_dic_ver  NUMBER;
-            v_composicao NUMBER;
         BEGIN
-            -- Uma camada composta deve expor todos os arquivos, nao apenas a versao tecnica.
-            SELECT count(*) INTO v_composicao FROM camada_origem WHERE cam_id=p_cam;
-            IF v_composicao>0 THEN
-                FOR origem IN (SELECT cam_origem_id FROM camada_origem WHERE cam_id=p_cam) LOOP
-                    rastrear(origem.cam_origem_id);
-                END LOOP;
-                RETURN;
-            END IF;
             SELECT
                 v.ver_status,
                 v.ver_id,
@@ -814,28 +820,31 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
     BEGIN
         v_cfg := json_object_t.parse(p_config);
         v_cfg.on_error(1);
-        IF p_indicador IN ('TODOS', 'IRL') THEN
-        v_rl_min := v_cfg.get_number('rlMinimoPercentual');
-        IF v_rl_min IS NULL
-           OR v_rl_min < 0
-        OR v_rl_min > 100 THEN
-            raise_application_error(-20129, 'Informe o percentual minimo de RL entre 0 e 100.');
+        IF p_indicador IN ( 'TODOS', 'IRL' ) THEN
+            v_rl_min := v_cfg.get_number('rlMinimoPercentual');
+            IF v_rl_min IS NULL
+               OR v_rl_min < 0
+            OR v_rl_min > 100 THEN
+                raise_application_error(-20129, 'Informe o percentual minimo de RL entre 0 e 100.');
+            END IF;
+
+            IF v_cfg.get_string('fundamentoRl') IS NULL THEN
+                raise_application_error(-20129, 'Informe o fundamento do percentual de RL adotado.');
+            END IF;
+
         END IF;
 
-        IF v_cfg.get_string('fundamentoRl') IS NULL THEN
-            raise_application_error(-20129, 'Informe o fundamento do percentual de RL adotado.');
-        END IF;
-
-        END IF;
-        IF p_indicador IN ('TODOS', 'IFC', 'IDESMAT') THEN
+        IF p_indicador IN ( 'TODOS', 'IFC', 'IDESMAT' ) THEN
             v_fim := data_iso(v_cfg.get_string('fim'));
         END IF;
-        IF p_indicador IN ('TODOS', 'IFC') THEN
+
+        IF p_indicador IN ( 'TODOS', 'IFC' ) THEN
             v_inicio := data_iso(v_cfg.get_string('inicio'));
             IF v_inicio > v_fim THEN
                 raise_application_error(-20124, 'Periodo invertido.');
             END IF;
         END IF;
+
         SELECT
             f.fei_geometria,
             f.cam_id
@@ -857,77 +866,71 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
         IF v_area <= 0 THEN
             raise_application_error(-20127, 'Imovel sem area positiva.');
         END IF;
-        IF p_indicador IN ('TODOS', 'ICV', 'IAPP') THEN
+        IF p_indicador IN ( 'TODOS', 'ICV', 'IAPP' ) THEN
             v_native := unir('vegetacao');
         END IF;
-        -- ICV: area da vegetacao nativa no imovel / area do imovel * 100; retorna tambem hectares.
-        IF p_indicador IN ('TODOS', 'ICV') THEN
-        medida('ICV',
-               area_plana(v_native),
-               v_area);
+        IF p_indicador IN ( 'TODOS', 'ICV' ) THEN
+            medida('ICV',
+                   area_plana(v_native),
+                   v_area);
         END IF;
-        -- IRL: area de RL no imovel / area do imovel * 100. Deficit = max(areaImovel * minimo/100 - areaRL, 0); excedente = max(areaRL - areaImovel * minimo/100, 0).
-        IF p_indicador IN ('TODOS', 'IRL') THEN
-        v_rl := unir('reservaLegal');
-        v_rl_area := area_plana(v_rl);
-        medida('IRL', v_rl_area, v_area);
-        v_details := v_out.get_object('IRL');
-        v_details.put('minimoPercentual', v_rl_min);
-        v_details.put('deficitHa',
-                      greatest(v_area * v_rl_min / 100 - v_rl_area, 0));
+        IF p_indicador IN ( 'TODOS', 'IRL' ) THEN
+            v_rl := unir('reservaLegal');
+            v_rl_area := area_plana(v_rl);
+            medida('IRL', v_rl_area, v_area);
+            v_details := v_out.get_object('IRL');
+            v_details.put('minimoPercentual', v_rl_min);
+            v_details.put('deficitHa',
+                          greatest(v_area * v_rl_min / 100 - v_rl_area, 0));
 
-        v_details.put('excedenteHa',
-                      greatest(v_rl_area - v_area * v_rl_min / 100, 0));
+            v_details.put('excedenteHa',
+                          greatest(v_rl_area - v_area * v_rl_min / 100, 0));
 
-        v_out.put('IRL', v_details);
+            v_out.put('IRL', v_details);
         END IF;
-        -- IAPP: area(APP intersectada com vegetacao no imovel) / area(APP no imovel) * 100; passivoHa = areaAPP - areaConservada.
-        IF p_indicador IN ('TODOS', 'IAPP') THEN
-        v_app := unir('app');
-        v_app_area := area_plana(v_app);
-        v_conservada := area_plana(recortar(v_app, v_native));
-        medida('IAPP', v_conservada, v_app_area);
-        v_details := v_out.get_object('IAPP');
-        v_details.put('appTotalHa', v_app_area);
-        v_details.put('passivoHa',
-                      greatest(v_app_area - v_conservada, 0));
-        v_out.put('IAPP', v_details);
+        IF p_indicador IN ( 'TODOS', 'IAPP' ) THEN
+            v_app := unir('app');
+            v_app_area := area_plana(v_app);
+            v_conservada := area_plana(recortar(v_app, v_native));
+            medida('IAPP', v_conservada, v_app_area);
+            v_details := v_out.get_object('IAPP');
+            v_details.put('appTotalHa', v_app_area);
+            v_details.put('passivoHa',
+                          greatest(v_app_area - v_conservada, 0));
+            v_out.put('IAPP', v_details);
         END IF;
-        -- ISAP: area da uniao das areas protegidas intersectada com o imovel / area do imovel * 100; retorna hectares.
-        IF p_indicador IN ('TODOS', 'ISAP') THEN
-        medida('ISAP',
-               area_plana(unir('areasProtegidas')),
-               v_area);
+        IF p_indicador IN ( 'TODOS', 'ISAP' ) THEN
+            medida('ISAP',
+                   area_plana(unir('areasProtegidas')),
+                   v_area);
         END IF;
-        -- IAE: area da uniao dos embargos intersectada com o imovel / area do imovel * 100; retorna hectares.
-        IF p_indicador IN ('TODOS', 'IAE') THEN
-        medida('IAE',
-               area_plana(unir('embargos')),
-               v_area);
+        IF p_indicador IN ( 'TODOS', 'IAE' ) THEN
+            medida('IAE',
+                   area_plana(unir('embargos')),
+                   v_area);
         END IF;
-        -- IDesmat: area de supressao no imovel / area do imovel * 100, e hectares; janelas desde 22/07/2008, 31/07/2019 e 31/12/2020 ate fim (inclusivos).
-        IF p_indicador IN ('TODOS', 'IDESMAT') THEN
-        medida('IDesmat2008',
-               area_plana(unir('desmatamento', DATE '2008-07-22', v_fim)),
-               v_area);
+        IF p_indicador IN ( 'TODOS', 'IDESMAT' ) THEN
+            medida('IDesmat2008',
+                   area_plana(unir('desmatamento', DATE '2008-07-22', v_fim)),
+                   v_area);
 
-        medida('IDesmat2019',
-               area_plana(unir('desmatamento', DATE '2019-07-31', v_fim)),
-               v_area);
+            medida('IDesmat2019',
+                   area_plana(unir('desmatamento', DATE '2019-07-31', v_fim)),
+                   v_area);
 
-        medida('IDesmat2020',
-               area_plana(unir('desmatamento', DATE '2020-12-31', v_fim)),
-               v_area);
+            medida('IDesmat2020',
+                   area_plana(unir('desmatamento', DATE '2020-12-31', v_fim)),
+                   v_area);
 
         END IF;
-        -- IFC: quantidade de id_evento unicos no imovel entre inicio e fim / area do imovel em ha * 1000; inclui pontos na borda.
-        IF p_indicador IN ('TODOS', 'IFC') THEN
-        v_geom := unir('focos', v_inicio, v_fim, TRUE);
-        v_details := json_object_t();
-        v_details.put('quantidade', v_focos);
-        v_details.put('porMilHa', v_focos / v_area * 1000);
-        v_out.put('IFC', v_details);
+        IF p_indicador IN ( 'TODOS', 'IFC' ) THEN
+            v_geom := unir('focos', v_inicio, v_fim, TRUE);
+            v_details := json_object_t();
+            v_details.put('quantidade', v_focos);
+            v_details.put('porMilHa', v_focos / v_area * 1000);
+            v_out.put('IFC', v_details);
         END IF;
+
         v_out.put('imovelId', p_imovel_id);
         v_out.put('areaImovelHa', v_area);
         v_out.put('regra', c_regra);
@@ -945,71 +948,90 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
         RETURN v_out.to_clob();
     END;
 
-    -- ICV: area da vegetacao nativa no imovel / area do imovel * 100; retorna tambem hectares.
 
-    FUNCTION icv(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB IS
+    FUNCTION icv (
+        p_imovel_id NUMBER,
+        p_config    CLOB
+    ) RETURN CLOB IS
     BEGIN
         RETURN resultado(p_imovel_id, p_config, 'ICV');
     END;
 
-    -- IRL: area de RL no imovel / area do imovel * 100. Deficit = max(areaImovel * minimo/100 - areaRL, 0); excedente = max(areaRL - areaImovel * minimo/100, 0).
 
-    FUNCTION irl(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB IS
+    FUNCTION irl (
+        p_imovel_id NUMBER,
+        p_config    CLOB
+    ) RETURN CLOB IS
     BEGIN
         RETURN resultado(p_imovel_id, p_config, 'IRL');
     END;
 
-    -- IAPP: area(APP intersectada com vegetacao no imovel) / area(APP no imovel) * 100; passivoHa = areaAPP - areaConservada.
 
-    FUNCTION iapp(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB IS
+    FUNCTION iapp (
+        p_imovel_id NUMBER,
+        p_config    CLOB
+    ) RETURN CLOB IS
     BEGIN
         RETURN resultado(p_imovel_id, p_config, 'IAPP');
     END;
 
-    -- ISAP: area da uniao das areas protegidas intersectada com o imovel / area do imovel * 100; retorna hectares.
 
-    FUNCTION isap(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB IS
+    FUNCTION isap (
+        p_imovel_id NUMBER,
+        p_config    CLOB
+    ) RETURN CLOB IS
     BEGIN
         RETURN resultado(p_imovel_id, p_config, 'ISAP');
     END;
 
-    -- IAE: area da uniao dos embargos intersectada com o imovel / area do imovel * 100; retorna hectares.
 
-    FUNCTION iae(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB IS
+    FUNCTION iae (
+        p_imovel_id NUMBER,
+        p_config    CLOB
+    ) RETURN CLOB IS
     BEGIN
         RETURN resultado(p_imovel_id, p_config, 'IAE');
     END;
 
-    -- IDesmat: area de supressao no imovel / area do imovel * 100, e hectares; janelas desde 22/07/2008, 31/07/2019 e 31/12/2020 ate fim (inclusivos).
 
-    FUNCTION idesmat(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB IS
+    FUNCTION idesmat (
+        p_imovel_id NUMBER,
+        p_config    CLOB
+    ) RETURN CLOB IS
     BEGIN
         RETURN resultado(p_imovel_id, p_config, 'IDESMAT');
     END;
 
-    -- IFC: quantidade de id_evento unicos no imovel entre inicio e fim / area do imovel em ha * 1000; inclui pontos na borda.
 
-    FUNCTION ifc(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB IS
+    FUNCTION ifc (
+        p_imovel_id NUMBER,
+        p_config    CLOB
+    ) RETURN CLOB IS
     BEGIN
         RETURN resultado(p_imovel_id, p_config, 'IFC');
     END;
 
-    -- Calcula os sete indicadores, grava o historico e retorna JSON; a transacao e confirmada pelo chamador.
 
     PROCEDURE calcular (
         p_imovel_id NUMBER,
-        p_config CLOB,
+        p_config    CLOB,
         p_resultado OUT CLOB
     ) IS
         v_calc NUMBER;
-        v_out json_object_t;
+        v_out  json_object_t;
     BEGIN
         SAVEPOINT calculo_ambiental;
         p_resultado := resultado(p_imovel_id, p_config, 'TODOS');
         INSERT INTO calculo_ambiental (
-            fei_imovel_id, calc_regra, calc_parametros, calc_resultado
-        ) VALUES (p_imovel_id, c_regra, p_config, p_resultado)
-        RETURNING calc_id INTO v_calc;
+            fei_imovel_id,
+            calc_regra,
+            calc_parametros,
+            calc_resultado
+        ) VALUES ( p_imovel_id,
+                   c_regra,
+                   p_config,
+                   p_resultado ) RETURNING calc_id INTO v_calc;
+
         v_out := json_object_t.parse(p_resultado);
         v_out.put('calculoId', v_calc);
         p_resultado := v_out.to_clob();
@@ -1018,7 +1040,388 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
             ROLLBACK TO calculo_ambiental;
             RAISE;
     END;
+
 END;
 /
-SHOW ERRORS PACKAGE pkg_indicadores_ambientais
-SHOW ERRORS PACKAGE BODY pkg_indicadores_ambientais
+
+CREATE OR REPLACE PROCEDURE pr_calcular_indicador (
+    p_feicao    NUMBER,
+    p_indicador VARCHAR2,
+    p_config    CLOB,
+    p_resultado OUT CLOB
+)
+    AUTHID definer
+IS
+
+    v_json       json_object_t;
+    v_config     json_object_t;
+    v_id         NUMBER;
+    v_regra      VARCHAR2(30);
+    v_indicador  VARCHAR2(20) := lower(p_indicador);
+    v_parametros CLOB;
+BEGIN
+    SAVEPOINT salvar_indicador;
+    CASE v_indicador
+        WHEN 'icv' THEN
+            p_resultado := pkg_indicadores_ambientais.icv(p_feicao, p_config);
+        WHEN 'irl' THEN
+            p_resultado := pkg_indicadores_ambientais.irl(p_feicao, p_config);
+        WHEN 'iapp' THEN
+            p_resultado := pkg_indicadores_ambientais.iapp(p_feicao, p_config);
+        WHEN 'isap' THEN
+            p_resultado := pkg_indicadores_ambientais.isap(p_feicao, p_config);
+        WHEN 'iae' THEN
+            p_resultado := pkg_indicadores_ambientais.iae(p_feicao, p_config);
+        WHEN 'idesmat' THEN
+            p_resultado := pkg_indicadores_ambientais.idesmat(p_feicao, p_config);
+        WHEN 'ifc' THEN
+            p_resultado := pkg_indicadores_ambientais.ifc(p_feicao, p_config);
+        ELSE
+            raise_application_error(-20163, 'Indicador desconhecido.');
+    END CASE;
+
+    v_json := json_object_t.parse(p_resultado);
+    v_regra := v_json.get_string('regra');
+    v_config := json_object_t.parse(p_config);
+    v_config.put('indicador', v_indicador);
+    v_parametros := v_config.to_clob();
+    INSERT INTO calculo_ambiental (
+        fei_imovel_id,
+        calc_regra,
+        calc_parametros,
+        calc_resultado
+    ) VALUES ( p_feicao,
+               v_regra,
+               v_parametros,
+               p_resultado ) RETURNING calc_id INTO v_id;
+
+    v_json.put('calculoId', v_id);
+    p_resultado := v_json.to_clob();
+    -- calc_id identifica a linha; calculoId e acrescentado somente a resposta.
+    -- Nao faz UPDATE: o historico existente e imutavel.
+    -- Sem COMMIT: Spring confirma somente se a chamada inteira concluir.
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK TO salvar_indicador;
+        RAISE;
+END;
+/
+
+
+
+-- Cria somente uma funcao de leitura; nao cria tabelas, nao persiste mapas.
+-- DDL faz commit implicito: use uma sessao sem alteracoes pendentes.
+-- Representacao geografica das contribuicoes, NAO a inversa da geometria Albers.
+-- Nao recalcula/substitui os valores publicados pelo package de indicadores.
+CREATE OR REPLACE FUNCTION fn_ambiental_mapa (
+    p_feicao    NUMBER,
+    p_indicador VARCHAR2,
+    p_config    CLOB
+) RETURN CLOB
+    AUTHID definer
+IS
+
+    cfg         json_object_t := json_object_t.parse(p_config);
+    output      json_object_t := json_object_t();
+    features    json_array_t := json_array_t();
+    area        mdsys.sdo_geometry;
+    geom        mdsys.sdo_geometry;
+    app_geom    mdsys.sdo_geometry;
+    native_geom mdsys.sdo_geometry;
+    validated   CLOB;
+    response    CLOB;
+    indicator   VARCHAR2(20) := upper(p_indicador);
+    since_date  DATE;
+    until_date  DATE;
+    scanned     NUMBER := 0;
+    vertices    NUMBER := 0;
+    output_size NUMBER := 0;
+    cleaned     NUMBER := 0;
+    tol         CONSTANT NUMBER := 0.05; -- metros, operacoes geodesicas
+    TYPE events_t IS
+        TABLE OF BOOLEAN INDEX BY VARCHAR2(4000);
+    events      events_t;
+
+    FUNCTION geographic (
+        g       mdsys.sdo_geometry,
+        p_id    NUMBER,
+        p_papel VARCHAR2
+    ) RETURN mdsys.sdo_geometry IS
+        converted  mdsys.sdo_geometry;
+        diagnostic VARCHAR2(4000);
+    BEGIN
+        IF g IS NULL
+           OR g.sdo_srid IS NULL
+        OR g.sdo_srid NOT IN ( 4326, 4674 ) THEN
+            raise_application_error(-20160, 'Mapa exige geometrias de origem em 4326 ou 4674. A inversa de Albers local nao e utilizada.'
+            );
+        END IF;
+
+        IF g.sdo_srid = 4326 THEN
+            converted := g;
+        ELSE
+            converted := sdo_cs.transform(g, 4326);
+        END IF;
+
+        diagnostic := nvl(
+            sdo_geom.validate_geometry_with_context(converted, tol),
+            'INVALID'
+        );
+        -- Trata somente 13356 em uma copia temporaria para visualizacao.
+        -- REMOVE_DUPLICATE_VERTICES tambem considera proximidade dentro da tolerancia.
+        IF
+            substr(diagnostic, 1, 5) = '13356'
+            AND MOD(converted.sdo_gtype, 100) IN ( 2, 3, 6, 7 )
+        THEN
+            converted := sdo_util.remove_duplicate_vertices(converted, tol);
+            diagnostic := nvl(
+                sdo_geom.validate_geometry_with_context(converted, tol),
+                'INVALID'
+            );
+            IF diagnostic = 'TRUE' THEN
+                cleaned := cleaned + 1;
+            END IF;
+        END IF;
+
+        IF diagnostic <> 'TRUE' THEN
+            raise_application_error(-20161,
+                                    'Mapa: feicao '
+                                    || p_id
+                                    || ', papel '
+                                    || p_papel
+                                    || ', SRID '
+                                    || converted.sdo_srid
+                                    || ', tolerancia '
+                                    || tol
+                                    || ' m. Diagnostico Oracle: '
+                                    || substr(diagnostic, 1, 1200));
+        END IF;
+
+        vertices := vertices + sdo_util.getnumvertices(converted);
+        IF vertices > 200000 THEN
+            raise_application_error(-20162, 'Mapa excede 200 mil vertices de entrada. Use uma area ou camadas menores.');
+        END IF;
+        RETURN converted;
+    END;
+
+    PROCEDURE append_feature (
+        g         mdsys.sdo_geometry,
+        role_name VARCHAR2,
+        event_id  VARCHAR2 DEFAULT NULL
+    ) IS
+        item          json_object_t := json_object_t();
+        props         json_object_t := json_object_t();
+        geometry_json CLOB;
+    BEGIN
+        IF g IS NULL THEN
+            RETURN;
+        END IF;
+        IF features.get_size() >= 5000 THEN
+            raise_application_error(-20162, 'Mapa excede 5 mil feicoes. Reduza o periodo ou a area de analise.');
+        END IF;
+
+        geometry_json := sdo_util.to_geojson(g);
+        output_size := output_size + dbms_lob.getlength(geometry_json);
+        IF output_size > 4900000 THEN
+            raise_application_error(-20162, 'Mapa excede o limite de tamanho. Nenhuma geometria foi truncada.');
+        END IF;
+        item.put('type', 'Feature');
+        item.put('geometry',
+                 json_object_t.parse(geometry_json));
+        props.put('papel', role_name);
+        IF event_id IS NOT NULL THEN
+            props.put('id_evento', event_id);
+        END IF;
+        item.put('properties', props);
+        features.append(item);
+    END;
+
+    FUNCTION contribution (
+        role_name VARCHAR2,
+        from_date DATE DEFAULT NULL,
+        p_until   DATE DEFAULT NULL,
+        points    BOOLEAN DEFAULT FALSE
+    ) RETURN mdsys.sdo_geometry IS
+
+        ids        json_array_t;
+        layer_id   NUMBER;
+        combined   mdsys.sdo_geometry;
+        raw_geom   mdsys.sdo_geometry;
+        clipped    mdsys.sdo_geometry;
+        attrs      json_object_t;
+        date_value DATE;
+        event_id   VARCHAR2(4000);
+    BEGIN
+        ids := cfg.get_array(role_name);
+        FOR j IN 0..ids.get_size() - 1 LOOP
+            layer_id := ids.get_number(j);
+            FOR f IN (
+                SELECT
+                    fei_id,
+                    fei_geometria,
+                    fei_atributos
+                FROM
+                    feicao
+                WHERE
+                    cam_id = layer_id
+                ORDER BY
+                    fei_id
+            ) LOOP
+                scanned := scanned + 1;
+                IF scanned > 50000 THEN
+                    raise_application_error(-20162, 'Mapa excede 50 mil registros examinados. Reduza os insumos.');
+                END IF;
+                IF from_date IS NOT NULL THEN
+                    attrs := json_object_t.parse(f.fei_atributos);
+                    date_value := TO_DATE ( attrs.get_string('data_evento'), 'FXYYYY-MM-DD' );
+                    IF date_value < from_date
+                    OR date_value > p_until THEN
+                        CONTINUE;
+                    END IF;
+                END IF;
+
+                raw_geom := geographic(f.fei_geometria, f.fei_id, role_name);
+                IF sdo_geom.relate(area, 'ANYINTERACT', raw_geom, tol) <> 'TRUE' THEN
+                    CONTINUE;
+                END IF;
+
+                IF points THEN
+                    event_id := attrs.get_string('id_evento');
+                    IF NOT events.EXISTS(event_id) THEN
+                        events(event_id) := TRUE;
+                        append_feature(raw_geom, 'IFC', event_id);
+                    END IF;
+
+                ELSE
+                    clipped := sdo_geom.sdo_intersection(area, raw_geom, tol);
+                    IF
+                        clipped IS NOT NULL
+                        AND MOD(clipped.sdo_gtype, 100) IN ( 3, 7 )
+                    THEN
+                        IF combined IS NULL THEN
+                            combined := clipped;
+                        ELSE
+                            combined := sdo_geom.sdo_union(combined, clipped, tol);
+                        END IF;
+
+                        IF sdo_util.getnumvertices(combined) > 200000 THEN
+                            raise_application_error(-20162, 'Geometria de visualizacao excede 200 mil vertices.');
+                        END IF;
+
+                    END IF;
+
+                END IF;
+
+            END LOOP;
+
+        END LOOP;
+
+        RETURN combined;
+    END;
+
+BEGIN
+    -- Reutiliza as validacoes oficiais (tipos, periodos, aprovacoes e dados obrigatorios).
+    -- Funcoes individuais sao de leitura. O JSON numerico nao e modificado nem persistido.
+    CASE indicator
+        WHEN 'ICV' THEN
+            validated := pkg_indicadores_ambientais.icv(p_feicao, p_config);
+        WHEN 'IRL' THEN
+            validated := pkg_indicadores_ambientais.irl(p_feicao, p_config);
+        WHEN 'IAPP' THEN
+            validated := pkg_indicadores_ambientais.iapp(p_feicao, p_config);
+        WHEN 'ISAP' THEN
+            validated := pkg_indicadores_ambientais.isap(p_feicao, p_config);
+        WHEN 'IAE' THEN
+            validated := pkg_indicadores_ambientais.iae(p_feicao, p_config);
+        WHEN 'IDESMAT' THEN
+            validated := pkg_indicadores_ambientais.idesmat(p_feicao, p_config);
+        WHEN 'IFC' THEN
+            validated := pkg_indicadores_ambientais.ifc(p_feicao, p_config);
+        ELSE
+            raise_application_error(-20160, 'Indicador invalido.');
+    END CASE;
+
+    SELECT
+        fei_geometria
+    INTO geom
+    FROM
+        feicao
+    WHERE
+        fei_id = p_feicao;
+
+    area := geographic(geom, p_feicao, 'area de analise');
+    append_feature(area, 'analise');
+    IF indicator IN ( 'IFC', 'IDESMAT' ) THEN
+        until_date := TO_DATE ( cfg.get_string('fim'), 'FXYYYY-MM-DD' );
+    END IF;
+
+    CASE indicator
+        WHEN 'ICV' THEN
+            geom := contribution('vegetacao');
+            append_feature(geom, 'ICV');
+        WHEN 'IRL' THEN
+            geom := contribution('reservaLegal');
+            append_feature(geom, 'IRL');
+        WHEN 'ISAP' THEN
+            geom := contribution('areasProtegidas');
+            append_feature(geom, 'ISAP');
+        WHEN 'IAE' THEN
+            geom := contribution('embargos');
+            append_feature(geom, 'IAE');
+        WHEN 'IAPP' THEN
+            app_geom := contribution('app');
+            native_geom := contribution('vegetacao');
+            append_feature(app_geom, 'APP');
+            IF
+                app_geom IS NOT NULL
+                AND native_geom IS NOT NULL
+            THEN
+                geom := sdo_geom.sdo_intersection(app_geom, native_geom, tol);
+                IF
+                    geom IS NOT NULL
+                    AND MOD(geom.sdo_gtype, 100) IN ( 3, 7 )
+                THEN
+                    append_feature(geom, 'IAPP');
+                END IF;
+
+            END IF;
+
+        WHEN 'IDESMAT' THEN
+            geom := contribution('desmatamento', DATE '2008-07-22', until_date);
+            append_feature(geom, 'IDesmat2008');
+            geom := contribution('desmatamento', DATE '2019-07-31', until_date);
+            append_feature(geom, 'IDesmat2019');
+            geom := contribution('desmatamento', DATE '2020-12-31', until_date);
+            append_feature(geom, 'IDesmat2020');
+        WHEN 'IFC' THEN
+            since_date := TO_DATE ( cfg.get_string('inicio'), 'FXYYYY-MM-DD' );
+            geom := contribution('focos', since_date, until_date, TRUE);
+    END CASE;
+
+    output.put('type', 'FeatureCollection');
+    output.put('features', features);
+    output.put('aviso', 'Representacao geografica das contribuicoes, recortadas no Oracle em WGS84. Pode diferir nos limites da geometria Albers usada nas medidas. Nao representa a localizacao de deficits de reserva legal.'
+    );
+    IF cleaned > 0 THEN
+        output.put('ajustesVisualizacao', cleaned);
+        output.put('aviso', 'Representacao geografica: vertices redundantes foram removidos de '
+                            || cleaned
+                            || ' copia(s) temporaria(s) para visualizacao, com tolerancia de 0.05 m. Nenhuma geometria armazenada ou medida oficial foi alterada. O recorte pode diferir nos limites do calculo Albers.'
+                            );
+    END IF;
+
+    output.put('toleranciaMetros', tol);
+    output.put('indicador', indicator);
+    response := output.to_clob();
+    IF dbms_lob.getlength(response) > 5000000 THEN
+        raise_application_error(-20162, 'Mapa excede o limite de tamanho.');
+    END IF;
+
+    RETURN response;
+END;
+/
+
+SHOW ERRORS PROCEDURE pr_calcular_indicador;
+SHOW ERRORS FUNCTION fn_ambiental_mapa;
+SHOW ERRORS PACKAGE pkg_indicadores_ambientais;
+SHOW ERRORS PACKAGE BODY pkg_indicadores_ambientais;

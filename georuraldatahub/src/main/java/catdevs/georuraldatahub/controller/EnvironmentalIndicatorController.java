@@ -1,13 +1,23 @@
 package catdevs.georuraldatahub.controller;
 
-import catdevs.georuraldatahub.repository.EnvironmentalIndicatorRepository.ImportedLayer;
-import catdevs.georuraldatahub.service.EnvironmentalIndicatorService;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Map;
-import org.springframework.http.MediaType;
+
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import catdevs.georuraldatahub.repository.EnvironmentalIndicatorRepository.ImportedLayer;
+import catdevs.georuraldatahub.service.EnvironmentalIndicatorService;
 
 @CrossOrigin
 @RestController
@@ -60,6 +70,25 @@ public class EnvironmentalIndicatorController {
     public String map(@PathVariable long featureId, @PathVariable String indicator,
             @RequestBody Map<String, Object> parameters) {
         return service.map(featureId, indicator, mapper.valueToTree(parameters)).toString();
+    }
+
+    @PostMapping(value = "/imoveis/{featureId}/indicadores/{indicator}/calcular", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    public String calculateAndSave(@PathVariable long featureId, @PathVariable String indicator,
+            @RequestBody Map<String, Object> parameters) {
+        return service.calculateAndSave(featureId, indicator, mapper.valueToTree(parameters)).toString();
+    }
+
+    @GetMapping("/ambiental/calculos")
+    public Object history(@RequestParam(defaultValue = "") String busca,
+            @RequestParam(defaultValue = "") String indicador,
+            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
+        checkPage(page, size);
+        return service.history(busca, indicador, page, size);
+    }
+
+    @GetMapping(value = "/ambiental/calculos/{id}", produces = MediaType.APPLICATION_JSON_VALUE)
+    public String historyDetail(@PathVariable long id) {
+        return mapper.valueToTree(service.historyDetail(id)).toString();
     }
 
     private void checkPage(int page, int size) {

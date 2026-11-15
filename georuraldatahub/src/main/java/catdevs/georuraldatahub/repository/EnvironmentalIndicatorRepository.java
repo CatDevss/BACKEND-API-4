@@ -223,30 +223,6 @@ public class EnvironmentalIndicatorRepository {
         return calculateIndicator(propertyId, parameters, "icv");
     }
 
-    public String calculateIrl(long propertyId, String parameters) {
-        return calculateIndicator(propertyId, parameters, "irl");
-    }
-
-    public String calculateIapp(long propertyId, String parameters) {
-        return calculateIndicator(propertyId, parameters, "iapp");
-    }
-
-    public String calculateIsap(long propertyId, String parameters) {
-        return calculateIndicator(propertyId, parameters, "isap");
-    }
-
-    public String calculateIae(long propertyId, String parameters) {
-        return calculateIndicator(propertyId, parameters, "iae");
-    }
-
-    public String calculateIdesmat(long propertyId, String parameters) {
-        return calculateIndicator(propertyId, parameters, "idesmat");
-    }
-
-    public String calculateIfc(long propertyId, String parameters) {
-        return calculateIndicator(propertyId, parameters, "ifc");
-    }
-
     public String calculateIndicator(long propertyId, String parameters, String indicator) {
         String function = switch (indicator) {
             case "icv", "irl", "iapp", "isap", "iae", "idesmat", "ifc" -> indicator;
@@ -262,6 +238,77 @@ public class EnvironmentalIndicatorRepository {
                 call.setClob(3, input);
                 call.execute();
                 Clob output = call.getClob(1);
+                try {
+                    return output.getSubString(1, Math.toIntExact(output.length()));
+                } finally {
+                    output.free();
+                }
+            } finally {
+                input.free();
+            }
+        });
+    }
+
+    public record HistoryEntry(long id, long featureId, String name, String indicator, String calculatedAt,
+            String rule) {
+    }
+
+    public record HistoryDetail(HistoryEntry calculation, String parameters, String result) {
+    }
+
+    private static final String HISTORY_NAME = "COALESCE(JSON_VALUE(f.fei_atributos,'$.NM_MUN'),JSON_VALUE(f.fei_atributos,'$.nome'),"
+            + "JSON_VALUE(f.fei_atributos,'$.name'),JSON_VALUE(f.fei_atributos,'$.NM_BIOMA'),JSON_VALUE(f.fei_atributos,'$.Bioma'),f.fei_id_origem,'Feicao '||h.fei_imovel_id)";
+    private static final String HISTORY_INDICATOR = "CASE WHEN JSON_EXISTS(h.calc_resultado,'$.ICV') AND JSON_EXISTS(h.calc_resultado,'$.IFC') THEN 'todos' "
+            + "WHEN JSON_EXISTS(h.calc_resultado,'$.ICV') THEN 'icv' WHEN JSON_EXISTS(h.calc_resultado,'$.IRL') THEN 'irl' "
+            + "WHEN JSON_EXISTS(h.calc_resultado,'$.IAPP') THEN 'iapp' WHEN JSON_EXISTS(h.calc_resultado,'$.ISAP') THEN 'isap' "
+            + "WHEN JSON_EXISTS(h.calc_resultado,'$.IAE') THEN 'iae' WHEN JSON_EXISTS(h.calc_resultado,'$.IFC') THEN 'ifc' "
+            + "WHEN JSON_EXISTS(h.calc_resultado,'$.IDesmat2008') THEN 'idesmat' ELSE 'desconhecido' END";
+    private static final String HISTORY_FROM = " FROM calculo_ambiental h LEFT JOIN feicao f ON f.fei_id=h.fei_imovel_id ";
+    private static final String HISTORY_SELECT = "SELECT h.calc_id,h.fei_imovel_id," + HISTORY_NAME + ","
+            + HISTORY_INDICATOR
+            + ",TO_CHAR(h.calc_data,'YYYY-MM-DD HH24:MI:SS'),h.calc_regra";
+
+    private HistoryEntry historyRow(java.sql.ResultSet r) throws java.sql.SQLException {
+        return new HistoryEntry(r.getLong(1), r.getLong(2), r.getString(3), r.getString(4), r.getString(5),
+                r.getString(6));
+    }
+
+    public Page<HistoryEntry> history(String search, String indicator, int page, int size) {
+        String where = " WHERE LOWER(" + HISTORY_NAME + ") LIKE ?";
+        var args = new java.util.ArrayList<Object>();
+        args.add("%" + search.toLowerCase(java.util.Locale.ROOT) + "%");
+        if (!indicator.isBlank()) {
+            where += " AND " + HISTORY_INDICATOR + "=?";
+            args.add(indicator);
+        }
+        long total = jdbc.queryForObject("SELECT COUNT(*)" + HISTORY_FROM + where, Long.class, args.toArray());
+        args.add(page * size);
+        args.add(size);
+        var rows = jdbc.query(
+                HISTORY_SELECT + HISTORY_FROM + where
+                        + " ORDER BY h.calc_data DESC,h.calc_id DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY",
+                (r, n) -> historyRow(r), args.toArray());
+        return new Page<>(rows, total, page, size);
+    }
+
+    public HistoryDetail historyDetail(long id) {
+        return jdbc.queryForObject(
+                HISTORY_SELECT + ",h.calc_parametros,h.calc_resultado" + HISTORY_FROM + " WHERE h.calc_id=?",
+                (r, n) -> new HistoryDetail(historyRow(r), r.getString(7), r.getString(8)), id);
+    }
+
+    public String calculateAndSave(long featureId, String indicator, String parameters) {
+        return jdbc.execute((ConnectionCallback<String>) connection -> {
+            Clob input = connection.createClob();
+            try (var call = connection.prepareCall("{call pr_calcular_indicador(?,?,?,?)}")) {
+                input.setString(1, parameters);
+                call.setQueryTimeout(300);
+                call.setLong(1, featureId);
+                call.setString(2, indicator);
+                call.setClob(3, input);
+                call.registerOutParameter(4, Types.CLOB);
+                call.execute();
+                Clob output = call.getClob(4);
                 try {
                     return output.getSubString(1, Math.toIntExact(output.length()));
                 } finally {

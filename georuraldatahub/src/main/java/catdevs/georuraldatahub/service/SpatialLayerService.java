@@ -24,19 +24,23 @@ public class SpatialLayerService {
         this.treatments = treatments;
     }
 
-    public record LayerLoadResult(Long layerId, String name, GeometryType geometryType, int srid, int featureCount) { }
+    public record LayerLoadResult(Long layerId, String name, GeometryType geometryType, int srid, int featureCount) {
+    }
 
-    // Leituras do bucket e processamento não mantêm transação/conexão de banco aberta.
+    // Leituras do bucket e processamento não mantêm transação/conexão de banco
+    // aberta.
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public LayerLoadResult createLayerFromFile(Long datasetId, Long fileId, Long userId) throws Exception {
         if (treatments.isEnabled()) {
             var result = treatments.startForDataset(datasetId, fileId, userId);
             var layer = layers.findById(result.layerId()).orElseThrow();
-            return new LayerLoadResult(layer.getId(), layer.getName(), layer.getGeometryType(), layer.getSrid(), result.outputCount());
+            return new LayerLoadResult(layer.getId(), layer.getName(), layer.getGeometryType(), layer.getSrid(),
+                    result.outputCount());
         }
         var input = legacy.load(datasetId, fileId);
         var content = input.location().toLowerCase(Locale.ROOT).endsWith(".csv")
-                ? bucket.readCsvAsGeoJson(input.location()) : bucket.readGeoJson(input.location());
+                ? bucket.readCsvAsGeoJson(input.location())
+                : bucket.readGeoJson(input.location());
         return legacy.complete(input, GeoJsonFeatureExtractor.extract(content));
     }
 }

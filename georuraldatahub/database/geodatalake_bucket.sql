@@ -1,12 +1,4 @@
--- Origens de camadas compostas; as camadas importadas permanecem preservadas.
-CREATE TABLE IF NOT EXISTS camada_origem (
-    cam_id NUMBER NOT NULL REFERENCES camada(cam_id),
-    cam_origem_id NUMBER NOT NULL REFERENCES camada(cam_id),
-    PRIMARY KEY (cam_id, cam_origem_id),
-    CHECK (cam_id <> cam_origem_id)
-);
-
--- -- GEORURAL DATAHUB | Acesso ao bucket: somente endereco e nome da credencial, sem segredos.
+-- GEORURAL DATAHUB | Acesso ao bucket: somente endereco e nome da credencial, sem segredos.
 CREATE TABLE IF NOT EXISTS ambiental_bucket_config (
     config_id       NUMBER PRIMARY KEY CHECK ( config_id = 1 ),
     bucket_uri      VARCHAR2(2000) NOT NULL,

@@ -197,10 +197,13 @@ CREATE TABLE IF NOT EXISTS camada (
 );
 
 CREATE TABLE IF NOT EXISTS camada_origem (
-    cam_id NUMBER NOT NULL REFERENCES camada(cam_id),
-    cam_origem_id NUMBER NOT NULL REFERENCES camada(cam_id),
-    PRIMARY KEY (cam_id, cam_origem_id),
-    CHECK (cam_id <> cam_origem_id)
+    cam_id        NUMBER NOT NULL
+        REFERENCES camada ( cam_id ),
+    cam_origem_id NUMBER NOT NULL
+        REFERENCES camada ( cam_id ),
+    PRIMARY KEY ( cam_id,
+                  cam_origem_id ),
+    CHECK ( cam_id <> cam_origem_id )
 );
 
 CREATE TABLE IF NOT EXISTS feicao (
@@ -217,12 +220,15 @@ CREATE TABLE IF NOT EXISTS feicao (
 );
 
 CREATE TABLE IF NOT EXISTS calculo_ambiental (
-    calc_id NUMBER GENERATED AS IDENTITY PRIMARY KEY,
-    fei_imovel_id NUMBER NOT NULL REFERENCES feicao(fei_id),
-    calc_data TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    calc_regra VARCHAR2(30) NOT NULL,
-    calc_parametros CLOB NOT NULL CHECK (calc_parametros IS JSON),
-    calc_resultado CLOB NOT NULL CHECK (calc_resultado IS JSON)
+    calc_id         NUMBER
+        GENERATED AS IDENTITY
+    PRIMARY KEY,
+    fei_imovel_id   NUMBER NOT NULL
+        REFERENCES feicao ( fei_id ),
+    calc_data       TIMESTAMP DEFAULT current_timestamp NOT NULL,
+    calc_regra      VARCHAR2(30) NOT NULL,
+    calc_parametros CLOB NOT NULL CHECK ( calc_parametros IS JSON ),
+    calc_resultado  CLOB NOT NULL CHECK ( calc_resultado IS JSON )
 );
 
 
@@ -877,6 +883,474 @@ BEGIN
                NULL,
                'CONJUNTO_ARQUIVO',
                v_acao,
+               v_detalhes );
+
+END;
+/
+
+-- Auditoria espacial e de calculos
+CREATE OR REPLACE TRIGGER trg_aud_camada AFTER
+    INSERT OR UPDATE OR DELETE ON camada
+    FOR EACH ROW
+DECLARE
+    v_acao     VARCHAR2(10);
+    v_detalhes VARCHAR2(4000);
+    v_usr_id   NUMBER;
+    v_arq_id   NUMBER;
+    v_ing_id   NUMBER;
+    v_cam_id   NUMBER := coalesce(:new.cam_id,
+                                :old.cam_id);
+    v_con_id   NUMBER := coalesce(:new.con_id,
+                                :old.con_id);
+    v_ver_id   NUMBER := coalesce(:new.ver_id,
+                                :old.ver_id);
+BEGIN
+    BEGIN
+        SELECT
+            coalesce(c.usr_id, i.usr_id),
+            a.arq_id,
+            i.ing_id
+        INTO
+            v_usr_id,
+            v_arq_id,
+            v_ing_id
+        FROM
+                 conjunto c
+            JOIN versao   v ON v.ver_id = v_ver_id
+            JOIN arquivo  a ON a.arq_id = v.arq_id
+            JOIN ingestao i ON i.ing_id = a.ing_id
+        WHERE
+            c.con_id = v_con_id;
+
+    EXCEPTION
+        WHEN no_data_found THEN
+            v_usr_id := NULL;
+            v_arq_id := NULL;
+            v_ing_id := NULL;
+    END;
+
+    IF inserting THEN
+        v_acao := 'INSERT';
+        v_detalhes := 'Camada criada ID: '
+                      || :new.cam_id
+                      || ' | Nome: '
+                      || substr(:new.cam_nome,
+                                1,
+                                100)
+                      || ' | Tipo declarado: '
+                      || :new.cam_tipo_geom
+                      || ' | SRID: '
+                      || :new.cam_srid;
+
+    ELSIF updating THEN
+        v_acao := 'UPDATE';
+        v_detalhes := 'Camada atualizada ID: '
+                      || v_cam_id
+                      || ' | Nome: '
+                      || substr(:old.cam_nome,
+                                1,
+                                100)
+                      || ' -> '
+                      || substr(:new.cam_nome,
+                                1,
+                                100);
+
+        IF updating('CAM_DESCRICAO') THEN
+            v_detalhes := v_detalhes || ' | Descricao informada na atualizacao';
+        END IF;
+    ELSE
+        v_acao := 'DELETE';
+        v_detalhes := 'Camada removida ID: '
+                      || :old.cam_id
+                      || ' | Nome: '
+                      || substr(:old.cam_nome,
+                                1,
+                                100);
+
+    END IF;
+
+    v_detalhes := v_detalhes
+                  || ' | Conjunto: '
+                  || v_con_id
+                  || ' | Versao: '
+                  || v_ver_id
+                  || ' | Sessao BD: '
+                  || sys_context('USERENV', 'SESSION_USER');
+
+    INSERT INTO auditoria (
+        usr_id,
+        arq_id,
+        ing_id,
+        aud_entidade,
+        aud_acao,
+        aud_detalhes
+    ) VALUES ( v_usr_id,
+               v_arq_id,
+               v_ing_id,
+               'CAMADA',
+               v_acao,
+               v_detalhes );
+
+END;
+/
+
+CREATE OR REPLACE TRIGGER trg_aud_feicao AFTER
+    INSERT OR UPDATE OR DELETE ON feicao
+    FOR EACH ROW
+DECLARE
+    v_acao     VARCHAR2(10);
+    v_detalhes VARCHAR2(4000);
+    v_usr_id   NUMBER;
+    v_arq_id   NUMBER;
+    v_ing_id   NUMBER;
+    v_ver_id   NUMBER;
+    v_con_id   NUMBER;
+    v_fei_id   NUMBER := coalesce(:new.fei_id,
+                                :old.fei_id);
+    v_cam_id   NUMBER := coalesce(:new.cam_id,
+                                :old.cam_id);
+    v_geom     mdsys.sdo_geometry;
+BEGIN
+    BEGIN
+        SELECT
+            coalesce(co.usr_id, i.usr_id),
+            a.arq_id,
+            i.ing_id,
+            c.ver_id,
+            c.con_id
+        INTO
+            v_usr_id,
+            v_arq_id,
+            v_ing_id,
+            v_ver_id,
+            v_con_id
+        FROM
+                 camada c
+            JOIN conjunto co ON co.con_id = c.con_id
+            JOIN versao   v ON v.ver_id = c.ver_id
+            JOIN arquivo  a ON a.arq_id = v.arq_id
+            JOIN ingestao i ON i.ing_id = a.ing_id
+        WHERE
+            c.cam_id = v_cam_id;
+
+    EXCEPTION
+        WHEN no_data_found THEN
+            v_usr_id := NULL;
+            v_arq_id := NULL;
+            v_ing_id := NULL;
+            v_ver_id := NULL;
+            v_con_id := NULL;
+    END;
+
+    IF inserting THEN
+        v_acao := 'INSERT';
+        v_geom := :new.fei_geometria;
+        v_detalhes := 'Feicao inserida ID: '
+                      || :new.fei_id
+                      || ' | ID de origem: '
+                      || :new.fei_id_origem;
+
+    ELSIF updating THEN
+        v_acao := 'UPDATE';
+        v_geom := :new.fei_geometria;
+        v_detalhes := 'Feicao atualizada ID: '
+                      || v_fei_id
+                      || ' | Camada: '
+                      || :old.cam_id
+                      || ' -> '
+                      || :new.cam_id
+                      || ' | ID de origem: '
+                      || :old.fei_id_origem
+                      || ' -> '
+                      || :new.fei_id_origem;
+
+        IF updating('FEI_GEOMETRIA') THEN
+            v_detalhes := v_detalhes || ' | Geometria informada na atualizacao';
+        END IF;
+        IF updating('FEI_ATRIBUTOS') THEN
+            v_detalhes := v_detalhes || ' | Atributos informados na atualizacao';
+        END IF;
+    ELSE
+        v_acao := 'DELETE';
+        v_geom := :old.fei_geometria;
+        v_detalhes := 'Feicao removida ID: '
+                      || :old.fei_id
+                      || ' | ID de origem: '
+                      || :old.fei_id_origem;
+
+    END IF;
+
+    IF v_geom IS NOT NULL THEN
+        v_detalhes := v_detalhes
+                      || ' | SDO_GTYPE: '
+                      || v_geom.sdo_gtype
+                      || ' | SRID: '
+                      || v_geom.sdo_srid;
+    END IF;
+
+    v_detalhes := v_detalhes
+                  || ' | Camada vinculada: '
+                  || v_cam_id
+                  || ' | Conjunto: '
+                  || v_con_id
+                  || ' | Versao: '
+                  || v_ver_id
+                  || ' | Sessao BD: '
+                  || sys_context('USERENV', 'SESSION_USER');
+
+    INSERT INTO auditoria (
+        usr_id,
+        arq_id,
+        ing_id,
+        aud_entidade,
+        aud_acao,
+        aud_detalhes
+    ) VALUES ( v_usr_id,
+               v_arq_id,
+               v_ing_id,
+               'FEICAO',
+               v_acao,
+               v_detalhes );
+
+END;
+/
+
+CREATE OR REPLACE TRIGGER trg_aud_camada_origem AFTER
+    INSERT OR UPDATE OR DELETE ON camada_origem
+    FOR EACH ROW
+DECLARE
+    v_acao      VARCHAR2(10);
+    v_detalhes  VARCHAR2(4000);
+    v_usr_id    NUMBER;
+    v_arq_id    NUMBER;
+    v_ing_id    NUMBER;
+    v_ver_id    NUMBER;
+    v_cam_id    NUMBER := coalesce(:new.cam_id,
+                                :old.cam_id);
+    v_origem_id NUMBER := coalesce(:new.cam_origem_id,
+                                   :old.cam_origem_id);
+BEGIN
+    BEGIN
+        SELECT
+            coalesce(co.usr_id, i.usr_id),
+            a.arq_id,
+            i.ing_id,
+            c.ver_id
+        INTO
+            v_usr_id,
+            v_arq_id,
+            v_ing_id,
+            v_ver_id
+        FROM
+                 camada c
+            JOIN conjunto co ON co.con_id = c.con_id
+            JOIN versao   v ON v.ver_id = c.ver_id
+            JOIN arquivo  a ON a.arq_id = v.arq_id
+            JOIN ingestao i ON i.ing_id = a.ing_id
+        WHERE
+            c.cam_id = v_origem_id;
+
+    EXCEPTION
+        WHEN no_data_found THEN
+            v_usr_id := NULL;
+            v_arq_id := NULL;
+            v_ing_id := NULL;
+            v_ver_id := NULL;
+    END;
+
+    IF inserting THEN
+        v_acao := 'INSERT';
+        v_detalhes := 'Origem associada a camada composta';
+    ELSIF updating THEN
+        v_acao := 'UPDATE';
+        v_detalhes := 'Vinculo de origem atualizado | Camada: '
+                      || :old.cam_id
+                      || ' -> '
+                      || :new.cam_id
+                      || ' | Origem: '
+                      || :old.cam_origem_id
+                      || ' -> '
+                      || :new.cam_origem_id;
+
+    ELSE
+        v_acao := 'DELETE';
+        v_detalhes := 'Origem desassociada da camada composta';
+    END IF;
+
+    v_detalhes := v_detalhes
+                  || ' | Camada composta ID: '
+                  || v_cam_id
+                  || ' | Camada de origem ID: '
+                  || v_origem_id
+                  || ' | Versao de origem: '
+                  || v_ver_id
+                  || ' | Sessao BD: '
+                  || sys_context('USERENV', 'SESSION_USER');
+
+    INSERT INTO auditoria (
+        usr_id,
+        arq_id,
+        ing_id,
+        aud_entidade,
+        aud_acao,
+        aud_detalhes
+    ) VALUES ( v_usr_id,
+               v_arq_id,
+               v_ing_id,
+               'CAMADA_ORIGEM',
+               v_acao,
+               v_detalhes );
+
+END;
+/
+
+CREATE OR REPLACE TRIGGER trg_aud_calculo_ambiental AFTER
+    INSERT ON calculo_ambiental
+    FOR EACH ROW
+DECLARE
+    v_detalhes    VARCHAR2(4000);
+    v_arq_id      NUMBER;
+    v_ing_id      NUMBER;
+    v_cam_id      NUMBER;
+    v_ver_id      NUMBER;
+    v_con_id      NUMBER;
+    v_indicadores VARCHAR2(100);
+    v_inicio      VARCHAR2(10);
+    v_fim         VARCHAR2(10);
+BEGIN
+    BEGIN
+        SELECT
+            a.arq_id,
+            i.ing_id,
+            c.cam_id,
+            c.ver_id,
+            c.con_id
+        INTO
+            v_arq_id,
+            v_ing_id,
+            v_cam_id,
+            v_ver_id,
+            v_con_id
+        FROM
+                 feicao f
+            JOIN camada   c ON c.cam_id = f.cam_id
+            JOIN versao   v ON v.ver_id = c.ver_id
+            JOIN arquivo  a ON a.arq_id = v.arq_id
+            JOIN ingestao i ON i.ing_id = a.ing_id
+        WHERE
+            f.fei_id = :new.fei_imovel_id;
+
+    EXCEPTION
+        WHEN no_data_found THEN
+            v_arq_id := NULL;
+            v_ing_id := NULL;
+            v_cam_id := NULL;
+            v_ver_id := NULL;
+            v_con_id := NULL;
+    END;
+
+    SELECT
+        rtrim(
+            CASE
+                WHEN json_exists(:new.calc_resultado,
+                                 '$.ICV') THEN
+                    'ICV, '
+            END
+            ||
+            CASE
+                WHEN json_exists(:new.calc_resultado,
+                                 '$.IRL') THEN
+                    'IRL, '
+            END
+            ||
+            CASE
+                WHEN json_exists(:new.calc_resultado,
+                                 '$.IAPP') THEN
+                    'IAPP, '
+            END
+            ||
+            CASE
+                WHEN json_exists(:new.calc_resultado,
+                                 '$.ISAP') THEN
+                    'ISAP, '
+            END
+            ||
+            CASE
+                WHEN json_exists(:new.calc_resultado,
+                                 '$.IAE') THEN
+                    'IAE, '
+            END
+            ||
+            CASE
+                WHEN json_exists(:new.calc_resultado,
+                                 '$.IDesmat2008') THEN
+                    'IDesmat, '
+            END
+            || CASE
+            WHEN json_exists(:new.calc_resultado,
+                             '$.IFC') THEN
+                'IFC, '
+        END,
+            ', '),
+        JSON_VALUE(:new.calc_parametros, '$.inicio' RETURNING VARCHAR2(10) NULL ON ERROR),
+        JSON_VALUE(:new.calc_parametros, '$.fim' RETURNING VARCHAR2(10) NULL ON ERROR)
+    INTO
+        v_indicadores,
+        v_inicio,
+        v_fim
+    FROM
+        dual;
+
+    v_detalhes := 'Calculo ambiental salvo ID: '
+                  || :new.calc_id
+                  || ' | Indicadores: '
+                  || nvl(v_indicadores, 'Nao identificados')
+                  || ' | Feicao analisada: '
+                  || :new.fei_imovel_id
+                  || ' | Camada da area: '
+                  || v_cam_id
+                  || ' | Conjunto: '
+                  || v_con_id
+                  || ' | Versao da area: '
+                  || v_ver_id
+                  || ' | Regra: '
+                  || :new.calc_regra
+                  || ' | Data do calculo: '
+                  || to_char(:new.calc_data,
+                             'YYYY-MM-DD HH24:MI:SS');
+
+    IF v_inicio IS NOT NULL THEN
+        v_detalhes := v_detalhes
+                      || ' | Inicio: '
+                      || v_inicio;
+    END IF;
+
+    IF v_fim IS NOT NULL THEN
+        v_detalhes := v_detalhes
+                      || ' | Fim: '
+                      || v_fim;
+    END IF;
+
+    v_detalhes := v_detalhes
+                  || ' | Parametros: '
+                  || dbms_lob.getlength(:new.calc_parametros)
+                  || ' caracteres | Resultado: '
+                  || dbms_lob.getlength(:new.calc_resultado)
+                  || ' caracteres | Sessao BD: '
+                  || sys_context('USERENV', 'SESSION_USER');
+
+    INSERT INTO auditoria (
+        usr_id,
+        arq_id,
+        ing_id,
+        aud_entidade,
+        aud_acao,
+        aud_detalhes
+    ) VALUES ( NULL,
+               v_arq_id,
+               v_ing_id,
+               'CALCULO_AMBIENTAL',
+               'INSERT',
                v_detalhes );
 
 END;

@@ -5,10 +5,9 @@ import jakarta.validation.constraints.NotNull;
 
 public record DatasetCreateRequestDTO(
 
-    @NotBlank(message = "Nome do conjunto é obrigatório")
-    String name,
+        @NotBlank(message = "Nome do conjunto é obrigatório") String name,
 
-    @NotNull(message = "Usuário é obrigatório")
-    Long userId
+        @NotNull(message = "Usuário é obrigatório") Long userId
 
-) {}
+) {
+}

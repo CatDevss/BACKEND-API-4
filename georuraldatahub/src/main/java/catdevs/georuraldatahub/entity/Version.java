@@ -30,21 +30,21 @@ public class Version {
     @JoinColumn(name = "arq_id", referencedColumnName = "arq_id")
     private File file;
 
-    @Column (name = "ver_numero")
+    @Column(name = "ver_numero")
     private Integer versionNumber;
 
-    @Enumerated (EnumType.STRING)
-    @Column (name = "ver_status")
+    @Enumerated(EnumType.STRING)
+    @Column(name = "ver_status")
     private VersionStatus status;
 
-    @Column (name = "ver_localizacao")
+    @Column(name = "ver_localizacao")
     private String location;
 
-    @CreationTimestamp 
+    @CreationTimestamp
     @Column(name = "ver_criada_em")
     private LocalDateTime dateCreation;
 
-    public Version(){
+    public Version() {
     }
 
     public Long getId() {

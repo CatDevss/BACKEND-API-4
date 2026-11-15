@@ -36,6 +36,7 @@ public class LayerController {
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(geoJson.toString());
     }
+
     @GetMapping(value = "/camadas/{id}/geojson", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> getTreatedLayer(@PathVariable Long id) throws IOException {
         return ResponseEntity.status(org.springframework.http.HttpStatus.OK)

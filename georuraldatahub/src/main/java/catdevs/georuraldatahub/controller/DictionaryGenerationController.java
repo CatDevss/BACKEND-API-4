@@ -13,7 +13,10 @@ import org.springframework.web.multipart.MultipartFile;
 @RequestMapping("/fontes/{sourceId}/dicionarios")
 public class DictionaryGenerationController {
     private final DictionaryGenerationService service;
-    public DictionaryGenerationController(DictionaryGenerationService service) { this.service = service; }
+
+    public DictionaryGenerationController(DictionaryGenerationService service) {
+        this.service = service;
+    }
 
     @PostMapping(value = "/gerar-arquivo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)

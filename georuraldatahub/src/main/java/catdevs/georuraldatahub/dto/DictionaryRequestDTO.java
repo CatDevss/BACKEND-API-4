@@ -6,4 +6,5 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 
 public record DictionaryRequestDTO(@NotBlank @Size(max = 100) String name,
-        @Size(max = 500) String description, @NotEmpty List<@NotNull @Valid FieldRule> rules) {}
+                @Size(max = 500) String description, @NotEmpty List<@NotNull @Valid FieldRule> rules) {
+}

@@ -1,7 +1,7 @@
 -- MODELO: credencial pessoal para acesso do Oracle ao OCI Object Storage.
 -- credential_name e um nome interno do banco, nao o OCID do bucket.
 -- username: usuario OCI exato; incluir dominio quando necessario.
--- password: Auth Token gerado pelo mesmo usuario, nao a senha de login.
+-- password: Token de autenticacao gerado pelo mesmo usuario, nao a senha de acesso.
 -- Se a credencial ja existir, confira seu usuario antes de repetir CREATE_CREDENTIAL.
 SET DEFINE OFF
 

@@ -9,6 +9,39 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 class EnvironmentalIndicatorControllerTest {
+    @Test void opensSavedJsonWithoutRecalculation() throws Exception {
+        var repository=mock(EnvironmentalIndicatorRepository.class);
+        var entry=new EnvironmentalIndicatorRepository.HistoryEntry(21,270,"Adrianopolis","icv","2026-11-15 16:11:50","GEORURAL-1.2");
+        when(repository.historyDetail(21)).thenReturn(new EnvironmentalIndicatorRepository.HistoryDetail(entry,"{\"vegetacao\":[2]}","{\"ICV\":{\"areaHa\":0,\"percentual\":null}}"));
+        var mvc=MockMvcBuilders.standaloneSetup(new EnvironmentalIndicatorController(new EnvironmentalIndicatorService(repository))).build();
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/ambiental/calculos/21"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.result.calculoId").value(21))
+            .andExpect(jsonPath("$.result.ICV.areaHa").value(0));
+        verify(repository).historyDetail(21);verifyNoMoreInteractions(repository);
+    }
+
+    @Test void historyIsPaginatedAndReadOnly() throws Exception {
+        var repository=mock(EnvironmentalIndicatorRepository.class);
+        when(repository.history("Adri","icv",1,20)).thenReturn(new EnvironmentalIndicatorRepository.Page<>(java.util.List.of(),0,1,20));
+        var mvc=MockMvcBuilders.standaloneSetup(new EnvironmentalIndicatorController(new EnvironmentalIndicatorService(repository))).build();
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/ambiental/calculos")
+            .param("busca","Adri").param("indicador","icv").param("page","1"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.page").value(1));
+        verify(repository).history("Adri","icv",1,20);
+        verifyNoMoreInteractions(repository);
+    }
+
+    @Test void savesOnlyTheRequestedIndicator() throws Exception {
+        var repository=mock(EnvironmentalIndicatorRepository.class);
+        when(repository.calculateAndSave(928,"ifc","{\"focos\":[43]}"))
+            .thenReturn("{\"IFC\":{\"quantidade\":273},\"calculoId\":7}");
+        var mvc=MockMvcBuilders.standaloneSetup(new EnvironmentalIndicatorController(new EnvironmentalIndicatorService(repository))).build();
+        mvc.perform(post("/imoveis/928/indicadores/ifc/calcular").contentType("application/json").content("{\"focos\":[43]}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.calculoId").value(7));
+        verify(repository).calculateAndSave(928,"ifc","{\"focos\":[43]}");
+        verify(repository,never()).calculate(anyLong(),anyString());
+    }
+
     @Test void queriesRealLayersAndRejectsUnboundedPages() throws Exception {
         var repository = mock(EnvironmentalIndicatorRepository.class);
         when(repository.layers("Mun",0,20)).thenReturn(new EnvironmentalIndicatorRepository.Page<>(java.util.List.of(),0,0,20));

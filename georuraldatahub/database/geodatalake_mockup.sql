@@ -1,4 +1,4 @@
--- GEORURAL DATAHUB - Mockup de Interface:
+-- Cadastros iniciais do GeoRural DataHub.
 
 -- 1. USUARIOS
 
