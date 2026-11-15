@@ -1,0 +1,57 @@
+package catdevs.georuraldatahub.service;
+
+import java.sql.SQLException;
+
+import org.springframework.dao.DataAccessException;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import catdevs.georuraldatahub.repository.EnvironmentalIndicatorRepository;
+
+@Service
+public class EnvironmentalIndicatorService {
+    private final EnvironmentalIndicatorRepository repository;
+    private final ObjectMapper mapper = new ObjectMapper();
+
+    public EnvironmentalIndicatorService(EnvironmentalIndicatorRepository repository) { this.repository = repository; }
+
+    @Transactional
+    public EnvironmentalIndicatorRepository.ImportedLayer importGeoJson(long datasetId, long versionId) {
+        positive(datasetId); positive(versionId);
+        try { return repository.importGeoJson(datasetId, versionId); }
+        catch (DataAccessException e) { throw translate(e); }
+    }
+
+    @Transactional(isolation = Isolation.SERIALIZABLE)
+    public JsonNode calculate(long propertyId, JsonNode parameters) {
+        positive(propertyId);
+        if (parameters == null || !parameters.isObject()) throw new IllegalArgumentException("Informe os parametros em um objeto JSON.");
+        try {
+            return mapper.readTree(repository.calculate(propertyId, parameters.toString()));
+        } catch (DataAccessException e) { throw translate(e); }
+        catch (java.io.IOException e) { throw new IllegalStateException("Oracle retornou um resultado JSON invalido.", e); }
+    }
+
+    private static void positive(long id) {
+        if (id <= 0) throw new IllegalArgumentException("Informe um ID positivo.");
+    }
+
+    private RuntimeException translate(DataAccessException error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (cause instanceof SQLException sql) {
+                if (sql.getErrorCode() == 1403) return new ResponseStatusException(HttpStatus.NOT_FOUND, "Registro ou configuracao ambiental nao encontrado.");
+                if (sql.getErrorCode() >= 20100 && sql.getErrorCode() <= 20199) {
+                    String message = sql.getMessage().split("\n", 2)[0].replaceFirst("^ORA-\\d+:\\s*", "");
+                    return new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT, message);
+                }
+            }
+        }
+        return error;
+    }
+}
