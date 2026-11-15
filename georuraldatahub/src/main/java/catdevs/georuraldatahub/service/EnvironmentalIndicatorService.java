@@ -38,6 +38,26 @@ public class EnvironmentalIndicatorService {
         catch (java.io.IOException e) { throw new IllegalStateException("Oracle retornou um resultado JSON invalido.", e); }
     }
 
+    @Transactional(readOnly = true, isolation = Isolation.SERIALIZABLE)
+    public JsonNode calculateIcv(long propertyId, JsonNode parameters) {
+        positive(propertyId);
+        if (parameters == null || !parameters.isObject())
+            throw new IllegalArgumentException("Informe os parametros em um objeto JSON.");
+        try { return mapper.readTree(repository.calculateIcv(propertyId, parameters.toString())); }
+        catch (DataAccessException e) { throw translate(e); }
+        catch (java.io.IOException e) { throw new IllegalStateException("Oracle retornou JSON invalido.", e); }
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.SERIALIZABLE)
+    public JsonNode calculateIndicator(long propertyId, JsonNode parameters, String indicator) {
+        positive(propertyId);
+        if (parameters == null || !parameters.isObject())
+            throw new IllegalArgumentException("Informe os parametros em um objeto JSON.");
+        try { return mapper.readTree(repository.calculateIndicator(propertyId, parameters.toString(), indicator)); }
+        catch (DataAccessException e) { throw translate(e); }
+        catch (java.io.IOException e) { throw new IllegalStateException("Oracle retornou JSON invalido.", e); }
+    }
+
     private static void positive(long id) {
         if (id <= 0) throw new IllegalArgumentException("Informe um ID positivo.");
     }

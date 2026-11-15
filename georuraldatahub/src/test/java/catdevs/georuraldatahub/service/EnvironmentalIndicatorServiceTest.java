@@ -42,4 +42,15 @@ class EnvironmentalIndicatorServiceTest {
         when(repository.calculate(eq(1L), anyString())).thenReturn("invalid");
         assertThrows(IllegalStateException.class, () -> service.calculate(1, mapper.createObjectNode()));
     }
+
+    @Test void individualIndicatorsReturnOracleResultUnchanged() throws Exception {
+        var parameters = mapper.readTree("{\"camadas\":[2,3]}");
+        for (String name : new String[]{"icv", "irl", "iapp", "isap", "iae", "idesmat", "ifc"}) {
+            when(repository.calculateIndicator(1, parameters.toString(), name))
+                .thenReturn("{\"valorOracle\":12.3456789}");
+            var result = service.calculateIndicator(1, parameters, name);
+            assertEquals(12.3456789, result.path("valorOracle").asDouble());
+            verify(repository).calculateIndicator(1, parameters.toString(), name);
+        }
+    }
 }

@@ -435,6 +435,14 @@ CREATE OR REPLACE PACKAGE pkg_indicadores_ambientais AUTHID definer AS
         p_geometria mdsys.sdo_geometry
     ) RETURN NUMBER;
 
+    FUNCTION icv(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB;
+    FUNCTION irl(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB;
+    FUNCTION iapp(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB;
+    FUNCTION isap(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB;
+    FUNCTION iae(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB;
+    FUNCTION idesmat(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB;
+    FUNCTION ifc(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB;
+
     PROCEDURE calcular (
         p_imovel_id NUMBER,
         p_config    CLOB,
@@ -447,7 +455,7 @@ END;
 CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
 
     c_tol   CONSTANT NUMBER := 0.01; -- metros em SIRGAS2000 / Albers Brasil local
-    c_regra CONSTANT VARCHAR2(30) := 'GEORURAL-1.1';
+    c_regra CONSTANT VARCHAR2(30) := 'GEORURAL-1.2';
 
     FUNCTION projetar (
         p_geom mdsys.sdo_geometry
@@ -461,7 +469,11 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
         END IF;
 
         v_srid := pkg_ambiental_crs.srid_calculo();
-        v_geom := sdo_cs.transform(p_geom, v_srid);
+        IF p_geom.sdo_srid = v_srid THEN
+            v_geom := p_geom;
+        ELSE
+            v_geom := sdo_cs.transform(p_geom, v_srid);
+        END IF;
         IF nvl(
             sdo_geom.validate_geometry_with_context(v_geom, c_tol),
             'INVALID'
@@ -509,11 +521,11 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
         RETURN sdo_geom.sdo_intersection(p_a, p_b, c_tol);
     END;
 
-    PROCEDURE calcular (
+    FUNCTION resultado (
         p_imovel_id NUMBER,
-        p_config    CLOB,
-        p_resultado OUT CLOB
-    ) IS
+        p_config CLOB,
+        p_indicador VARCHAR2
+    ) RETURN CLOB IS
 
         v_cfg        json_object_t;
         v_out        json_object_t := json_object_t();
@@ -747,9 +759,9 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
         END;
 
     BEGIN
-        SAVEPOINT calculo_ambiental;
         v_cfg := json_object_t.parse(p_config);
         v_cfg.on_error(1);
+        IF p_indicador IN ('TODOS', 'IRL') THEN
         v_rl_min := v_cfg.get_number('rlMinimoPercentual');
         IF v_rl_min IS NULL
            OR v_rl_min < 0
@@ -761,10 +773,15 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
             raise_application_error(-20129, 'Informe o fundamento do percentual de RL adotado.');
         END IF;
 
-        v_inicio := data_iso(v_cfg.get_string('inicio'));
-        v_fim := data_iso(v_cfg.get_string('fim'));
-        IF v_inicio > v_fim THEN
-            raise_application_error(-20124, 'Periodo invertido.');
+        END IF;
+        IF p_indicador IN ('TODOS', 'IFC', 'IDESMAT') THEN
+            v_fim := data_iso(v_cfg.get_string('fim'));
+        END IF;
+        IF p_indicador IN ('TODOS', 'IFC') THEN
+            v_inicio := data_iso(v_cfg.get_string('inicio'));
+            IF v_inicio > v_fim THEN
+                raise_application_error(-20124, 'Periodo invertido.');
+            END IF;
         END IF;
         SELECT
             f.fei_geometria,
@@ -787,10 +804,15 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
         IF v_area <= 0 THEN
             raise_application_error(-20127, 'Imovel sem area positiva.');
         END IF;
-        v_native := unir('vegetacao');
+        IF p_indicador IN ('TODOS', 'ICV', 'IAPP') THEN
+            v_native := unir('vegetacao');
+        END IF;
+        IF p_indicador IN ('TODOS', 'ICV') THEN
         medida('ICV',
                area_plana(v_native),
                v_area);
+        END IF;
+        IF p_indicador IN ('TODOS', 'IRL') THEN
         v_rl := unir('reservaLegal');
         v_rl_area := area_plana(v_rl);
         medida('IRL', v_rl_area, v_area);
@@ -803,6 +825,8 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
                       greatest(v_rl_area - v_area * v_rl_min / 100, 0));
 
         v_out.put('IRL', v_details);
+        END IF;
+        IF p_indicador IN ('TODOS', 'IAPP') THEN
         v_app := unir('app');
         v_app_area := area_plana(v_app);
         v_conservada := area_plana(recortar(v_app, v_native));
@@ -812,12 +836,18 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
         v_details.put('passivoHa',
                       greatest(v_app_area - v_conservada, 0));
         v_out.put('IAPP', v_details);
+        END IF;
+        IF p_indicador IN ('TODOS', 'ISAP') THEN
         medida('ISAP',
                area_plana(unir('areasProtegidas')),
                v_area);
+        END IF;
+        IF p_indicador IN ('TODOS', 'IAE') THEN
         medida('IAE',
                area_plana(unir('embargos')),
                v_area);
+        END IF;
+        IF p_indicador IN ('TODOS', 'IDESMAT') THEN
         medida('IDesmat2008',
                area_plana(unir('desmatamento', DATE '2008-07-22', v_fim)),
                v_area);
@@ -830,11 +860,14 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
                area_plana(unir('desmatamento', DATE '2020-12-31', v_fim)),
                v_area);
 
+        END IF;
+        IF p_indicador IN ('TODOS', 'IFC') THEN
         v_geom := unir('focos', v_inicio, v_fim, TRUE);
         v_details := json_object_t();
         v_details.put('quantidade', v_focos);
         v_details.put('porMilHa', v_focos / v_area * 1000);
         v_out.put('IFC', v_details);
+        END IF;
         v_out.put('imovelId', p_imovel_id);
         v_out.put('areaImovelHa', v_area);
         v_out.put('regra', c_regra);
@@ -849,25 +882,67 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
         v_out.put('parametros', v_cfg);
         v_out.put('calculadoEm',
                   to_char(systimestamp AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.FF3"Z"'));
-        p_resultado := v_out.to_clob();
-        INSERT INTO calculo_ambiental (
-            fei_imovel_id,
-            calc_regra,
-            calc_parametros,
-            calc_resultado
-        ) VALUES ( p_imovel_id,
-                   c_regra,
-                   p_config,
-                   p_resultado ) RETURNING calc_id INTO v_calc;
+        RETURN v_out.to_clob();
+    END;
 
+    FUNCTION icv(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB IS
+    BEGIN
+        RETURN resultado(p_imovel_id, p_config, 'ICV');
+    END;
+
+    FUNCTION irl(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB IS
+    BEGIN
+        RETURN resultado(p_imovel_id, p_config, 'IRL');
+    END;
+
+    FUNCTION iapp(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB IS
+    BEGIN
+        RETURN resultado(p_imovel_id, p_config, 'IAPP');
+    END;
+
+    FUNCTION isap(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB IS
+    BEGIN
+        RETURN resultado(p_imovel_id, p_config, 'ISAP');
+    END;
+
+    FUNCTION iae(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB IS
+    BEGIN
+        RETURN resultado(p_imovel_id, p_config, 'IAE');
+    END;
+
+    FUNCTION idesmat(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB IS
+    BEGIN
+        RETURN resultado(p_imovel_id, p_config, 'IDESMAT');
+    END;
+
+    FUNCTION ifc(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB IS
+    BEGIN
+        RETURN resultado(p_imovel_id, p_config, 'IFC');
+    END;
+
+    PROCEDURE calcular (
+        p_imovel_id NUMBER,
+        p_config CLOB,
+        p_resultado OUT CLOB
+    ) IS
+        v_calc NUMBER;
+        v_out json_object_t;
+    BEGIN
+        SAVEPOINT calculo_ambiental;
+        p_resultado := resultado(p_imovel_id, p_config, 'TODOS');
+        INSERT INTO calculo_ambiental (
+            fei_imovel_id, calc_regra, calc_parametros, calc_resultado
+        ) VALUES (p_imovel_id, c_regra, p_config, p_resultado)
+        RETURNING calc_id INTO v_calc;
+        v_out := json_object_t.parse(p_resultado);
         v_out.put('calculoId', v_calc);
         p_resultado := v_out.to_clob();
-        -- O identificador fica na chave da tabela; o documento armazenado tem todo o restante.
     EXCEPTION
         WHEN OTHERS THEN
             ROLLBACK TO calculo_ambiental;
             RAISE;
     END;
-
 END;
 /
+SHOW ERRORS PACKAGE pkg_indicadores_ambientais
+SHOW ERRORS PACKAGE BODY pkg_indicadores_ambientais

@@ -27,6 +27,31 @@ public class EnvironmentalIndicatorRepository {
         });
     }
 
+    public String calculateIcv(long propertyId, String parameters) {
+        return calculateIndicator(propertyId, parameters, "icv");
+    }
+
+    public String calculateIndicator(long propertyId, String parameters, String indicator) {
+        String function = switch (indicator) {
+            case "icv", "irl", "iapp", "isap", "iae", "idesmat", "ifc" -> indicator;
+            default -> throw new IllegalArgumentException("Indicador desconhecido.");
+        };
+        return jdbc.execute((ConnectionCallback<String>) connection -> {
+            Clob input = connection.createClob();
+            try (var call = connection.prepareCall("{? = call pkg_indicadores_ambientais." + function + "(?,?)}")) {
+                input.setString(1, parameters);
+                call.setQueryTimeout(300);
+                call.registerOutParameter(1, Types.CLOB);
+                call.setLong(2, propertyId);
+                call.setClob(3, input);
+                call.execute();
+                Clob output = call.getClob(1);
+                try { return output.getSubString(1, Math.toIntExact(output.length())); }
+                finally { output.free(); }
+            } finally { input.free(); }
+        });
+    }
+
     public String calculate(long propertyId, String parameters) {
         return jdbc.execute((ConnectionCallback<String>) connection -> {
             Clob input = connection.createClob();
