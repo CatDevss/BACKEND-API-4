@@ -624,7 +624,16 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
             v_location VARCHAR2(500);
             v_dic      NUMBER;
             v_dic_ver  NUMBER;
+            v_composicao NUMBER;
         BEGIN
+            -- Uma camada composta deve expor todos os arquivos, nao apenas a versao tecnica.
+            SELECT count(*) INTO v_composicao FROM camada_origem WHERE cam_id=p_cam;
+            IF v_composicao>0 THEN
+                FOR origem IN (SELECT cam_origem_id FROM camada_origem WHERE cam_id=p_cam) LOOP
+                    rastrear(origem.cam_origem_id);
+                END LOOP;
+                RETURN;
+            END IF;
             SELECT
                 v.ver_status,
                 v.ver_id,

@@ -53,4 +53,19 @@ class EnvironmentalIndicatorServiceTest {
             verify(repository).calculateIndicator(1, parameters.toString(), name);
         }
     }
+
+    @Test void combinesLayersWithoutChangingSourceIds() {
+        var expected = new EnvironmentalIndicatorRepository.ImportedLayer(50, 300);
+        when(repository.combineLayers(21, "Focos", "[43,44]")).thenReturn(expected);
+        assertEquals(expected, service.combineLayers(21, "Focos", java.util.List.of(43L, 44L)));
+        verify(repository).combineLayers(21, "Focos", "[43,44]");
+    }
+
+    @Test void rejectsDuplicateOrMissingCompositionSources() {
+        assertThrows(IllegalArgumentException.class,
+            () -> service.combineLayers(21, "Focos", java.util.List.of(43L, 43L)));
+        assertThrows(IllegalArgumentException.class,
+            () -> service.combineLayers(21, "Focos", java.util.List.of(43L)));
+        verifyNoInteractions(repository);
+    }
 }

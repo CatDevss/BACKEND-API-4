@@ -19,6 +19,15 @@ public class EnvironmentalIndicatorController {
         this.service = service;
     }
 
+    public record CombinedLayerRequest(String nome, java.util.List<Long> camadas) {}
+
+    @PostMapping("/conjuntos/{datasetId}/camadas/combinar")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ImportedLayer combineLayers(@PathVariable long datasetId,
+            @RequestBody CombinedLayerRequest request) {
+        return service.combineLayers(datasetId, request.nome(), request.camadas());
+    }
+
     @PostMapping("/conjuntos/{datasetId}/versoes/{versionId}/camada-oracle")
     @ResponseStatus(HttpStatus.CREATED)
     public ImportedLayer importGeoJson(@PathVariable long datasetId, @PathVariable long versionId) {

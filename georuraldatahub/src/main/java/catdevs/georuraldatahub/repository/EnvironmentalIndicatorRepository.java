@@ -31,6 +31,24 @@ public class EnvironmentalIndicatorRepository {
         });
     }
 
+    public ImportedLayer combineLayers(long datasetId, String name, String layersJson) {
+        return jdbc.execute((ConnectionCallback<ImportedLayer>) connection -> {
+            Clob input = connection.createClob();
+            try (var call = connection.prepareCall(
+                    "{call pkg_carga_ambiental.combinar_camadas(?,?,?,?,?)}")) {
+                input.setString(1, layersJson);
+                call.setQueryTimeout(300);
+                call.setLong(1, datasetId);
+                call.setString(2, name);
+                call.setClob(3, input);
+                call.registerOutParameter(4, Types.NUMERIC);
+                call.registerOutParameter(5, Types.NUMERIC);
+                call.execute();
+                return new ImportedLayer(call.getLong(4), call.getInt(5));
+            } finally { input.free(); }
+        });
+    }
+
     public String calculateIcv(long propertyId, String parameters) {
         return calculateIndicator(propertyId, parameters, "icv");
     }

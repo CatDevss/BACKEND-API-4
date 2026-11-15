@@ -24,6 +24,21 @@ public class EnvironmentalIndicatorService {
     }
 
     @Transactional
+    public EnvironmentalIndicatorRepository.ImportedLayer combineLayers(
+            long datasetId, String name, java.util.List<Long> layers) {
+        positive(datasetId);
+        if (name == null || name.isBlank() || name.length() > 200
+                || layers == null || layers.size() < 2 || layers.size() > 100
+                || layers.stream().anyMatch(id -> id == null || id <= 0)
+                || new java.util.HashSet<>(layers).size() != layers.size()) {
+            throw new IllegalArgumentException("Informe nome e de 2 a 100 IDs de camadas distintos.");
+        }
+        try {
+            return repository.combineLayers(datasetId, name, mapper.valueToTree(layers).toString());
+        } catch (DataAccessException e) { throw translate(e); }
+    }
+
+    @Transactional
     public EnvironmentalIndicatorRepository.ImportedLayer importGeoJson(long datasetId, long versionId) {
         positive(datasetId);
         positive(versionId);
