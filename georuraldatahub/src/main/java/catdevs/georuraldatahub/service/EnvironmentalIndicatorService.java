@@ -19,23 +19,33 @@ public class EnvironmentalIndicatorService {
     private final EnvironmentalIndicatorRepository repository;
     private final ObjectMapper mapper = new ObjectMapper();
 
-    public EnvironmentalIndicatorService(EnvironmentalIndicatorRepository repository) { this.repository = repository; }
+    public EnvironmentalIndicatorService(EnvironmentalIndicatorRepository repository) {
+        this.repository = repository;
+    }
 
     @Transactional
     public EnvironmentalIndicatorRepository.ImportedLayer importGeoJson(long datasetId, long versionId) {
-        positive(datasetId); positive(versionId);
-        try { return repository.importGeoJson(datasetId, versionId); }
-        catch (DataAccessException e) { throw translate(e); }
+        positive(datasetId);
+        positive(versionId);
+        try {
+            return repository.importGeoJson(datasetId, versionId);
+        } catch (DataAccessException e) {
+            throw translate(e);
+        }
     }
 
     @Transactional(isolation = Isolation.SERIALIZABLE)
     public JsonNode calculate(long propertyId, JsonNode parameters) {
         positive(propertyId);
-        if (parameters == null || !parameters.isObject()) throw new IllegalArgumentException("Informe os parametros em um objeto JSON.");
+        if (parameters == null || !parameters.isObject())
+            throw new IllegalArgumentException("Informe os parametros em um objeto JSON.");
         try {
             return mapper.readTree(repository.calculate(propertyId, parameters.toString()));
-        } catch (DataAccessException e) { throw translate(e); }
-        catch (java.io.IOException e) { throw new IllegalStateException("Oracle retornou um resultado JSON invalido.", e); }
+        } catch (DataAccessException e) {
+            throw translate(e);
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("Oracle retornou um resultado JSON invalido.", e);
+        }
     }
 
     @Transactional(readOnly = true, isolation = Isolation.SERIALIZABLE)
@@ -43,9 +53,43 @@ public class EnvironmentalIndicatorService {
         positive(propertyId);
         if (parameters == null || !parameters.isObject())
             throw new IllegalArgumentException("Informe os parametros em um objeto JSON.");
-        try { return mapper.readTree(repository.calculateIcv(propertyId, parameters.toString())); }
-        catch (DataAccessException e) { throw translate(e); }
-        catch (java.io.IOException e) { throw new IllegalStateException("Oracle retornou JSON invalido.", e); }
+        try {
+            return mapper.readTree(repository.calculateIcv(propertyId, parameters.toString()));
+        } catch (DataAccessException e) {
+            throw translate(e);
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("Oracle retornou JSON invalido.", e);
+        }
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.SERIALIZABLE)
+    public JsonNode calculateIrl(long propertyId, JsonNode parameters) {
+        return calculateIndicator(propertyId, parameters, "irl");
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.SERIALIZABLE)
+    public JsonNode calculateIapp(long propertyId, JsonNode parameters) {
+        return calculateIndicator(propertyId, parameters, "iapp");
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.SERIALIZABLE)
+    public JsonNode calculateIsap(long propertyId, JsonNode parameters) {
+        return calculateIndicator(propertyId, parameters, "isap");
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.SERIALIZABLE)
+    public JsonNode calculateIae(long propertyId, JsonNode parameters) {
+        return calculateIndicator(propertyId, parameters, "iae");
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.SERIALIZABLE)
+    public JsonNode calculateIdesmat(long propertyId, JsonNode parameters) {
+        return calculateIndicator(propertyId, parameters, "idesmat");
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.SERIALIZABLE)
+    public JsonNode calculateIfc(long propertyId, JsonNode parameters) {
+        return calculateIndicator(propertyId, parameters, "ifc");
     }
 
     @Transactional(readOnly = true, isolation = Isolation.SERIALIZABLE)
@@ -53,19 +97,26 @@ public class EnvironmentalIndicatorService {
         positive(propertyId);
         if (parameters == null || !parameters.isObject())
             throw new IllegalArgumentException("Informe os parametros em um objeto JSON.");
-        try { return mapper.readTree(repository.calculateIndicator(propertyId, parameters.toString(), indicator)); }
-        catch (DataAccessException e) { throw translate(e); }
-        catch (java.io.IOException e) { throw new IllegalStateException("Oracle retornou JSON invalido.", e); }
+        try {
+            return mapper.readTree(repository.calculateIndicator(propertyId, parameters.toString(), indicator));
+        } catch (DataAccessException e) {
+            throw translate(e);
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("Oracle retornou JSON invalido.", e);
+        }
     }
 
     private static void positive(long id) {
-        if (id <= 0) throw new IllegalArgumentException("Informe um ID positivo.");
+        if (id <= 0)
+            throw new IllegalArgumentException("Informe um ID positivo.");
     }
 
     private RuntimeException translate(DataAccessException error) {
         for (Throwable cause = error; cause != null; cause = cause.getCause()) {
             if (cause instanceof SQLException sql) {
-                if (sql.getErrorCode() == 1403) return new ResponseStatusException(HttpStatus.NOT_FOUND, "Registro ou configuracao ambiental nao encontrado.");
+                if (sql.getErrorCode() == 1403)
+                    return new ResponseStatusException(HttpStatus.NOT_FOUND,
+                            "Registro ou configuracao ambiental nao encontrado.");
                 if (sql.getErrorCode() >= 20100 && sql.getErrorCode() <= 20199) {
                     String message = sql.getMessage().split("\n", 2)[0].replaceFirst("^ORA-\\d+:\\s*", "");
                     return new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT, message);

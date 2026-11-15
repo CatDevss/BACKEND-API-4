@@ -202,13 +202,18 @@ END;
 /
 
 -- Auxiliar de referencia espacial.
+-- Declara o cadastro e a consulta da projecao de calculo.
 CREATE OR REPLACE PACKAGE pkg_ambiental_crs AUTHID definer AS
+    -- Confere o cadastro da projecao local e retorna o SRID usado nos calculos.
     FUNCTION srid_calculo RETURN NUMBER;
 
 END;
 /
 
+-- Implementa o cadastro e a consulta da projecao de calculo.
 CREATE OR REPLACE PACKAGE BODY pkg_ambiental_crs AS
+
+    -- Confere o cadastro da projecao local e retorna o SRID usado nos calculos.
 
     FUNCTION srid_calculo RETURN NUMBER IS
         v_n NUMBER;
@@ -292,6 +297,8 @@ DECLARE
     v_falhas   PLS_INTEGER := 0;
     v_ord      mdsys.sdo_ordinate_array := mdsys.sdo_ordinate_array();
 
+    -- Extrai as coordenadas de um ponto para validar a projecao.
+
     PROCEDURE xy (
         p_g mdsys.sdo_geometry,
         p_x OUT NUMBER,
@@ -316,6 +323,8 @@ DECLARE
 
     END;
 
+    -- Compara o valor calculado com a referencia e rejeita divergencias.
+
     PROCEDURE conferir (
         p_nome VARCHAR2,
         p_real NUMBER,
@@ -336,6 +345,8 @@ DECLARE
         END IF;
 
     END;
+
+    -- Valida a transformacao de entrada de um ponto de referencia.
 
     PROCEDURE ponto (
         p_lon NUMBER,
@@ -381,6 +392,8 @@ DECLARE
         conferir('Rota WGS84 X', v_x, v_cx, 0.01);
         conferir('Rota WGS84 Y', v_y, v_cy, 0.01);
     END;
+
+    -- Acrescenta um vertice ao poligono usado na validacao de area.
 
     PROCEDURE vertice (
         p_lon NUMBER,
@@ -430,18 +443,30 @@ END;
 
 --Historico imutavel e calculos ambientais.
 
+-- Declara os calculos ambientais executados com Oracle Spatial.
 CREATE OR REPLACE PACKAGE pkg_indicadores_ambientais AUTHID definer AS
+    -- Projeta a geometria e retorna sua area em hectares (m2 / 10000).
     FUNCTION area_ha (
         p_geometria mdsys.sdo_geometry
     ) RETURN NUMBER;
 
+    -- ICV: area da vegetacao nativa no imovel / area do imovel * 100; retorna tambem hectares.
+
     FUNCTION icv(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB;
+    -- IRL: area de RL no imovel / area do imovel * 100. Deficit = max(areaImovel * minimo/100 - areaRL, 0); excedente = max(areaRL - areaImovel * minimo/100, 0).
     FUNCTION irl(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB;
+    -- IAPP: area(APP intersectada com vegetacao no imovel) / area(APP no imovel) * 100; passivoHa = areaAPP - areaConservada.
     FUNCTION iapp(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB;
+    -- ISAP: area da uniao das areas protegidas intersectada com o imovel / area do imovel * 100; retorna hectares.
     FUNCTION isap(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB;
+    -- IAE: area da uniao dos embargos intersectada com o imovel / area do imovel * 100; retorna hectares.
     FUNCTION iae(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB;
+    -- IDesmat: area de supressao no imovel / area do imovel * 100, e hectares; janelas desde 22/07/2008, 31/07/2019 e 31/12/2020 ate fim (inclusivos).
     FUNCTION idesmat(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB;
+    -- IFC: quantidade de id_evento unicos no imovel entre inicio e fim / area do imovel em ha * 1000; inclui pontos na borda.
     FUNCTION ifc(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB;
+
+    -- Calcula os sete indicadores, grava o historico e retorna JSON; a transacao e confirmada pelo chamador.
 
     PROCEDURE calcular (
         p_imovel_id NUMBER,
@@ -452,10 +477,13 @@ CREATE OR REPLACE PACKAGE pkg_indicadores_ambientais AUTHID definer AS
 END;
 /
 
+-- Implementa os calculos ambientais executados com Oracle Spatial.
 CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
 
     c_tol   CONSTANT NUMBER := 0.01; -- metros em SIRGAS2000 / Albers Brasil local
     c_regra CONSTANT VARCHAR2(30) := 'GEORURAL-1.2';
+
+    -- Transforma para Albers Brasil e valida a geometria; nao usa a inversa local.
 
     FUNCTION projetar (
         p_geom mdsys.sdo_geometry
@@ -484,6 +512,8 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
         RETURN v_geom;
     END;
 
+    -- Calcula hectares na projecao de calculo; geometrias sem area retornam zero.
+
     FUNCTION area_plana (
         p_geom mdsys.sdo_geometry
     ) RETURN NUMBER IS
@@ -502,12 +532,16 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
         RETURN sdo_geom.sdo_area(p_geom, c_tol, 'unit=SQ_METER') / 10000;
     END;
 
+    -- Projeta a geometria e retorna sua area em hectares (m2 / 10000).
+
     FUNCTION area_ha (
         p_geometria mdsys.sdo_geometry
     ) RETURN NUMBER IS
     BEGIN
         RETURN area_plana(projetar(p_geometria));
     END;
+
+    -- Retorna a intersecao espacial de duas geometrias, tratando entradas nulas.
 
     FUNCTION recortar (
         p_a mdsys.sdo_geometry,
@@ -520,6 +554,8 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
         END IF;
         RETURN sdo_geom.sdo_intersection(p_a, p_b, c_tol);
     END;
+
+    -- Executa os indicadores solicitados no Oracle e monta o JSON com fontes e parametros.
 
     FUNCTION resultado (
         p_imovel_id NUMBER,
@@ -555,6 +591,8 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
         v_eventos    eventos_t;
         v_evento     VARCHAR2(4000);
 
+        -- Converte uma data obrigatoria no formato YYYY-MM-DD.
+
         FUNCTION data_iso (
             p_text VARCHAR2
         ) RETURN DATE IS
@@ -574,6 +612,8 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
 
             RETURN v_date;
         END;
+
+        -- Registra a camada, versao e arquivo de origem e confere seu status.
 
         PROCEDURE rastrear (
             p_cam NUMBER
@@ -626,6 +666,8 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
             v_obj.put('dicionarioVersao', v_dic_ver);
             v_trace.append(v_obj);
         END;
+
+        -- Percorre todas as camadas/arquivos do papel, recorta no imovel e dissolve sobreposicoes; deduplica focos por id_evento.
 
         FUNCTION unir (
             p_papel  VARCHAR2,
@@ -741,6 +783,8 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
             RETURN v_union;
         END;
 
+        -- Acrescenta areaHa e percentual = areaHa / denominadorHa * 100; denominador zero gera percentual nulo.
+
         PROCEDURE medida (
             p_nome        VARCHAR2,
             p_ha          NUMBER,
@@ -807,11 +851,13 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
         IF p_indicador IN ('TODOS', 'ICV', 'IAPP') THEN
             v_native := unir('vegetacao');
         END IF;
+        -- ICV: area da vegetacao nativa no imovel / area do imovel * 100; retorna tambem hectares.
         IF p_indicador IN ('TODOS', 'ICV') THEN
         medida('ICV',
                area_plana(v_native),
                v_area);
         END IF;
+        -- IRL: area de RL no imovel / area do imovel * 100. Deficit = max(areaImovel * minimo/100 - areaRL, 0); excedente = max(areaRL - areaImovel * minimo/100, 0).
         IF p_indicador IN ('TODOS', 'IRL') THEN
         v_rl := unir('reservaLegal');
         v_rl_area := area_plana(v_rl);
@@ -826,6 +872,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
 
         v_out.put('IRL', v_details);
         END IF;
+        -- IAPP: area(APP intersectada com vegetacao no imovel) / area(APP no imovel) * 100; passivoHa = areaAPP - areaConservada.
         IF p_indicador IN ('TODOS', 'IAPP') THEN
         v_app := unir('app');
         v_app_area := area_plana(v_app);
@@ -837,16 +884,19 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
                       greatest(v_app_area - v_conservada, 0));
         v_out.put('IAPP', v_details);
         END IF;
+        -- ISAP: area da uniao das areas protegidas intersectada com o imovel / area do imovel * 100; retorna hectares.
         IF p_indicador IN ('TODOS', 'ISAP') THEN
         medida('ISAP',
                area_plana(unir('areasProtegidas')),
                v_area);
         END IF;
+        -- IAE: area da uniao dos embargos intersectada com o imovel / area do imovel * 100; retorna hectares.
         IF p_indicador IN ('TODOS', 'IAE') THEN
         medida('IAE',
                area_plana(unir('embargos')),
                v_area);
         END IF;
+        -- IDesmat: area de supressao no imovel / area do imovel * 100, e hectares; janelas desde 22/07/2008, 31/07/2019 e 31/12/2020 ate fim (inclusivos).
         IF p_indicador IN ('TODOS', 'IDESMAT') THEN
         medida('IDesmat2008',
                area_plana(unir('desmatamento', DATE '2008-07-22', v_fim)),
@@ -861,6 +911,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
                v_area);
 
         END IF;
+        -- IFC: quantidade de id_evento unicos no imovel entre inicio e fim / area do imovel em ha * 1000; inclui pontos na borda.
         IF p_indicador IN ('TODOS', 'IFC') THEN
         v_geom := unir('focos', v_inicio, v_fim, TRUE);
         v_details := json_object_t();
@@ -885,40 +936,56 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
         RETURN v_out.to_clob();
     END;
 
+    -- ICV: area da vegetacao nativa no imovel / area do imovel * 100; retorna tambem hectares.
+
     FUNCTION icv(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB IS
     BEGIN
         RETURN resultado(p_imovel_id, p_config, 'ICV');
     END;
+
+    -- IRL: area de RL no imovel / area do imovel * 100. Deficit = max(areaImovel * minimo/100 - areaRL, 0); excedente = max(areaRL - areaImovel * minimo/100, 0).
 
     FUNCTION irl(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB IS
     BEGIN
         RETURN resultado(p_imovel_id, p_config, 'IRL');
     END;
 
+    -- IAPP: area(APP intersectada com vegetacao no imovel) / area(APP no imovel) * 100; passivoHa = areaAPP - areaConservada.
+
     FUNCTION iapp(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB IS
     BEGIN
         RETURN resultado(p_imovel_id, p_config, 'IAPP');
     END;
+
+    -- ISAP: area da uniao das areas protegidas intersectada com o imovel / area do imovel * 100; retorna hectares.
 
     FUNCTION isap(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB IS
     BEGIN
         RETURN resultado(p_imovel_id, p_config, 'ISAP');
     END;
 
+    -- IAE: area da uniao dos embargos intersectada com o imovel / area do imovel * 100; retorna hectares.
+
     FUNCTION iae(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB IS
     BEGIN
         RETURN resultado(p_imovel_id, p_config, 'IAE');
     END;
+
+    -- IDesmat: area de supressao no imovel / area do imovel * 100, e hectares; janelas desde 22/07/2008, 31/07/2019 e 31/12/2020 ate fim (inclusivos).
 
     FUNCTION idesmat(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB IS
     BEGIN
         RETURN resultado(p_imovel_id, p_config, 'IDESMAT');
     END;
 
+    -- IFC: quantidade de id_evento unicos no imovel entre inicio e fim / area do imovel em ha * 1000; inclui pontos na borda.
+
     FUNCTION ifc(p_imovel_id NUMBER, p_config CLOB) RETURN CLOB IS
     BEGIN
         RETURN resultado(p_imovel_id, p_config, 'IFC');
     END;
+
+    -- Calcula os sete indicadores, grava o historico e retorna JSON; a transacao e confirmada pelo chamador.
 
     PROCEDURE calcular (
         p_imovel_id NUMBER,
