@@ -23,15 +23,69 @@ public class EnvironmentalIndicatorService {
         this.repository = repository;
     }
 
-    @Transactional(readOnly=true)
-    public EnvironmentalIndicatorRepository.Page<EnvironmentalIndicatorRepository.LayerOption> layers(String search,int page,int size) {
-        return repository.layers(search,page,size);
+    @org.springframework.beans.factory.annotation.Value("${environmental.composition-enabled:false}")
+    private boolean compositionEnabled;
+
+    public boolean compositionEnabled() {
+        return compositionEnabled;
     }
 
-    @Transactional(readOnly=true)
-    public EnvironmentalIndicatorRepository.Page<EnvironmentalIndicatorRepository.FeatureOption> features(long layer,String search,String field,int page,int size) {
+    @Transactional(readOnly = true)
+    public EnvironmentalIndicatorRepository.Page<EnvironmentalIndicatorRepository.LayerOption> layers(String search,
+            int page, int size, Long dataset, String type, String source, boolean polygon) {
+        if (dataset != null)
+            positive(dataset);
+        return repository.layers(search, page, size, dataset, type, source, polygon);
+    }
+
+    @Transactional(readOnly = true)
+    public Object layer(long id) {
+        positive(id);
+        try {
+            return java.util.Map.of("layer", repository.layer(id), "origins", repository.origins(id));
+        } catch (org.springframework.dao.EmptyResultDataAccessException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Camada nao encontrada.");
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public Object versions(long dataset, String search, int page, int size) {
+        positive(dataset);
+        return repository.versions(dataset, search, page, size);
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.SERIALIZABLE)
+    public JsonNode map(long feature, String indicator, JsonNode parameters) {
+        positive(feature);
+        if (!java.util.Set.of("icv", "irl", "iapp", "isap", "iae", "idesmat", "ifc").contains(indicator)
+                || parameters == null || !parameters.isObject())
+            throw new IllegalArgumentException("Indicador ou parametros invalidos.");
+        try {
+            return mapper.readTree(repository.map(feature, indicator, parameters.toString()));
+        } catch (DataAccessException e) {
+            for (Throwable cause = e; cause != null; cause = cause.getCause())
+                if (cause instanceof SQLException sql &&
+                        (sql.getErrorCode() == 6550 || sql.getErrorCode() == 4043 || sql.getErrorCode() == 4063
+                                || sql.getErrorCode() == 6508))
+                    throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                            "Visualizacao espacial ainda nao instalada ou invalida no Oracle. Confira o script opcional de mapa.");
+            throw translate(e);
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("Oracle retornou mapa invalido.", e);
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public EnvironmentalIndicatorRepository.Page<EnvironmentalIndicatorRepository.LayerOption> layers(String search,
+            int page, int size) {
+        return repository.layers(search, page, size);
+    }
+
+    @Transactional(readOnly = true)
+    public EnvironmentalIndicatorRepository.Page<EnvironmentalIndicatorRepository.FeatureOption> features(long layer,
+            String search, String field, int page, int size) {
         positive(layer);
-        return repository.features(layer,search,field,page,size);
+        return repository.features(layer, search, field, page, size);
     }
 
     @Transactional
@@ -46,7 +100,9 @@ public class EnvironmentalIndicatorService {
         }
         try {
             return repository.combineLayers(datasetId, name, mapper.valueToTree(layers).toString());
-        } catch (DataAccessException e) { throw translate(e); }
+        } catch (DataAccessException e) {
+            throw translate(e);
+        }
     }
 
     @Transactional
@@ -134,14 +190,17 @@ public class EnvironmentalIndicatorService {
 
     private JsonNode withSources(String json) throws java.io.IOException {
         JsonNode result = mapper.readTree(json);
-        var cache = new java.util.HashMap<Long,java.util.Map<String,Object>>();
-        if (result.path("fontes").isArray()) for (JsonNode source : result.path("fontes")) {
-            if (source instanceof com.fasterxml.jackson.databind.node.ObjectNode obj && source.path("camadaId").canConvertToLong()) {
-                var metadata = cache.computeIfAbsent(source.path("camadaId").asLong(),repository::sourceMetadata);
-                for (var entry : metadata.entrySet()) if (entry.getValue()!=null)
-                    obj.put(entry.getKey().toLowerCase(java.util.Locale.ROOT),entry.getValue().toString());
+        var cache = new java.util.HashMap<Long, java.util.Map<String, Object>>();
+        if (result.path("fontes").isArray())
+            for (JsonNode source : result.path("fontes")) {
+                if (source instanceof com.fasterxml.jackson.databind.node.ObjectNode obj
+                        && source.path("camadaId").canConvertToLong()) {
+                    var metadata = cache.computeIfAbsent(source.path("camadaId").asLong(), repository::sourceMetadata);
+                    for (var entry : metadata.entrySet())
+                        if (entry.getValue() != null)
+                            obj.put(entry.getKey().toLowerCase(java.util.Locale.ROOT), entry.getValue().toString());
+                }
             }
-        }
         return result;
     }
 

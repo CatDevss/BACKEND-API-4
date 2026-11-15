@@ -21,26 +21,55 @@ public class EnvironmentalIndicatorController {
     }
 
     @GetMapping("/ambiental/camadas")
-    public Object layers(@RequestParam(defaultValue="") String busca,
-            @RequestParam(defaultValue="0") int page, @RequestParam(defaultValue="20") int size) {
-        checkPage(page,size);
-        return service.layers(busca,page,size);
+    public Object layers(@RequestParam(defaultValue = "") String busca,
+            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) Long conjunto, @RequestParam(defaultValue = "") String tipo,
+            @RequestParam(defaultValue = "") String fonte, @RequestParam(defaultValue = "false") boolean poligonal) {
+        checkPage(page, size);
+        if (conjunto == null && tipo.isBlank() && fonte.isBlank() && !poligonal)
+            return service.layers(busca, page, size);
+        return service.layers(busca, page, size, conjunto, tipo, fonte, poligonal);
     }
 
     @GetMapping("/ambiental/camadas/{layerId}/feicoes")
-    public Object features(@PathVariable long layerId, @RequestParam(defaultValue="") String busca,
-            @RequestParam(required=false) String campo, @RequestParam(defaultValue="0") int page,
-            @RequestParam(defaultValue="20") int size) {
-        checkPage(page,size);
-        return service.features(layerId,busca,campo,page,size);
+    public Object features(@PathVariable long layerId, @RequestParam(defaultValue = "") String busca,
+            @RequestParam(required = false) String campo, @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        checkPage(page, size);
+        return service.features(layerId, busca, campo, page, size);
     }
 
-    private void checkPage(int page,int size) {
-        if (page<0 || page>100000 || size<1 || size>100)
-            throw new org.springframework.web.server.ResponseStatusException(HttpStatus.BAD_REQUEST,"Paginacao invalida.");
+    @GetMapping("/ambiental/recursos")
+    public Object capabilities() {
+        return Map.of("compositionEnabled", service.compositionEnabled());
     }
 
-    public record CombinedLayerRequest(String nome, java.util.List<Long> camadas) {}
+    @GetMapping("/ambiental/camadas/{id}")
+    public Object layer(@PathVariable long id) {
+        return service.layer(id);
+    }
+
+    @GetMapping("/conjuntos/{id}/versoes-importaveis")
+    public Object versions(@PathVariable long id, @RequestParam(defaultValue = "") String busca,
+            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
+        checkPage(page, size);
+        return service.versions(id, busca, page, size);
+    }
+
+    @PostMapping(value = "/imoveis/{featureId}/indicadores/{indicator}/mapa", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    public String map(@PathVariable long featureId, @PathVariable String indicator,
+            @RequestBody Map<String, Object> parameters) {
+        return service.map(featureId, indicator, mapper.valueToTree(parameters)).toString();
+    }
+
+    private void checkPage(int page, int size) {
+        if (page < 0 || page > 100000 || size < 1 || size > 100)
+            throw new org.springframework.web.server.ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Paginacao invalida.");
+    }
+
+    public record CombinedLayerRequest(String nome, java.util.List<Long> camadas) {
+    }
 
     @PostMapping("/conjuntos/{datasetId}/camadas/combinar")
     @ResponseStatus(HttpStatus.CREATED)
