@@ -1,7 +1,7 @@
 package catdevs.georuraldatahub.service;
 
-import java.util.List;
-
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,43 +20,63 @@ import catdevs.georuraldatahub.repository.LayerRepository;
 @Service
 public class IndicatorResultService {
 
+    private static final int MAX_PAGE_SIZE = 100;
+
     private final IndicatorResultRepository resultRepository;
     private final DatasetRepository datasetRepository;
     private final LayerRepository layerRepository;
     private final ObjectMapper objectMapper;
+    private final IndicatorDatasetAccessService accessService;
 
-    public IndicatorResultService(IndicatorResultRepository resultRepository,
-            DatasetRepository datasetRepository, LayerRepository layerRepository,
-            ObjectMapper objectMapper) {
+    public IndicatorResultService(
+            IndicatorResultRepository resultRepository,
+            DatasetRepository datasetRepository,
+            LayerRepository layerRepository,
+            ObjectMapper objectMapper,
+            IndicatorDatasetAccessService accessService) {
         this.resultRepository = resultRepository;
         this.datasetRepository = datasetRepository;
         this.layerRepository = layerRepository;
         this.objectMapper = objectMapper;
+        this.accessService = accessService;
     }
 
     @Transactional
     public IndicatorResultResponseDTO save(IndicatorResultCreateDTO request) {
         var dataset = datasetRepository.findById(request.datasetId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conjunto não encontrado"));
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Conjunto não encontrado"));
+
+        accessService.requireOwner(dataset);
 
         var result = new IndicatorResult();
         result.setIndicatorCode(request.indicatorCode().trim());
         result.setDataset(dataset);
         result.setPropertyReference(blankToNull(request.propertyReference()));
         result.setUnit(blankToNull(request.unit()));
+
         try {
-            result.setResultData(objectMapper.writeValueAsString(request.resultData()));
-        } catch (JsonProcessingException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Resultado do indicador não é um JSON válido", e);
+            result.setResultData(
+                    objectMapper.writeValueAsString(request.resultData()));
+        } catch (JsonProcessingException exception) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Resultado do indicador não é um JSON válido",
+                    exception);
         }
 
         if (request.layerId() != null) {
             var layer = layerRepository.findById(request.layerId())
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Camada não encontrada"));
-            if (!layer.getDataset().getId().equals(dataset.getId())) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    .orElseThrow(() -> new ResponseStatusException(
+                            HttpStatus.NOT_FOUND, "Camada não encontrada"));
+
+            if (layer.getDataset() == null
+                    || !layer.getDataset().getId().equals(dataset.getId())) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
                         "A camada informada não pertence ao conjunto indicado");
             }
+
             result.setLayer(layer);
         }
 
@@ -65,41 +85,72 @@ public class IndicatorResultService {
 
     @Transactional(readOnly = true)
     public IndicatorResultResponseDTO findById(Long id) {
-        return toResponse(resultRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Resultado não encontrado")));
+        IndicatorResult result = resultRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Resultado não encontrado"));
+
+        accessService.requireOwner(result.getDataset());
+
+        return toResponse(result);
     }
 
     @Transactional(readOnly = true)
-    public List<IndicatorResultResponseDTO> findByDataset(Long datasetId, String indicatorCode,
-            String propertyReference) {
-        if (!datasetRepository.existsById(datasetId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Conjunto não encontrado");
+    public Page<IndicatorResultResponseDTO> findByDataset(
+            Long datasetId,
+            String indicatorCode,
+            String propertyReference,
+            int page,
+            int size) {
+
+        if (page < 0) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "O número da página não pode ser negativo.");
         }
-        List<IndicatorResult> results;
-        if (indicatorCode != null && !indicatorCode.isBlank()) {
-            results = resultRepository.findByDataset_IdAndIndicatorCodeIgnoreCaseOrderByCalculatedAtDesc(
-                    datasetId, indicatorCode.trim());
-        } else if (propertyReference != null && !propertyReference.isBlank()) {
-            results = resultRepository.findByDataset_IdAndPropertyReferenceOrderByCalculatedAtDesc(
-                    datasetId, propertyReference.trim());
-        } else {
-            results = resultRepository.findByDataset_IdOrderByCalculatedAtDesc(datasetId);
+
+        if (size < 1 || size > MAX_PAGE_SIZE) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "O tamanho da página deve estar entre 1 e " + MAX_PAGE_SIZE + ".");
         }
-        return results.stream().map(this::toResponse).toList();
+
+        accessService.requireDatasetAccess(datasetId);
+
+        String normalizedCode = blankToNull(indicatorCode);
+        String normalizedReference = blankToNull(propertyReference);
+
+        PageRequest pageable = PageRequest.of(page, size);
+
+        return resultRepository.searchByDataset(
+                datasetId,
+                normalizedCode,
+                normalizedReference,
+                pageable
+        ).map(this::toResponse);
     }
 
     private IndicatorResultResponseDTO toResponse(IndicatorResult result) {
         try {
-            return new IndicatorResultResponseDTO(result.getId(), result.getIndicatorCode(),
-                    result.getDataset().getId(), result.getLayer() == null ? null : result.getLayer().getId(),
-                    result.getPropertyReference(), result.getUnit(),
-                    objectMapper.readTree(result.getResultData()), result.getCalculatedAt());
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Resultado persistido contém JSON inválido", e);
+            return new IndicatorResultResponseDTO(
+                    result.getId(),
+                    result.getIndicatorCode(),
+                    result.getDataset().getId(),
+                    result.getLayer() == null ? null : result.getLayer().getId(),
+                    result.getPropertyReference(),
+                    result.getUnit(),
+                    objectMapper.readTree(result.getResultData()),
+                    result.getCalculatedAt()
+            );
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException(
+                    "Resultado persistido contém JSON inválido",
+                    exception);
         }
     }
 
     private String blankToNull(String value) {
-        return value == null || value.isBlank() ? null : value.trim();
+        return value == null || value.isBlank()
+                ? null
+                : value.trim();
     }
 }
