@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import catdevs.georuraldatahub.dto.IndicatorCalculationRequestDTO;
@@ -40,7 +41,9 @@ public class EnvironmentalIndicatorController {
 
     @GetMapping("/feicoes/{featureId}/execucoes")
     public ResponseEntity<List<IndicatorCalculationResponseDTO>> findByFeature(
-            @PathVariable Long featureId) {
-        return ResponseEntity.ok(service.findByFeatureId(featureId));
+            @PathVariable Long featureId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ResponseEntity.ok(service.findByFeatureId(featureId, page, size));
     }
 }
