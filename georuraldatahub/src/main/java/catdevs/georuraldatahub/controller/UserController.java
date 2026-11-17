@@ -10,9 +10,9 @@ import org.springframework.web.bind.annotation.RestController;
 import catdevs.georuraldatahub.dto.UserResponseDTO;
 import catdevs.georuraldatahub.service.UserService;
 
-@RestController 
-@CrossOrigin 
-@RequestMapping ("/usuarios")
+@RestController
+@CrossOrigin
+@RequestMapping("/usuarios")
 public class UserController {
 
     private final UserService userService;
@@ -21,7 +21,7 @@ public class UserController {
         this.userService = userService;
     }
 
-    @GetMapping 
+    @GetMapping
     public List<UserResponseDTO> getAllUsers() {
         return userService.getAllUsers();
     }

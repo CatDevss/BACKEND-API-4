@@ -13,6 +13,8 @@ public record TreatmentRequest(@Positive Long datasetId, @NotNull @Positive Long
         attributes = attributes == null ? List.of() : List.copyOf(attributes);
         dissolveBy = dissolveBy == null ? List.of() : List.copyOf(dissolveBy);
     }
+
     public record AttributeChange(@NotBlank String source, @NotBlank String target,
-            @NotNull FieldType type, String datePattern, BigDecimal factor, BigDecimal offset, String targetUnit) { }
+            @NotNull FieldType type, String datePattern, BigDecimal factor, BigDecimal offset, String targetUnit) {
+    }
 }

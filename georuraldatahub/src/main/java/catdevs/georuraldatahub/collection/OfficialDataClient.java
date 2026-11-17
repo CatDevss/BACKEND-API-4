@@ -32,41 +32,57 @@ public class OfficialDataClient {
                 .sslContext(OfficialTls.context())
                 .followRedirects(HttpClient.Redirect.NEVER).build());
     }
+
     OfficialDataClient(CollectionProperties properties, HttpClient client) {
         this.properties = properties;
         this.client = client;
     }
+
     static void checkUri(URI uri) {
         if (!"https".equals(uri.getScheme()) || !HOSTS.contains(uri.getHost()) || uri.getUserInfo() != null
                 || uri.getFragment() != null || uri.getPort() != -1 && uri.getPort() != 443)
             throw new IllegalArgumentException("Destino fora dos canais oficiais autorizados.");
     }
 
-    /** One budget per collection/request thread; concurrent collections do not share deadlines. */
+    /** Cada coleta tem seu próprio limite de tempo. */
     public CollectionBudget collectionBudget() {
         Long previous = collectionDeadline.get();
-        if (previous == null) collectionBytes.set(0L);
+        if (previous == null)
+            collectionBytes.set(0L);
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(properties.getMaxDurationSeconds());
         collectionDeadline.set(previous == null ? deadline : Math.min(previous, deadline));
         return () -> {
-            if (previous == null) { collectionDeadline.remove(); collectionBytes.remove(); }
-            else collectionDeadline.set(previous);
+            if (previous == null) {
+                collectionDeadline.remove();
+                collectionBytes.remove();
+            } else
+                collectionDeadline.set(previous);
         };
     }
+
     public void checkCollectionDeadline() {
         Long deadline = collectionDeadline.get();
-        if (deadline != null && System.nanoTime() >= deadline) throw new ResponseStatusException(HttpStatus.GATEWAY_TIMEOUT,
-                "Coleta excedeu o prazo total de " + properties.getMaxDurationSeconds() + " segundos. Tente novamente ou solicite um recorte menor.");
+        if (deadline != null && System.nanoTime() >= deadline)
+            throw new ResponseStatusException(HttpStatus.GATEWAY_TIMEOUT,
+                    "Coleta excedeu o prazo total de " + properties.getMaxDurationSeconds()
+                            + " segundos. Tente novamente ou solicite um recorte menor.");
     }
-    @FunctionalInterface
-    public interface CollectionBudget extends AutoCloseable { @Override void close(); }
 
-    /** The deadline covers headers, response body, redirects and retries, not just connecting. */
+    @FunctionalInterface
+    public interface CollectionBudget extends AutoCloseable {
+        @Override
+        void close();
+    }
+
+    /** O prazo inclui a resposta completa, redirecionamentos e novas tentativas. */
     public byte[] download(URI uri) throws IOException, InterruptedException {
         return download(uri, false);
     }
 
-    /** Listagens são usadas somente para descobrir arquivos no diretório oficial do IBGE/INPE. */
+    /**
+     * Listagens são usadas somente para descobrir arquivos no diretório oficial do
+     * IBGE/INPE.
+     */
     byte[] listing(URI uri) throws IOException, InterruptedException {
         if (!("geoftp.ibge.gov.br".equals(uri.getHost()) || "dataserver-coids.inpe.br".equals(uri.getHost())))
             throw new IllegalArgumentException("Canal sem listagem oficial autorizada.");
@@ -77,58 +93,86 @@ public class OfficialDataClient {
         checkUri(uri);
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(properties.getRequestTimeoutSeconds());
         Long collectionEnd = collectionDeadline.get();
-        if (collectionEnd != null) deadline = Math.min(deadline, collectionEnd);
+        if (collectionEnd != null)
+            deadline = Math.min(deadline, collectionEnd);
         for (int attempt = 0; attempt < 3; attempt++) {
             URI target = uri;
             for (int redirect = 0; redirect <= 3; redirect++) {
                 checkUri(target);
                 long remaining = deadline - System.nanoTime();
-                if (remaining <= 0) throw timeout(uri);
+                if (remaining <= 0)
+                    throw timeout(uri);
                 var request = HttpRequest.newBuilder(target).timeout(Duration.ofNanos(remaining))
                         .header("User-Agent", "GeoRuralDataHub/1.0 (public environmental data collection)")
                         .header("Accept", "application/json, text/csv, application/zip, */*").GET().build();
                 Long used = collectionBytes.get();
                 int maximum = (int) Math.min(properties.getMaxDownloadBytes(), used == null
-                        ? properties.getMaxDownloadBytes() : properties.getMaxTotalBytes() - used);
-                if (maximum <= 0) throw upstream("Coleta excede o limite total de downloads.");
-                CompletableFuture<HttpResponse<byte[]>> pending = client.sendAsync(request, info -> body(info, maximum));
+                        ? properties.getMaxDownloadBytes()
+                        : properties.getMaxTotalBytes() - used);
+                if (maximum <= 0)
+                    throw upstream("Coleta excede o limite total de downloads.");
+                CompletableFuture<HttpResponse<byte[]>> pending = client.sendAsync(request,
+                        info -> body(info, maximum));
                 HttpResponse<byte[]> response;
-                try { response = pending.get(remaining, TimeUnit.NANOSECONDS); }
-                catch (TimeoutException e) { pending.cancel(true); throw timeout(uri); }
-                catch (InterruptedException e) { pending.cancel(true); throw e; }
-                catch (ExecutionException e) {
-                    if (e.getCause() instanceof ResponseStatusException failure) throw failure;
-                    if (e.getCause() instanceof HttpTimeoutException) throw timeout(uri);
-                    if (e.getCause() instanceof IOException failure) throw new IOException("Falha ao ler " + target.getHost() + ": " + failure.getMessage(), failure);
-                    throw new IOException("Falha de transporte no canal oficial " + target.getHost() + ".", e.getCause());
+                try {
+                    response = pending.get(remaining, TimeUnit.NANOSECONDS);
+                } catch (TimeoutException e) {
+                    pending.cancel(true);
+                    throw timeout(uri);
+                } catch (InterruptedException e) {
+                    pending.cancel(true);
+                    throw e;
+                } catch (ExecutionException e) {
+                    if (e.getCause() instanceof ResponseStatusException failure)
+                        throw failure;
+                    if (e.getCause() instanceof HttpTimeoutException)
+                        throw timeout(uri);
+                    if (e.getCause() instanceof IOException failure)
+                        throw new IOException("Falha ao ler " + target.getHost() + ": " + failure.getMessage(),
+                                failure);
+                    throw new IOException("Falha de transporte no canal oficial " + target.getHost() + ".",
+                            e.getCause());
                 }
                 int status = response.statusCode();
                 if (status >= 300 && status < 400) {
                     String location = response.headers().firstValue("Location")
                             .orElseThrow(() -> upstream("Redirecionamento sem destino."));
-                    try { target = target.resolve(location); }
-                    catch (IllegalArgumentException e) { throw upstream("Redirecionamento inválido no canal oficial."); }
-                    if (redirect == 3) throw upstream("Excesso de redirecionamentos.");
+                    try {
+                        target = target.resolve(location);
+                    } catch (IllegalArgumentException e) {
+                        throw upstream("Redirecionamento inválido no canal oficial.");
+                    }
+                    if (redirect == 3)
+                        throw upstream("Excesso de redirecionamentos.");
                     continue;
                 }
                 if ((status == 429 || status >= 500) && attempt < 2) {
                     long pause = Math.min(TimeUnit.SECONDS.toNanos(1L << attempt), deadline - System.nanoTime());
-                    if (pause <= 0) throw timeout(uri);
+                    if (pause <= 0)
+                        throw timeout(uri);
                     TimeUnit.NANOSECONDS.sleep(pause);
                     break;
                 }
-                if (status == 404) throw new ResponseStatusException(HttpStatus.NOT_FOUND,
-                        "Produto/competência não disponível neste canal. Confira o ano/data publicado: " + uri);
-                if (status != 200) throw upstream("Fonte respondeu HTTP " + status + ": " + uri);
+                if (status == 404)
+                    throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                            "Produto/competência não disponível neste canal. Confira o ano/data publicado: " + uri);
+                if (status != 200)
+                    throw upstream("Fonte respondeu HTTP " + status + ": " + uri);
                 byte[] bytes = response.body();
-                if (bytes.length == 0) throw upstream("Fonte retornou arquivo vazio: " + uri);
-                if (bytes.length > maximum) throw upstream("Arquivo excede o limite configurado para coleta.");
-                String type = response.headers().firstValue("Content-Type").orElse("").toLowerCase(java.util.Locale.ROOT);
-                String prefix = new String(bytes, 0, Math.min(bytes.length, 512), java.nio.charset.StandardCharsets.UTF_8)
+                if (bytes.length == 0)
+                    throw upstream("Fonte retornou arquivo vazio: " + uri);
+                if (bytes.length > maximum)
+                    throw upstream("Arquivo excede o limite configurado para coleta.");
+                String type = response.headers().firstValue("Content-Type").orElse("")
+                        .toLowerCase(java.util.Locale.ROOT);
+                String prefix = new String(bytes, 0, Math.min(bytes.length, 512),
+                        java.nio.charset.StandardCharsets.UTF_8)
                         .replace("\uFEFF", "").stripLeading().toLowerCase(java.util.Locale.ROOT);
-                if (!listing && (type.contains("text/html") || prefix.startsWith("<!doctype html") || prefix.startsWith("<html")))
+                if (!listing && (type.contains("text/html") || prefix.startsWith("<!doctype html")
+                        || prefix.startsWith("<html")))
                     throw upstream("O canal retornou uma página HTML, não um arquivo de dados: " + uri);
-                if (used != null) collectionBytes.set(used + bytes.length);
+                if (used != null)
+                    collectionBytes.set(used + bytes.length);
                 return bytes;
             }
         }
@@ -136,41 +180,78 @@ public class OfficialDataClient {
     }
 
     private HttpResponse.BodySubscriber<byte[]> body(HttpResponse.ResponseInfo info, int maximum) {
-        // Error/redirect bodies are discarded instead of retained in memory.
-        if (info.statusCode() != 200) return HttpResponse.BodySubscribers.mapping(HttpResponse.BodySubscribers.discarding(), ignored -> new byte[0]);
-        if (maximum < 1) throw upstream("Limite de download inválido.");
+        // Descarta o conteúdo de erros e redirecionamentos.
+        if (info.statusCode() != 200)
+            return HttpResponse.BodySubscribers.mapping(HttpResponse.BodySubscribers.discarding(),
+                    ignored -> new byte[0]);
+        if (maximum < 1)
+            throw upstream("Limite de download inválido.");
         try {
             if (info.headers().firstValueAsLong("Content-Length").orElse(0) > maximum)
                 throw upstream("Arquivo excede o limite configurado para coleta.");
-        } catch (NumberFormatException e) { throw upstream("Canal oficial retornou tamanho de arquivo inválido."); }
+        } catch (NumberFormatException e) {
+            throw upstream("Canal oficial retornou tamanho de arquivo inválido.");
+        }
         return new LimitedBodySubscriber(maximum);
     }
 
-    /** Bounds allocation even when Content-Length is absent or incorrect. */
+    /** Limita a memória mesmo quando Content-Length está ausente ou incorreto. */
     static final class LimitedBodySubscriber implements HttpResponse.BodySubscriber<byte[]> {
         private final HttpResponse.BodySubscriber<byte[]> delegate = HttpResponse.BodySubscribers.ofByteArray();
         private final int maximum;
         private long received;
         private Flow.Subscription subscription;
         private boolean failed;
-        LimitedBodySubscriber(int maximum) { this.maximum = maximum; }
-        @Override public CompletionStage<byte[]> getBody() { return delegate.getBody(); }
-        @Override public void onSubscribe(Flow.Subscription subscription) { this.subscription = subscription; delegate.onSubscribe(subscription); }
-        @Override public void onNext(List<ByteBuffer> buffers) {
-            if (failed) return;
-            for (var buffer : buffers) received += buffer.remaining();
-            if (received > maximum) {
-                failed = true; subscription.cancel();
-                delegate.onError(upstream("Arquivo excede o limite configurado para coleta."));
-            } else delegate.onNext(buffers);
+
+        LimitedBodySubscriber(int maximum) {
+            this.maximum = maximum;
         }
-        @Override public void onError(Throwable error) { delegate.onError(error); }
-        @Override public void onComplete() { if (!failed) delegate.onComplete(); }
+
+        @Override
+        public CompletionStage<byte[]> getBody() {
+            return delegate.getBody();
+        }
+
+        @Override
+        public void onSubscribe(Flow.Subscription subscription) {
+            this.subscription = subscription;
+            delegate.onSubscribe(subscription);
+        }
+
+        @Override
+        public void onNext(List<ByteBuffer> buffers) {
+            if (failed)
+                return;
+            for (var buffer : buffers)
+                received += buffer.remaining();
+            if (received > maximum) {
+                failed = true;
+                subscription.cancel();
+                delegate.onError(upstream("Arquivo excede o limite configurado para coleta."));
+            } else
+                delegate.onNext(buffers);
+        }
+
+        @Override
+        public void onError(Throwable error) {
+            delegate.onError(error);
+        }
+
+        @Override
+        public void onComplete() {
+            if (!failed)
+                delegate.onComplete();
+        }
     }
+
     private ResponseStatusException timeout(URI uri) {
         checkCollectionDeadline();
         return new ResponseStatusException(HttpStatus.GATEWAY_TIMEOUT,
-                "O canal oficial não concluiu o download em " + properties.getRequestTimeoutSeconds() + " segundos: " + uri);
+                "O canal oficial não concluiu o download em " + properties.getRequestTimeoutSeconds() + " segundos: "
+                        + uri);
     }
-    static ResponseStatusException upstream(String message) { return new ResponseStatusException(HttpStatus.BAD_GATEWAY, message); }
+
+    static ResponseStatusException upstream(String message) {
+        return new ResponseStatusException(HttpStatus.BAD_GATEWAY, message);
+    }
 }

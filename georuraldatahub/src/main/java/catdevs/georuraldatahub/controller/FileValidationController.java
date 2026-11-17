@@ -9,7 +9,13 @@ import catdevs.georuraldatahub.validation.FileValidationReport;
 @CrossOrigin
 public class FileValidationController {
     private final FileService service;
-    public FileValidationController(FileService service) { this.service = service; }
+
+    public FileValidationController(FileService service) {
+        this.service = service;
+    }
+
     @GetMapping("/{id}/validacao")
-    public FileValidationReport report(@PathVariable Long id) throws Exception { return service.validationReport(id); }
+    public FileValidationReport report(@PathVariable Long id) throws Exception {
+        return service.validationReport(id);
+    }
 }

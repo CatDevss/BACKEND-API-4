@@ -22,10 +22,14 @@ final class GeoToolsVectorReader {
     private final ProcessingProperties limits;
     private final ObjectMapper mapper = new ObjectMapper();
 
-    GeoToolsVectorReader(ProcessingProperties limits) { this.limits = limits; }
+    GeoToolsVectorReader(ProcessingProperties limits) {
+        this.limits = limits;
+    }
 
-    GeospatialReader.Result read(Path path, String format, int override, long deadline, org.locationtech.jts.geom.Envelope bounds) throws Exception {
-        if (format.equals("json") || format.equals("geojson")) return json(path, override, deadline);
+    GeospatialReader.Result read(Path path, String format, int override, long deadline,
+            org.locationtech.jts.geom.Envelope bounds) throws Exception {
+        if (format.equals("json") || format.equals("geojson"))
+            return json(path, override, deadline);
         DataStore store;
         if (format.equals("zip")) {
             var shape = new ShapefileDataStore(path.toUri().toURL());
@@ -42,12 +46,15 @@ final class GeoToolsVectorReader {
             params.put(GeoPkgDataStoreFactory.CONTENTS_ONLY.key, true);
             store = new GeoPkgDataStoreFactory().createDataStore(params);
         }
-        if (store == null) throw GeospatialReader.invalid("Não foi possível abrir a camada.");
+        if (store == null)
+            throw GeospatialReader.invalid("Não foi possível abrir a camada.");
         try {
             String[] names = store.getTypeNames();
-            if (names.length != 1) throw GeospatialReader.invalid("Envie exatamente uma camada vetorial por arquivo.");
+            if (names.length != 1)
+                throw GeospatialReader.invalid("Envie exatamente uma camada vetorial por arquivo.");
             var features = store.getFeatureSource(names[0]);
-            var crs = override > 0 ? CRS.decode("EPSG:" + override, true) : features.getSchema().getCoordinateReferenceSystem();
+            var crs = override > 0 ? CRS.decode("EPSG:" + override, true)
+                    : features.getSchema().getCoordinateReferenceSystem();
             int srid = epsg(crs);
             var transform = transform(CRS.decode("EPSG:" + srid, true));
             var bytes = boundedOutput();
@@ -57,21 +64,28 @@ final class GeoToolsVectorReader {
                 int count = 0;
                 while (iterator.hasNext()) {
                     GeospatialReader.checkDeadline(deadline);
-                    if (++count > limits.getMaxFeatures()) throw GeospatialReader.invalid("Camada excede o limite de feições.");
+                    if (++count > limits.getMaxFeatures())
+                        throw GeospatialReader.invalid("Camada excede o limite de feições.");
                     var original = iterator.next();
                     Geometry sourceGeometry = (Geometry) original.getDefaultGeometry();
                     Geometry geographic = sourceGeometry == null ? null : JTS.transform(sourceGeometry, transform);
-                    if (bounds != null && (geographic == null || !geographic.getEnvelopeInternal().intersects(bounds))) continue;
+                    if (bounds != null && (geographic == null || !geographic.getEnvelopeInternal().intersects(bounds)))
+                        continue;
                     ObjectNode feature = mapper.createObjectNode().put("type", "Feature").put("id", original.getID());
                     feature.set("geometry", geometry(geographic));
                     var properties = feature.putObject("properties");
                     for (var descriptor : original.getFeatureType().getAttributeDescriptors()) {
-                        if (descriptor.equals(original.getFeatureType().getGeometryDescriptor())) continue;
+                        if (descriptor.equals(original.getFeatureType().getGeometryDescriptor()))
+                            continue;
                         Object value = original.getAttribute(descriptor.getName());
-                        // Datas DBF não podem virar timestamps numéricos por configuração do serializador.
-                        if (value instanceof java.sql.Date date) value = date.toLocalDate().toString();
-                        else if (value instanceof java.util.Date date) value = format.equals("zip")
-                                ? date.toInstant().atOffset(ZoneOffset.UTC).toLocalDate().toString() : date.toInstant().toString();
+                        // Datas DBF não podem virar timestamps numéricos por configuração do
+                        // serializador.
+                        if (value instanceof java.sql.Date date)
+                            value = date.toLocalDate().toString();
+                        else if (value instanceof java.util.Date date)
+                            value = format.equals("zip")
+                                    ? date.toInstant().atOffset(ZoneOffset.UTC).toLocalDate().toString()
+                                    : date.toInstant().toString();
                         properties.set(descriptor.getLocalName(), mapper.valueToTree(value));
                     }
                     generator.writeTree(feature);
@@ -79,18 +93,24 @@ final class GeoToolsVectorReader {
                 end(generator);
             }
             return new GeospatialReader.Result(bytes.toByteArray(), metadata(srid));
-        } finally { store.dispose(); }
+        } finally {
+            store.dispose();
+        }
     }
 
     private GeospatialReader.Result json(Path path, int override, long deadline) throws Exception {
-        if (Files.size(path) > limits.getMaxOutputBytes()) throw GeospatialReader.invalid("JSON excede o limite de leitura vetorial.");
+        if (Files.size(path) > limits.getMaxOutputBytes())
+            throw GeospatialReader.invalid("JSON excede o limite de leitura vetorial.");
         JsonNode root = mapper.readTree(path.toFile());
-        if (root == null) throw GeospatialReader.invalid("GeoJSON vazio.");
+        if (root == null)
+            throw GeospatialReader.invalid("GeoJSON vazio.");
         int srid = override;
         if (srid <= 0) {
             String declared = root.path("crs").path("properties").path("name").asText();
-            if (declared.isBlank() && !root.hasNonNull("crs")) declared = "EPSG:4326";
-            if (declared.isBlank()) throw GeospatialReader.invalid("CRS GeoJSON ausente ou inválido.");
+            if (declared.isBlank() && !root.hasNonNull("crs"))
+                declared = "EPSG:4326";
+            if (declared.isBlank())
+                throw GeospatialReader.invalid("CRS GeoJSON ausente ou inválido.");
             srid = epsg(CRS.decode(declared, true));
         }
         var transform = transform(CRS.decode("EPSG:" + srid, true));
@@ -104,11 +124,14 @@ final class GeoToolsVectorReader {
             int count = 0;
             for (JsonNode original : features) {
                 GeospatialReader.checkDeadline(deadline);
-                if (++count > limits.getMaxFeatures()) throw GeospatialReader.invalid("Camada excede o limite de feições.");
-                if (!original.isObject()) throw GeospatialReader.invalid("Feição GeoJSON inválida.");
+                if (++count > limits.getMaxFeatures())
+                    throw GeospatialReader.invalid("Camada excede o limite de feições.");
+                if (!original.isObject())
+                    throw GeospatialReader.invalid("Feição GeoJSON inválida.");
                 var feature = ((ObjectNode) original).deepCopy();
                 JsonNode value = original.get("geometry");
-                feature.set("geometry", geometry(value == null || value.isNull() ? null : JTS.transform(new GeoJsonReader().read(value.toString()), transform)));
+                feature.set("geometry", geometry(value == null || value.isNull() ? null
+                        : JTS.transform(new GeoJsonReader().read(value.toString()), transform)));
                 // Bbox/CRS anteriores não descrevem as coordenadas reprojetadas.
                 feature.remove(List.of("bbox", "crs"));
                 generator.writeTree(feature);
@@ -119,9 +142,11 @@ final class GeoToolsVectorReader {
     }
 
     static int epsg(CoordinateReferenceSystem crs) throws Exception {
-        if (crs == null) throw GeospatialReader.invalid("Sistema de coordenadas ausente; informe um CRS identificável por EPSG.");
+        if (crs == null)
+            throw GeospatialReader.invalid("Sistema de coordenadas ausente; informe um CRS identificável por EPSG.");
         Integer srid = CRS.lookupEpsgCode(crs, true);
-        if (srid == null) throw GeospatialReader.invalid("Sistema de coordenadas não identificável por EPSG.");
+        if (srid == null)
+            throw GeospatialReader.invalid("Sistema de coordenadas não identificável por EPSG.");
         return srid;
     }
 
@@ -131,18 +156,30 @@ final class GeoToolsVectorReader {
     }
 
     private JsonNode geometry(Geometry geographic) throws Exception {
-        if (geographic == null) return mapper.nullNode();
+        if (geographic == null)
+            return mapper.nullNode();
         for (var coordinate : geographic.getCoordinates())
             if (!Double.isFinite(coordinate.x) || !Double.isFinite(coordinate.y)
                     || Math.abs(coordinate.x) > 180 || Math.abs(coordinate.y) > 90)
                 throw GeospatialReader.invalid("Geometria fora dos limites geográficos após reprojeção.");
-        // Mesmo contrato 2D do Oracle/validador; Z/M permanecem preservados no arquivo bruto.
+        // Mesmo contrato 2D do Oracle/validador; Z/M permanecem preservados no arquivo
+        // bruto.
         geographic.apply(new org.locationtech.jts.geom.CoordinateSequenceFilter() {
-            @Override public void filter(org.locationtech.jts.geom.CoordinateSequence sequence, int index) {
-                if (sequence.hasZ()) sequence.setOrdinate(index, 2, Double.NaN);
+            @Override
+            public void filter(org.locationtech.jts.geom.CoordinateSequence sequence, int index) {
+                if (sequence.hasZ())
+                    sequence.setOrdinate(index, 2, Double.NaN);
             }
-            @Override public boolean isDone() { return false; }
-            @Override public boolean isGeometryChanged() { return true; }
+
+            @Override
+            public boolean isDone() {
+                return false;
+            }
+
+            @Override
+            public boolean isGeometryChanged() {
+                return true;
+            }
         });
         var writer = new GeoJsonWriter(12);
         writer.setEncodeCRS(false);
@@ -157,20 +194,30 @@ final class GeoToolsVectorReader {
 
     private ByteArrayOutputStream boundedOutput() {
         return new ByteArrayOutputStream() {
-            @Override public synchronized void write(byte[] bytes, int offset, int length) {
-                if ((long) size() + length > limits.getMaxOutputBytes()) throw GeospatialReader.invalid("GeoJSON convertido excede o limite de tamanho.");
+            @Override
+            public synchronized void write(byte[] bytes, int offset, int length) {
+                if ((long) size() + length > limits.getMaxOutputBytes())
+                    throw GeospatialReader.invalid("GeoJSON convertido excede o limite de tamanho.");
                 super.write(bytes, offset, length);
             }
-            @Override public synchronized void write(int value) {
-                if (size() >= limits.getMaxOutputBytes()) throw GeospatialReader.invalid("GeoJSON convertido excede o limite de tamanho.");
+
+            @Override
+            public synchronized void write(int value) {
+                if (size() >= limits.getMaxOutputBytes())
+                    throw GeospatialReader.invalid("GeoJSON convertido excede o limite de tamanho.");
                 super.write(value);
             }
         };
     }
 
     private void begin(JsonGenerator generator) throws IOException {
-        generator.writeStartObject(); generator.writeStringField("type", "FeatureCollection");
+        generator.writeStartObject();
+        generator.writeStringField("type", "FeatureCollection");
         generator.writeArrayFieldStart("features");
     }
-    private void end(JsonGenerator generator) throws IOException { generator.writeEndArray(); generator.writeEndObject(); }
+
+    private void end(JsonGenerator generator) throws IOException {
+        generator.writeEndArray();
+        generator.writeEndObject();
+    }
 }

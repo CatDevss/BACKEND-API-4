@@ -60,14 +60,16 @@ public class LayerService {
     // A estrutura do workspace já carregou e validou o conjunto e seus arquivos.
     List<LayerInfoDTO> listLayers(Long datasetId, List<File> associated) {
         var renderable = associated.stream().filter(f -> isRenderable(f.getFormatFile())).toList();
-        if (renderable.isEmpty()) return List.of();
+        if (renderable.isEmpty())
+            return List.of();
         var approved = new HashSet<>(versionRepository.findFileIdsByDatasetAndStatusIn(datasetId, APPROVED_STATUSES));
         var pending = renderable.stream().filter(f -> !approved.contains(f.getId()))
                 .collect(Collectors.toMap(File::getId, Function.identity()));
         if (!pending.isEmpty()) {
             for (var stage : versionRepository.findLegacyValidatedStagesByDataset(datasetId, VersionStatus.BRUTA)) {
                 var file = pending.get(stage.fileId());
-                if (file != null && isApprovedLegacyPreview(file, stage)) approved.add(file.getId());
+                if (file != null && isApprovedLegacyPreview(file, stage))
+                    approved.add(file.getId());
             }
         }
         return renderable.stream()
@@ -108,10 +110,12 @@ public class LayerService {
         var version = layer.getVersion();
         if (version == null || !APPROVED_STATUSES.contains(version.getStatus()))
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Camada sem resultado tratado aprovado.");
-        // A versão vinculada à camada é fixa; não buscar a versão mais recente do arquivo aqui.
+        // A versão vinculada à camada é fixa; não buscar a versão mais recente do
+        // arquivo aqui.
         String location = version.getLocation();
         return location.toLowerCase(Locale.ROOT).endsWith(".csv")
-                ? bucketService.readCsvAsGeoJson(location) : bucketService.readGeoJson(location);
+                ? bucketService.readCsvAsGeoJson(location)
+                : bucketService.readGeoJson(location);
     }
 
     private boolean isRenderable(String format) {
@@ -120,14 +124,19 @@ public class LayerService {
 
     private boolean isApprovedLegacyPreview(File file, FileStageDTO stage) {
         if (stage.status() != VersionStatus.BRUTA || stage.versionNumber() == null
-                || stage.versionNumber() <= 1 || stage.location() == null) return false;
+                || stage.versionNumber() <= 1 || stage.location() == null)
+            return false;
         String raw = file.getLocation();
-        if (raw == null || !raw.startsWith("bruta/") || raw.length() <= 6) return false;
+        if (raw == null || !raw.startsWith("bruta/") || raw.length() <= 6)
+            return false;
         String expected = "validada/" + raw.substring("bruta/".length());
-        if (Set.of("zip", "gpkg").contains(file.getFormatFile().toLowerCase(Locale.ROOT))) expected += ".geojson";
-        if (!stage.location().equals(expected)) return false;
+        if (Set.of("zip", "gpkg").contains(file.getFormatFile().toLowerCase(Locale.ROOT)))
+            expected += ".geojson";
+        if (!stage.location().equals(expected))
+            return false;
         var ingestion = file.getIngestion();
-        if (ingestion == null || ingestion.getDictionary() == null) return false;
+        if (ingestion == null || ingestion.getDictionary() == null)
+            return false;
         var dictionary = ingestion.getDictionary();
         try {
             // O caminho sozinho não comprova aprovação. Nunca expor o original bruto

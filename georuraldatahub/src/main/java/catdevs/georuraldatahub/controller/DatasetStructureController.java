@@ -9,8 +9,12 @@ import org.springframework.web.bind.annotation.*;
 public class DatasetStructureController {
     private final DatasetStructureService structures;
 
-    public DatasetStructureController(DatasetStructureService structures) { this.structures = structures; }
+    public DatasetStructureController(DatasetStructureService structures) {
+        this.structures = structures;
+    }
 
     @GetMapping("/conjuntos/{id}/estrutura")
-    public DatasetStructureDTO get(@PathVariable Long id) { return structures.get(id); }
+    public DatasetStructureDTO get(@PathVariable Long id) {
+        return structures.get(id);
+    }
 }

@@ -18,21 +18,21 @@ import jakarta.persistence.Table;
 @Table(name = "auditoria")
 public class Audit {
 
-    @Id 
-    @GeneratedValue (strategy = GenerationType.IDENTITY)
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "aud_id")
     private Long id;
 
-    @ManyToOne (fetch = FetchType.LAZY)
-    @JoinColumn (name = "usr_id", referencedColumnName = "usr_id")
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "usr_id", referencedColumnName = "usr_id")
     private User user;
 
-    @ManyToOne (fetch = FetchType.LAZY)
-    @JoinColumn (name = "arq_id", referencedColumnName = "arq_id")
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "arq_id", referencedColumnName = "arq_id")
     private File file;
 
-    @ManyToOne (fetch = FetchType.LAZY)
-    @JoinColumn (name = "ing_id", referencedColumnName = "ing_id")
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "ing_id", referencedColumnName = "ing_id")
     private DataIngestion ingestion;
 
     @Column(name = "aud_entidade")
@@ -44,7 +44,7 @@ public class Audit {
     @Column(name = "aud_detalhes")
     private String details;
 
-    @CreationTimestamp 
+    @CreationTimestamp
     @Column(name = "aud_data")
     private LocalDateTime timestamp;
 
@@ -113,5 +113,5 @@ public class Audit {
 
     public void setTimestamp(LocalDateTime timestamp) {
         this.timestamp = timestamp;
-    }   
+    }
 }

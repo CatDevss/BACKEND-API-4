@@ -13,11 +13,17 @@ public class CollectionController {
     private final CollectionCatalog catalog;
     private final CollectionService collection;
     private final FileService files;
+
     public CollectionController(CollectionCatalog catalog, CollectionService collection, FileService files) {
-        this.catalog = catalog; this.collection = collection; this.files = files;
+        this.catalog = catalog;
+        this.collection = collection;
+        this.files = files;
     }
+
     @GetMapping("/fontes/conectores")
-    public List<CollectionCatalog.Entry> catalog() { return catalog.list(); }
+    public List<CollectionCatalog.Entry> catalog() {
+        return catalog.list();
+    }
 
     @GetMapping("/fontes/conectores/{product}/dicionario")
     public catdevs.georuraldatahub.dto.DictionaryRequestDTO dictionaryTemplate(
@@ -27,9 +33,13 @@ public class CollectionController {
 
     @PostMapping("/fontes/{sourceId}/coletas")
     @ResponseStatus(HttpStatus.CREATED)
-    public CollectionService.Result collect(@PathVariable Long sourceId, @Valid @RequestBody CollectionRequest request) throws Exception {
+    public CollectionService.Result collect(@PathVariable Long sourceId, @Valid @RequestBody CollectionRequest request)
+            throws Exception {
         return collection.collect(sourceId, request);
     }
+
     @GetMapping("/arquivos/{fileId}/coleta")
-    public CollectedData.Metadata metadata(@PathVariable Long fileId) throws Exception { return files.collectionMetadata(fileId); }
+    public CollectedData.Metadata metadata(@PathVariable Long fileId) throws Exception {
+        return files.collectionMetadata(fileId);
+    }
 }

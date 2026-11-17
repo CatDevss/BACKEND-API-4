@@ -10,7 +10,9 @@ import org.springframework.web.bind.annotation.*;
 public class DatasetFileController {
     private final DatasetFileService membership;
 
-    public DatasetFileController(DatasetFileService membership) { this.membership = membership; }
+    public DatasetFileController(DatasetFileService membership) {
+        this.membership = membership;
+    }
 
     @PutMapping
     @ResponseStatus(HttpStatus.NO_CONTENT)

@@ -1,3 +1,4 @@
+
 package catdevs.georuraldatahub.config;
 
 import org.springframework.context.annotation.Bean;
@@ -14,7 +15,8 @@ public class SecurityConfig {
     @Bean
     public FilterRegistrationBean<IndicatorApiKeyFilter> disableContainerRegistration(
             IndicatorApiKeyFilter filter) {
-        FilterRegistrationBean<IndicatorApiKeyFilter> registration = new FilterRegistrationBean<>(filter);
+        FilterRegistrationBean<IndicatorApiKeyFilter> registration =
+                new FilterRegistrationBean<>(filter);
         registration.setEnabled(false);
         return registration;
     }
@@ -26,13 +28,18 @@ public class SecurityConfig {
 
         http
                 .csrf(csrf -> csrf.disable())
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint(
-                        (request, response, exception) -> response.sendError(401, "Autenticação necessária.")))
+                .sessionManagement(session ->
+                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(exceptions ->
+                        exceptions.authenticationEntryPoint(
+                                (request, response, exception) ->
+                                        response.sendError(401, "Autenticação necessária.")))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/indicadores/**").authenticated()
                         .anyRequest().permitAll())
-                .addFilterBefore(indicatorApiKeyFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(
+                        indicatorApiKeyFilter,
+                        UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
