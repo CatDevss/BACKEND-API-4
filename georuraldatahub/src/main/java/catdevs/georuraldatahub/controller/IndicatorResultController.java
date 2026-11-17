@@ -1,7 +1,6 @@
 package catdevs.georuraldatahub.controller;
 
-import java.util.List;
-
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -32,19 +31,32 @@ public class IndicatorResultController {
     @PostMapping
     public ResponseEntity<IndicatorResultResponseDTO> save(
             @Valid @RequestBody IndicatorResultCreateDTO request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(service.save(request));
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(service.save(request));
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<IndicatorResultResponseDTO> findById(@PathVariable Long id) {
+    public ResponseEntity<IndicatorResultResponseDTO> findById(
+            @PathVariable Long id) {
         return ResponseEntity.ok(service.findById(id));
     }
 
     @GetMapping
-    public ResponseEntity<List<IndicatorResultResponseDTO>> findByDataset(
+    public ResponseEntity<Page<IndicatorResultResponseDTO>> findByDataset(
             @RequestParam Long datasetId,
             @RequestParam(required = false) String indicatorCode,
-            @RequestParam(required = false) String propertyReference) {
-        return ResponseEntity.ok(service.findByDataset(datasetId, indicatorCode, propertyReference));
+            @RequestParam(required = false) String propertyReference,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+
+        return ResponseEntity.ok(
+                service.findByDataset(
+                        datasetId,
+                        indicatorCode,
+                        propertyReference,
+                        page,
+                        size
+                )
+        );
     }
 }
