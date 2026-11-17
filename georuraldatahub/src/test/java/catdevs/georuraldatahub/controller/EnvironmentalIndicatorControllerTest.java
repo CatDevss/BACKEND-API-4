@@ -1,0 +1,108 @@
+package catdevs.georuraldatahub.controller;
+
+import catdevs.georuraldatahub.repository.EnvironmentalIndicatorRepository;
+import catdevs.georuraldatahub.service.EnvironmentalIndicatorService;
+import org.junit.jupiter.api.Test;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+class EnvironmentalIndicatorControllerTest {
+    @Test void opensSavedJsonWithoutRecalculation() throws Exception {
+        var repository=mock(EnvironmentalIndicatorRepository.class);
+        var entry=new EnvironmentalIndicatorRepository.HistoryEntry(21,270,"Adrianopolis","icv","2026-11-15 16:11:50","GEORURAL-1.2");
+        when(repository.historyDetail(21)).thenReturn(new EnvironmentalIndicatorRepository.HistoryDetail(entry,"{\"vegetacao\":[2]}","{\"ICV\":{\"areaHa\":0,\"percentual\":null}}"));
+        var mvc=MockMvcBuilders.standaloneSetup(new EnvironmentalIndicatorController(new EnvironmentalIndicatorService(repository))).build();
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/ambiental/calculos/21"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.result.calculoId").value(21))
+            .andExpect(jsonPath("$.result.ICV.areaHa").value(0));
+        verify(repository).historyDetail(21);verifyNoMoreInteractions(repository);
+    }
+
+    @Test void historyIsPaginatedAndReadOnly() throws Exception {
+        var repository=mock(EnvironmentalIndicatorRepository.class);
+        when(repository.history("Adri","icv",1,20)).thenReturn(new EnvironmentalIndicatorRepository.Page<>(java.util.List.of(),0,1,20));
+        var mvc=MockMvcBuilders.standaloneSetup(new EnvironmentalIndicatorController(new EnvironmentalIndicatorService(repository))).build();
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/ambiental/calculos")
+            .param("busca","Adri").param("indicador","icv").param("page","1"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.page").value(1));
+        verify(repository).history("Adri","icv",1,20);
+        verifyNoMoreInteractions(repository);
+    }
+
+    @Test void savesOnlyTheRequestedIndicator() throws Exception {
+        var repository=mock(EnvironmentalIndicatorRepository.class);
+        when(repository.calculateAndSave(928,"ifc","{\"focos\":[43]}"))
+            .thenReturn("{\"IFC\":{\"quantidade\":273},\"calculoId\":7}");
+        var mvc=MockMvcBuilders.standaloneSetup(new EnvironmentalIndicatorController(new EnvironmentalIndicatorService(repository))).build();
+        mvc.perform(post("/imoveis/928/indicadores/ifc/calcular").contentType("application/json").content("{\"focos\":[43]}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.calculoId").value(7));
+        verify(repository).calculateAndSave(928,"ifc","{\"focos\":[43]}");
+        verify(repository,never()).calculate(anyLong(),anyString());
+    }
+
+    @Test void queriesRealLayersAndRejectsUnboundedPages() throws Exception {
+        var repository = mock(EnvironmentalIndicatorRepository.class);
+        when(repository.layers("Mun",0,20)).thenReturn(new EnvironmentalIndicatorRepository.Page<>(java.util.List.of(),0,0,20));
+        var mvc = MockMvcBuilders.standaloneSetup(new EnvironmentalIndicatorController(new EnvironmentalIndicatorService(repository))).build();
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/ambiental/camadas").param("busca","Mun"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(0));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/ambiental/camadas").param("size","10000"))
+            .andExpect(status().isBadRequest());
+        verify(repository).layers("Mun",0,20);
+        verifyNoMoreInteractions(repository);
+    }
+
+    @Test void createsCombinedLayerThroughService() throws Exception {
+        var repository = mock(EnvironmentalIndicatorRepository.class);
+        when(repository.combineLayers(21, "Focos", "[43,44]"))
+            .thenReturn(new EnvironmentalIndicatorRepository.ImportedLayer(50, 300));
+        var mvc = MockMvcBuilders.standaloneSetup(new EnvironmentalIndicatorController(
+            new EnvironmentalIndicatorService(repository))).build();
+        mvc.perform(post("/conjuntos/21/camadas/combinar")
+            .contentType("application/json")
+            .content("{\"nome\":\"Focos\",\"camadas\":[43,44]}"))
+            .andExpect(status().isCreated())
+            .andExpect(content().json("{\"camadaId\":50,\"quantidade\":300}"));
+        verify(repository).combineLayers(21, "Focos", "[43,44]");
+    }
+
+    @Test
+    void allRoutesPassMultipleLayersToOracleWithoutChangingResults() throws Exception {
+        var repository = mock(EnvironmentalIndicatorRepository.class);
+        var mvc = MockMvcBuilders.standaloneSetup(new EnvironmentalIndicatorController(
+                new EnvironmentalIndicatorService(repository))).build();
+        String[] names = { "icv", "irl", "iapp", "isap", "iae", "idesmat", "ifc" };
+        String[] bodies = {
+                "{\"vegetacao\":[28,35]}",
+                "{\"reservaLegal\":[30,36],\"rlMinimoPercentual\":20,\"fundamentoRl\":\"Teste\"}",
+                "{\"app\":[31,37],\"vegetacao\":[28,35]}",
+                "{\"areasProtegidas\":[32,38]}",
+                "{\"embargos\":[33,39]}",
+                "{\"desmatamento\":[34,40],\"fim\":\"2026-11-15\"}",
+                "{\"focos\":[41,42],\"inicio\":\"2021-01-01\",\"fim\":\"2026-11-15\"}"
+        };
+        String result = "{\"valorOracle\":12.3456789}";
+        for (int i = 0; i < names.length; i++) {
+            if (names[i].equals("icv"))
+                when(repository.calculateIcv(928, bodies[i])).thenReturn(result);
+            else
+                when(repository.calculateIndicator(928, bodies[i], names[i])).thenReturn(result);
+            mvc.perform(post("/imoveis/928/indicadores/" + names[i])
+                    .contentType("application/json").content(bodies[i]))
+                    .andExpect(status().isOk()).andExpect(content().json(result));
+            if (names[i].equals("icv"))
+                verify(repository).calculateIcv(928, bodies[i]);
+            else
+                verify(repository).calculateIndicator(928, bodies[i], names[i]);
+        }
+        when(repository.calculate(928, bodies[0])).thenReturn(result);
+        mvc.perform(post("/imoveis/928/indicadores/calcular")
+                .contentType("application/json").content(bodies[0]))
+                .andExpect(status().isOk()).andExpect(content().json(result));
+        verify(repository).calculate(928, bodies[0]);
+        mvc.perform(post("/imoveis/928/indicadores/icv").contentType("application/json"))
+                .andExpect(status().isBadRequest());
+    }
+}

@@ -9,7 +9,10 @@ import catdevs.georuraldatahub.processing.*;
 import static catdevs.georuraldatahub.collection.CollectionRequest.Product;
 import static catdevs.georuraldatahub.collection.CollectedData.*;
 
-/** Conectores adicionais reutilizam transporte, paginação, leitura GeoTools, recorte e ingestão existentes. */
+/**
+ * Conectores adicionais reutilizam transporte, paginação, leitura GeoTools,
+ * recorte e ingestão existentes.
+ */
 final class PublishedDataConnectors {
     private static final String ICMBIO = "https://geoservicos.inde.gov.br/geoserver/ICMBio/ows";
     private static final String FUNAI = "https://geoserver.funai.gov.br/geoserver/Funai/ows";
@@ -23,8 +26,12 @@ final class PublishedDataConnectors {
     private final RemoteFeatureReader remote;
 
     PublishedDataConnectors(OfficialDataClient http, CollectionProperties limits, CollectionCatalog catalog) {
-        this.http = http; this.limits = limits; this.catalog = catalog;
-        resources = new PublishedResources(http); spatial = new ParanaSpatialFilter(http); remote = new RemoteFeatureReader(http, limits);
+        this.http = http;
+        this.limits = limits;
+        this.catalog = catalog;
+        resources = new PublishedResources(http);
+        spatial = new ParanaSpatialFilter(http);
+        remote = new RemoteFeatureReader(http, limits);
     }
 
     CollectedData collect(CollectionRequest request) throws IOException, InterruptedException {
@@ -34,8 +41,10 @@ final class PublishedDataConnectors {
         validateBbox(request.bbox());
         boolean current = "ATUAL".equalsIgnoreCase(request.competence());
         if (!current && product != Product.MMA && product != Product.SFB)
-            throw new IllegalArgumentException("Este canal publica somente a base atual. Use competence=ATUAL; ano de criação não representa edição histórica.");
-        if (current && product == Product.SFB) throw new IllegalArgumentException("O SFB exige uma edição publicada. Consulte /edicoes.");
+            throw new IllegalArgumentException(
+                    "Este canal publica somente a base atual. Use competence=ATUAL; ano de criação não representa edição histórica.");
+        if (current && product == Product.SFB)
+            throw new IllegalArgumentException("O SFB exige uma edição publicada. Consulte /edicoes.");
         var edition = !current ? resources.resolve(product, request.competence()) : null;
         var boundary = spatial.restrict(spatial.boundary(), request.bbox());
         Envelope bbox = boundary.geometry().getEnvelopeInternal();
@@ -53,34 +62,46 @@ final class PublishedDataConnectors {
             processing.setTimeoutSeconds(limits.getMaxDurationSeconds());
             var converted = new GeospatialReader(processing).read(new ByteArrayInputStream(archive), "zip", 0, bbox,
                     product == Product.MMA);
-            data = new RemoteFeatureReader.Result(converted.content(), List.of(new Original(product.name().toLowerCase(Locale.ROOT)
-                    + "_" + competence + ".zip", url, "application/zip", archive)));
+            data = new RemoteFeatureReader.Result(converted.content(),
+                    List.of(new Original(product.name().toLowerCase(Locale.ROOT)
+                            + "_" + competence + ".zip", url, "application/zip", archive)));
             originFormat = "shapefile.zip";
         } else {
             data = switch (product) {
                 case ICMBIO -> remote.wfs(ICMBIO, "ICMBio:limiteucsfederais_a", null, "ogc_fid", null, bbox, false);
                 case ICMBIO_EMBARGOS -> remote.wfs(ICMBIO, "ICMBio:embargos_icmbio", null, "ogc_fid",
-                        "the_geom,ogc_fid,numero_emb,serie,uf,municipio,ano,data,area,nome_uc,cnuc,julgamento", bbox, false);
-                case FUNAI -> remote.wfs(FUNAI, "Funai:tis_poligonais", "uf_sigla LIKE '%PR%'", "gid", null, null, false);
+                        "the_geom,ogc_fid,numero_emb,serie,uf,municipio,ano,data,area,nome_uc,cnuc,julgamento", bbox,
+                        false);
+                case FUNAI ->
+                    remote.wfs(FUNAI, "Funai:tis_poligonais", "uf_sigla LIKE '%PR%'", "gid", null, null, false);
                 case MMA -> remote.wfs(MMA, "ms:ucs_selected", null, "uc_id,docleg_id", null, bbox, true);
-                case IBAMA -> remote.arcgis(IBAMA, "objectid,seq_tad,num_tad,serie_tad,uf,cod_municipio,municipio,dat_embargo,dat_ult_alteracao,des_tipo_bioma,qtd_area_embargada", bbox);
+                case IBAMA -> remote.arcgis(IBAMA,
+                        "objectid,seq_tad,num_tad,serie_tad,uf,cod_municipio,municipio,dat_embargo,dat_ult_alteracao,des_tipo_bioma,qtd_area_embargada",
+                        bbox);
                 default -> throw new IllegalArgumentException("Produto sem canal público configurado.");
             };
-            originFormat = product == Product.MMA ? "WFS GML paginado" : product == Product.IBAMA ? "ArcGIS GeoJSON paginado" : "WFS GeoJSON paginado";
+            originFormat = product == Product.MMA ? "WFS GML paginado"
+                    : product == Product.IBAMA ? "ArcGIS GeoJSON paginado" : "WFS GeoJSON paginado";
         }
         byte[] content = spatial.clip(data.content(), boundary);
         http.checkCollectionDeadline();
-        if (content.length > limits.getMaxTotalBytes()) throw OfficialDataClient.upstream("Conteúdo convertido excede o limite da coleta.");
+        if (content.length > limits.getMaxTotalBytes())
+            throw OfficialDataClient.upstream("Conteúdo convertido excede o limite da coleta.");
         var originals = new ArrayList<>(data.originals());
         originals.add(boundary.original());
         var entry = catalog.entry(product);
-        var metadata = new Metadata(product.name(), competence, "geojson", originFormat, "Paraná (UF 41); recorte estadual"
-                + (request.bbox() == null ? "" : "; bbox=" + request.bbox()), Instant.now().toString(), entry.documentation(),
+        var metadata = new Metadata(product.name(), competence, "geojson", originFormat,
+                "Paraná (UF 41); recorte estadual"
+                        + (request.bbox() == null ? "" : "; bbox=" + request.bbox()),
+                Instant.now().toString(), entry.documentation(),
                 List.of(entry.limitations(), ParanaSpatialFilter.LIMITATION,
                         "Atributos de área da origem não são recalculados pelo recorte.",
-                        current ? "Retrato da base na data da coleta; não representa um ano histórico." : "Edição publicada: " + competence),
-                originals.stream().map(o -> new OriginalMetadata(o.filename(), o.origin(), o.contentType(), o.content().length, o.sha256())).toList());
-        return new CollectedData(product.name().toLowerCase(Locale.ROOT) + "_PR_" + competence + ".geojson", "geojson", content, List.copyOf(originals), metadata);
+                        current ? "Retrato da base na data da coleta; não representa um ano histórico."
+                                : "Edição publicada: " + competence),
+                originals.stream().map(o -> new OriginalMetadata(o.filename(), o.origin(), o.contentType(),
+                        o.content().length, o.sha256())).toList());
+        return new CollectedData(product.name().toLowerCase(Locale.ROOT) + "_PR_" + competence + ".geojson", "geojson",
+                content, List.copyOf(originals), metadata);
     }
 
     static void validateBbox(List<Double> bbox) {

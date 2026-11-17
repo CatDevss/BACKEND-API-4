@@ -8,10 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 import catdevs.georuraldatahub.dto.FileStageDTO;
 import catdevs.georuraldatahub.repository.VersionRepository;
 
-/**
- * Consulta em qual etapa (BRUTA, QUARENTENA, TRATADA, PUBLICADA) cada arquivo
- * está.
- */
+/** A etapa atual é definida pela versão mais recente do arquivo. */
 @Service
 public class FileStageService {
 
@@ -21,7 +18,6 @@ public class FileStageService {
         this.versionRepository = versionRepository;
     }
 
-    /** Etapa atual de todos os arquivos, pela versão mais recente de cada um. */
     @Transactional(readOnly = true)
     public List<FileStageDTO> currentStages() {
         return versionRepository.findCurrentStageOfEachFile();

@@ -1,0 +1,1427 @@
+-- GEORURAL DATAHUB | INDICADORES AMBIENTAIS e MAPA
+DECLARE
+    v_n NUMBER;
+BEGIN
+    SAVEPOINT cadastro_albers;
+    SELECT
+        COUNT(*)
+    INTO v_n
+    FROM
+        mdsys.sdo_coord_ref_sys
+    WHERE
+        srid = 5009822;
+
+    IF v_n > 0 THEN
+        SELECT
+            COUNT(*)
+        INTO v_n
+        FROM
+            mdsys.sdo_coord_ref_sys
+        WHERE
+                srid = 5009822
+            AND coord_ref_sys_name = 'GeoRural / SIRGAS2000 Albers Brasil'
+            AND coord_ref_sys_kind = 'PROJECTED'
+            AND coord_sys_id = 4400
+            AND source_geog_srid = 4674
+            AND projection_conv_id = 5009823
+            AND geog_crs_datum_id = 6674
+            AND is_legacy = 'FALSE';
+
+        IF v_n <> 1 THEN
+            raise_application_error(-20140, 'SRID 5009822 ocupado por outra definicao. Nada alterado.');
+        END IF;
+        dbms_output.put_line('Projecao Albers Brasil ja cadastrada; metadados serao conferidos a seguir.');
+        RETURN;
+    END IF;
+
+    SELECT
+        COUNT(*)
+    INTO v_n
+    FROM
+        mdsys.sdo_coord_ops
+    WHERE
+        coord_op_id = 5009823;
+
+    IF v_n <> 0 THEN
+        raise_application_error(-20140, 'Operacao 5009823 ja existe sem o CRS esperado. Nada alterado.');
+    END IF;
+    SELECT
+        COUNT(*)
+    INTO v_n
+    FROM
+        mdsys.sdo_coord_ref_sys
+    WHERE
+            srid = 4674
+        AND datum_id = 6674;
+
+    IF v_n <> 1 THEN
+        raise_application_error(-20141, 'Base SIRGAS2000 4674/6674 indisponivel.');
+    END IF;
+    SELECT
+        COUNT(*)
+    INTO v_n
+    FROM
+        mdsys.sdo_coord_op_param_use
+    WHERE
+            coord_op_method_id = 9822
+        AND parameter_id IN ( 8821, 8822, 8823, 8824, 8826,
+                              8827 );
+
+    IF v_n <> 6 THEN
+        raise_application_error(-20141, 'Metodo Albers sem os seis parametros esperados.');
+    END IF;
+    INSERT INTO mdsys.sdo_coord_ops (
+        coord_op_id,
+        coord_op_name,
+        coord_op_type,
+        coord_op_method_id,
+        data_source,
+        show_operation,
+        is_legacy,
+        reverse_op,
+        is_implemented_forward,
+        is_implemented_reverse
+    ) VALUES ( 5009823,
+               'GeoRural / Albers Brasil',
+               'CONVERSION',
+               9822,
+               'GeoRural',
+               1,
+               'FALSE',
+               1,
+               1,
+               1 );
+
+    INSERT INTO mdsys.sdo_coord_op_param_vals (
+        coord_op_id,
+        coord_op_method_id,
+        parameter_id,
+        parameter_value,
+        uom_id
+    ) VALUES ( 5009823,
+               9822,
+               8821,
+               - 12,
+               9102 );
+
+    INSERT INTO mdsys.sdo_coord_op_param_vals (
+        coord_op_id,
+        coord_op_method_id,
+        parameter_id,
+        parameter_value,
+        uom_id
+    ) VALUES ( 5009823,
+               9822,
+               8822,
+               - 54,
+               9102 );
+
+    INSERT INTO mdsys.sdo_coord_op_param_vals (
+        coord_op_id,
+        coord_op_method_id,
+        parameter_id,
+        parameter_value,
+        uom_id
+    ) VALUES ( 5009823,
+               9822,
+               8823,
+               - 2,
+               9102 );
+
+    INSERT INTO mdsys.sdo_coord_op_param_vals (
+        coord_op_id,
+        coord_op_method_id,
+        parameter_id,
+        parameter_value,
+        uom_id
+    ) VALUES ( 5009823,
+               9822,
+               8824,
+               - 22,
+               9102 );
+
+    INSERT INTO mdsys.sdo_coord_op_param_vals (
+        coord_op_id,
+        coord_op_method_id,
+        parameter_id,
+        parameter_value,
+        uom_id
+    ) VALUES ( 5009823,
+               9822,
+               8826,
+               0,
+               9001 );
+
+    INSERT INTO mdsys.sdo_coord_op_param_vals (
+        coord_op_id,
+        coord_op_method_id,
+        parameter_id,
+        parameter_value,
+        uom_id
+    ) VALUES ( 5009823,
+               9822,
+               8827,
+               0,
+               9001 );
+
+    INSERT INTO mdsys.sdo_coord_ref_system (
+        srid,
+        coord_ref_sys_name,
+        coord_ref_sys_kind,
+        coord_sys_id,
+        datum_id,
+        geog_crs_datum_id,
+        source_geog_srid,
+        projection_conv_id,
+        information_source,
+        data_source,
+        is_legacy,
+        is_valid,
+        supports_sdo_geometry
+    ) VALUES ( 5009822,
+               'GeoRural / SIRGAS2000 Albers Brasil',
+               'PROJECTED',
+               4400,
+               NULL,
+               6674,
+               4674,
+               5009823,
+               'IBGE: parametros angulares Albers Brasil; offsets locais zero',
+               'GeoRural',
+               'FALSE',
+               'TRUE',
+               'TRUE' );
+
+    COMMIT;
+    dbms_output.put_line('Projecao Albers Brasil cadastrada.');
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK TO cadastro_albers;
+        RAISE;
+END;
+/
+
+CREATE OR REPLACE PACKAGE pkg_ambiental_crs AUTHID definer AS
+    -- Confere o cadastro da projecao local e retorna o SRID usado nos calculos.
+    FUNCTION srid_calculo RETURN NUMBER;
+
+END;
+/
+
+CREATE OR REPLACE PACKAGE BODY pkg_ambiental_crs AS
+
+
+    FUNCTION srid_calculo RETURN NUMBER IS
+        v_n NUMBER;
+    BEGIN
+        SELECT
+            COUNT(*)
+        INTO v_n
+        FROM
+                 mdsys.sdo_coord_ref_sys c
+            JOIN mdsys.sdo_coord_ops o ON o.coord_op_id = c.projection_conv_id
+        WHERE
+                c.srid = 5009822
+            AND c.coord_ref_sys_kind = 'PROJECTED'
+            AND c.coord_sys_id = 4400
+            AND c.source_geog_srid = 4674
+            AND c.geog_crs_datum_id = 6674
+            AND c.is_legacy = 'FALSE'
+            AND o.coord_op_id = 5009823
+            AND o.coord_op_method_id = 9822
+            AND o.coord_op_type = 'CONVERSION'
+            AND o.is_legacy = 'FALSE';
+
+        IF v_n <> 1 THEN
+            raise_application_error(-20142, 'Albers Brasil ausente/incompativel. Confira o cadastro Albers no mesmo PDB (secao 1 deste arquivo).'
+            );
+        END IF;
+        SELECT
+            COUNT(*)
+        INTO v_n
+        FROM
+            mdsys.sdo_coord_op_param_vals
+        WHERE
+            coord_op_id = 5009823;
+
+        IF v_n <> 6 THEN
+            raise_application_error(-20142, 'Quantidade inesperada de parametros Albers.');
+        END IF;
+        SELECT
+            COUNT(*)
+        INTO v_n
+        FROM
+            mdsys.sdo_coord_op_param_vals
+        WHERE
+                coord_op_id = 5009823
+            AND coord_op_method_id = 9822
+            AND ( ( parameter_id = 8821
+                    AND parameter_value = - 12
+                    AND uom_id = 9102 )
+                  OR ( parameter_id = 8822
+                       AND parameter_value = - 54
+                       AND uom_id = 9102 )
+                  OR ( parameter_id = 8823
+                       AND parameter_value = - 2
+                       AND uom_id = 9102 )
+                  OR ( parameter_id = 8824
+                       AND parameter_value = - 22
+                       AND uom_id = 9102 )
+                  OR ( parameter_id IN ( 8826, 8827 )
+                       AND parameter_value = 0
+                       AND uom_id = 9001 ) );
+
+        IF v_n <> 6 THEN
+            raise_application_error(-20142, 'Parametros incompativeis com Albers Brasil.');
+        END IF;
+        RETURN 5009822;
+    END;
+
+END;
+/
+
+-- Validacao da transformacao de entrada: oito pontos e 100 ha.
+DECLARE
+    v_srid     NUMBER;
+    v_g        mdsys.sdo_geometry;
+    v_composta mdsys.sdo_geometry;
+    v_x        NUMBER;
+    v_y        NUMBER;
+    v_cx       NUMBER;
+    v_cy       NUMBER;
+    v_area     NUMBER;
+    v_falhas   PLS_INTEGER := 0;
+    v_ord      mdsys.sdo_ordinate_array := mdsys.sdo_ordinate_array();
+
+    -- Extrai as coordenadas de um ponto para validar a projecao.
+
+    PROCEDURE xy (
+        p_g mdsys.sdo_geometry,
+        p_x OUT NUMBER,
+        p_y OUT NUMBER
+    ) IS
+    BEGIN
+        IF p_g IS NULL THEN
+            raise_application_error(-20143, 'Resultado nulo.');
+        END IF;
+        IF p_g.sdo_point IS NOT NULL THEN
+            p_x := p_g.sdo_point.x;
+            p_y := p_g.sdo_point.y;
+        ELSE
+            p_x := p_g.sdo_ordinates(1);
+            p_y := p_g.sdo_ordinates(2);
+        END IF;
+
+        IF p_x IS NULL
+           OR p_y IS NULL THEN
+            raise_application_error(-20143, 'Coordenada nula.');
+        END IF;
+
+    END;
+
+    -- Compara o valor calculado com a referencia e rejeita divergencias.
+
+    PROCEDURE conferir (
+        p_nome VARCHAR2,
+        p_real NUMBER,
+        p_ref  NUMBER,
+        p_tol  NUMBER
+    ) IS
+    BEGIN
+        dbms_output.put_line(p_nome
+                             || ': esperado='
+                             || p_ref
+                             || '; recebido='
+                             || p_real);
+
+        IF p_real IS NULL
+           OR abs(p_real - p_ref) > p_tol THEN
+            v_falhas := v_falhas + 1;
+            dbms_output.put_line('FALHA: limite=' || p_tol);
+        END IF;
+
+    END;
+
+    -- Valida a transformacao de entrada de um ponto de referencia.
+
+    PROCEDURE ponto (
+        p_lon NUMBER,
+        p_lat NUMBER,
+        p_x   NUMBER,
+        p_y   NUMBER
+    ) IS
+        v_original mdsys.sdo_geometry;
+    BEGIN
+        v_original := mdsys.sdo_geometry(2001,
+                                         4674,
+                                         mdsys.sdo_point_type(p_lon, p_lat, NULL),
+                                         NULL,
+                                         NULL);
+
+        v_g := sdo_cs.transform(v_original, v_srid);
+        xy(v_g, v_x, v_y);
+        conferir('SIRGAS2000 X '
+                 || p_lon
+                 || ','
+                 || p_lat, v_x, p_x, 0.01);
+
+        conferir('SIRGAS2000 Y '
+                 || p_lon
+                 || ','
+                 || p_lat, v_y, p_y, 0.01);
+        -- A rota WGS84 direta deve concordar com WGS84 -> SIRGAS2000 -> Albers.
+        -- Isso nao presume que coordenadas em datums diferentes sejam identicas.
+        v_original := mdsys.sdo_geometry(2001,
+                                         4326,
+                                         mdsys.sdo_point_type(p_lon, p_lat, NULL),
+                                         NULL,
+                                         NULL);
+
+        v_g := sdo_cs.transform(v_original, v_srid);
+        xy(v_g, v_x, v_y);
+        v_composta := sdo_cs.transform(
+            sdo_cs.transform(v_original, 4674),
+            v_srid
+        );
+
+        xy(v_composta, v_cx, v_cy);
+        conferir('Rota WGS84 X', v_x, v_cx, 0.01);
+        conferir('Rota WGS84 Y', v_y, v_cy, 0.01);
+    END;
+
+    -- Acrescenta um vertice ao poligono usado na validacao de area.
+
+    PROCEDURE vertice (
+        p_lon NUMBER,
+        p_lat NUMBER
+    ) IS
+    BEGIN
+        v_ord.extend(2);
+        v_ord(v_ord.count - 1) := p_lon;
+        v_ord(v_ord.count) := p_lat;
+    END;
+
+BEGIN
+    dbms_output.put_line('ALBERS V3 - VALIDACAO DA TRANSFORMACAO DE ENTRADA');
+    v_srid := pkg_ambiental_crs.srid_calculo();
+    ponto(-54, -12, 0.000000000000000, 0.000000000000000);
+    ponto(-51, -24, 307413.492956683097873, -1340560.875268414616585);
+    ponto(-60, -3, -665086.854882238199934, 999205.009873505681753);
+    ponto(-47, -15, 742307.397066990379244, -346153.173208050429821);
+    ponto(-35, -8, 2066814.502399530028924, 378591.207232397049665);
+    ponto(-51, 0, 336114.056615200359374, 1335727.507779631763697);
+    ponto(-60, 5, -683854.081090611871332, 1874113.492573827505112);
+    ponto(-53, -33, 99011.507694881191128, -2307441.852773115038872);
+    vertice(-54.000000000000000, -23.646412894657445);
+    vertice(-53.990254572275539, -23.646412736490817);
+    vertice(-53.990254911749368, -23.637332082355698);
+    vertice(-54.000000000000000, -23.637332240511647);
+    vertice(-54.000000000000000, -23.646412894657445);
+    v_g := mdsys.sdo_geometry(2003,
+                              4674,
+                              NULL,
+                              mdsys.sdo_elem_info_array(1, 1003, 1),
+                              v_ord);
+
+    v_g := sdo_cs.transform(v_g, v_srid);
+    v_area := sdo_geom.sdo_area(v_g, 0.01, 'unit=SQ_METER') / 10000;
+    conferir('Area em hectares', v_area, 100, 0.01);
+    IF v_falhas > 0 THEN
+        raise_application_error(-20143, 'Validacao de entrada falhou em '
+                                        || v_falhas
+                                        || ' verificacoes.');
+    END IF;
+
+    dbms_output.put_line('TRANSFORMACAO DE ENTRADA E AREA VALIDADAS.');
+    dbms_output.put_line('A inversa nativa continua fora de uso: nao transformar 5009822 para 4674/4326.');
+END;
+/
+
+--Historico imutavel e calculos ambientais.
+
+CREATE OR REPLACE PACKAGE pkg_indicadores_ambientais AUTHID definer AS
+    -- Projeta a geometria e retorna sua area em hectares (m2 / 10000).
+    FUNCTION area_ha (
+        p_geometria mdsys.sdo_geometry
+    ) RETURN NUMBER;
+
+    -- ICV: area da vegetacao nativa no imovel / area do imovel * 100; retorna tambem hectares.
+
+    FUNCTION icv (
+        p_imovel_id NUMBER,
+        p_config    CLOB
+    ) RETURN CLOB;
+    -- IRL: area de RL no imovel / area do imovel * 100. Deficit = max(areaImovel * minimo/100 - areaRL, 0); excedente = max(areaRL - areaImovel * minimo/100, 0).
+    FUNCTION irl (
+        p_imovel_id NUMBER,
+        p_config    CLOB
+    ) RETURN CLOB;
+    -- IAPP: area(APP intersectada com vegetacao no imovel) / area(APP no imovel) * 100; passivoHa = areaAPP - areaConservada.
+    FUNCTION iapp (
+        p_imovel_id NUMBER,
+        p_config    CLOB
+    ) RETURN CLOB;
+    -- ISAP: area da uniao das areas protegidas intersectada com o imovel / area do imovel * 100; retorna hectares.
+    FUNCTION isap (
+        p_imovel_id NUMBER,
+        p_config    CLOB
+    ) RETURN CLOB;
+    -- IAE: area da uniao dos embargos intersectada com o imovel / area do imovel * 100; retorna hectares.
+    FUNCTION iae (
+        p_imovel_id NUMBER,
+        p_config    CLOB
+    ) RETURN CLOB;
+    -- IDesmat: area de supressao no imovel / area do imovel * 100, e hectares; janelas desde 22/07/2008, 31/07/2019 e 31/12/2020 ate fim (inclusivos).
+    FUNCTION idesmat (
+        p_imovel_id NUMBER,
+        p_config    CLOB
+    ) RETURN CLOB;
+    -- IFC: quantidade de id_evento unicos no imovel entre inicio e fim / area do imovel em ha * 1000; inclui pontos na borda.
+    FUNCTION ifc (
+        p_imovel_id NUMBER,
+        p_config    CLOB
+    ) RETURN CLOB;
+
+    -- Calcula os sete indicadores, grava o historico e retorna JSON; a transacao e confirmada pelo chamador.
+
+    PROCEDURE calcular (
+        p_imovel_id NUMBER,
+        p_config    CLOB,
+        p_resultado OUT CLOB
+    );
+
+END;
+/
+
+CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
+
+    c_tol   CONSTANT NUMBER := 0.01; -- metros em SIRGAS2000 / Albers Brasil local
+    c_regra CONSTANT VARCHAR2(30) := 'GEORURAL-1.2';
+
+    -- Transforma para Albers Brasil e valida a geometria; nao usa a inversa local.
+
+    FUNCTION projetar (
+        p_geom mdsys.sdo_geometry
+    ) RETURN mdsys.sdo_geometry IS
+        v_srid NUMBER;
+        v_geom mdsys.sdo_geometry;
+    BEGIN
+        IF p_geom IS NULL
+           OR p_geom.sdo_srid IS NULL THEN
+            raise_application_error(-20121, 'Geometria sem SRID.');
+        END IF;
+
+        v_srid := pkg_ambiental_crs.srid_calculo();
+        IF p_geom.sdo_srid = v_srid THEN
+            v_geom := p_geom;
+        ELSE
+            v_geom := sdo_cs.transform(p_geom, v_srid);
+        END IF;
+
+        IF nvl(
+            sdo_geom.validate_geometry_with_context(v_geom, c_tol),
+            'INVALID'
+        ) <> 'TRUE' THEN
+            raise_application_error(-20123, 'Geometria invalida na projecao equivalente.');
+        END IF;
+
+        RETURN v_geom;
+    END;
+
+    -- Calcula hectares na projecao de calculo; geometrias sem area retornam zero.
+
+    FUNCTION area_plana (
+        p_geom mdsys.sdo_geometry
+    ) RETURN NUMBER IS
+    BEGIN
+        IF p_geom IS NULL THEN
+            RETURN 0;
+        END IF;
+        IF MOD(p_geom.sdo_gtype, 100) NOT IN ( 3, 7 ) THEN
+            -- Uma intersecao apenas na borda pode resultar em linha/ponto.
+            IF MOD(p_geom.sdo_gtype, 100) IN ( 1, 2, 5, 6 ) THEN
+                RETURN 0;
+            END IF;
+
+        END IF;
+
+        RETURN sdo_geom.sdo_area(p_geom, c_tol, 'unit=SQ_METER') / 10000;
+    END;
+
+
+    FUNCTION area_ha (
+        p_geometria mdsys.sdo_geometry
+    ) RETURN NUMBER IS
+    BEGIN
+        RETURN area_plana(projetar(p_geometria));
+    END;
+
+    -- Retorna a intersecao espacial de duas geometrias, tratando entradas nulas.
+
+    FUNCTION recortar (
+        p_a mdsys.sdo_geometry,
+        p_b mdsys.sdo_geometry
+    ) RETURN mdsys.sdo_geometry IS
+    BEGIN
+        IF p_a IS NULL
+           OR p_b IS NULL THEN
+            RETURN NULL;
+        END IF;
+        RETURN sdo_geom.sdo_intersection(p_a, p_b, c_tol);
+    END;
+
+    -- Executa os indicadores solicitados no Oracle e monta o JSON com fontes e parametros.
+
+    FUNCTION resultado (
+        p_imovel_id NUMBER,
+        p_config    CLOB,
+        p_indicador VARCHAR2
+    ) RETURN CLOB IS
+
+        v_cfg        json_object_t;
+        v_out        json_object_t := json_object_t();
+        v_trace      json_array_t := json_array_t();
+        v_details    json_object_t;
+        v_imovel     mdsys.sdo_geometry;
+        v_native     mdsys.sdo_geometry;
+        v_app        mdsys.sdo_geometry;
+        v_rl         mdsys.sdo_geometry;
+        v_geom       mdsys.sdo_geometry;
+        v_raw        mdsys.sdo_geometry;
+        v_area       NUMBER;
+        v_rl_min     NUMBER;
+        v_rl_area    NUMBER;
+        v_app_area   NUMBER;
+        v_conservada NUMBER;
+        v_focos      NUMBER := 0;
+        v_calc       NUMBER;
+        v_inicio     DATE;
+        v_fim        DATE;
+        v_status     VARCHAR2(30);
+        v_ver        NUMBER;
+        v_arq        NUMBER;
+        v_fonte      NUMBER;
+        TYPE eventos_t IS
+            TABLE OF BOOLEAN INDEX BY VARCHAR2(4000);
+        v_eventos    eventos_t;
+        v_evento     VARCHAR2(4000);
+
+        -- Converte uma data obrigatoria no formato YYYY-MM-DD.
+
+        FUNCTION data_iso (
+            p_text VARCHAR2
+        ) RETURN DATE IS
+            v_date DATE;
+        BEGIN
+            IF p_text IS NULL
+               OR NOT regexp_like(p_text, '^[0-9]{4}-[0-9]{2}-[0-9]{2}$') THEN
+                raise_application_error(-20124, 'Data obrigatoria no formato YYYY-MM-DD.');
+            END IF;
+
+            BEGIN
+                v_date := TO_DATE ( p_text, 'FXYYYY-MM-DD' );
+            EXCEPTION
+                WHEN OTHERS THEN
+                    raise_application_error(-20124, 'Data invalida.');
+            END;
+
+            RETURN v_date;
+        END;
+
+        -- Registra a camada, versao e arquivo de origem e confere seu status.
+
+        PROCEDURE rastrear (
+            p_cam NUMBER
+        ) IS
+
+            v_obj      json_object_t := json_object_t();
+            v_hash     VARCHAR2(300);
+            v_location VARCHAR2(500);
+            v_dic      NUMBER;
+            v_dic_ver  NUMBER;
+        BEGIN
+            SELECT
+                v.ver_status,
+                v.ver_id,
+                v.arq_id,
+                d.fon_id,
+                a.arq_hash,
+                v.ver_localizacao,
+                d.dic_id,
+                d.dic_versao
+            INTO
+                v_status,
+                v_ver,
+                v_arq,
+                v_fonte,
+                v_hash,
+                v_location,
+                v_dic,
+                v_dic_ver
+            FROM
+                     camada c
+                JOIN versao     v ON v.ver_id = c.ver_id
+                JOIN arquivo    a ON a.arq_id = v.arq_id
+                JOIN ingestao   i ON i.ing_id = a.ing_id
+                JOIN dicionario d ON d.dic_id = i.dic_id
+            WHERE
+                c.cam_id = p_cam;
+
+            IF v_status NOT IN ( 'TRATADA', 'PUBLICADA' ) THEN
+                raise_application_error(-20125, 'Indicadores exigem camadas de versoes aprovadas.');
+            END IF;
+
+            v_obj.put('camadaId', p_cam);
+            v_obj.put('versaoId', v_ver);
+            v_obj.put('arquivoId', v_arq);
+            v_obj.put('fonteId', v_fonte);
+            v_obj.put('hashArquivoOriginal', v_hash);
+            v_obj.put('localizacaoVersao', v_location);
+            v_obj.put('dicionarioId', v_dic);
+            v_obj.put('dicionarioVersao', v_dic_ver);
+            v_trace.append(v_obj);
+        END;
+
+        -- Percorre todas as camadas/arquivos do papel, recorta no imovel e dissolve sobreposicoes; deduplica focos por id_evento.
+
+        FUNCTION unir (
+            p_papel  VARCHAR2,
+            p_desde  DATE DEFAULT NULL,
+            p_ate    DATE DEFAULT NULL,
+            p_pontos BOOLEAN DEFAULT FALSE
+        ) RETURN mdsys.sdo_geometry IS
+
+            v_ids   json_array_t;
+            v_cam   NUMBER;
+            v_n     NUMBER;
+            v_date  DATE;
+            v_union mdsys.sdo_geometry;
+            v_clip  mdsys.sdo_geometry;
+        BEGIN
+            IF NOT v_cfg.has(p_papel) THEN
+                raise_application_error(-20126, 'Informe camadas para '
+                                                || p_papel
+                                                || '; ausencia nao significa zero.');
+            END IF;
+
+            v_ids := v_cfg.get_array(p_papel);
+            IF v_ids IS NULL
+               OR v_ids.get_size() = 0 THEN
+                raise_application_error(-20126, 'Informe camadas para '
+                                                || p_papel
+                                                || '; ausencia nao significa zero.');
+            END IF;
+
+            FOR j IN 0..v_ids.get_size() - 1 LOOP
+                v_cam := v_ids.get_number(j);
+                IF v_cam IS NULL
+                   OR v_cam <= 0
+                OR v_cam <> trunc(v_cam) THEN
+                    raise_application_error(-20126, 'ID de camada invalido.');
+                END IF;
+
+                FOR k IN 0..j - 1 LOOP
+                    IF v_ids.get_number(k) = v_cam THEN
+                        raise_application_error(-20126, 'Camada duplicada.');
+                    END IF;
+                END LOOP;
+
+                rastrear(v_cam);
+                v_n := 0;
+                FOR f IN (
+                    SELECT
+                        fei_geometria,
+                        fei_atributos
+                    FROM
+                        feicao
+                    WHERE
+                        cam_id = v_cam
+                ) LOOP
+                    v_n := v_n + 1;
+                    IF (
+                        p_pontos
+                        AND f.fei_geometria.sdo_gtype <> 2001
+                    )
+                    OR (
+                        NOT p_pontos
+                        AND MOD(f.fei_geometria.sdo_gtype,
+                                100) NOT IN ( 3, 7 )
+                    ) THEN
+                        raise_application_error(-20127, 'Tipo geometrico incompativel com ' || p_papel);
+                    END IF;
+
+                    IF p_desde IS NOT NULL THEN
+                        v_details := json_object_t.parse(f.fei_atributos);
+                        v_date := data_iso(v_details.get_string('data_evento'));
+                        IF v_date < p_desde
+                        OR v_date > p_ate THEN
+                            CONTINUE;
+                        END IF;
+                    END IF;
+
+                    v_geom := projetar(f.fei_geometria);
+                    IF p_pontos THEN
+                        v_details := json_object_t.parse(f.fei_atributos);
+                        v_evento := v_details.get_string('id_evento');
+                        IF v_evento IS NULL THEN
+                            raise_application_error(-20130, 'Foco sem id_evento normalizado.');
+                        END IF;
+                        -- Um registro = uma deteccao; a borda pertence ao imovel.
+                        IF
+                            sdo_geom.relate(v_imovel, 'ANYINTERACT', v_geom, c_tol) = 'TRUE'
+                            AND NOT v_eventos.EXISTS(v_evento)
+                        THEN
+                            v_focos := v_focos + 1;
+                            v_eventos(v_evento) := TRUE;
+                        END IF;
+
+                    ELSE
+                        v_clip := recortar(v_imovel, v_geom);
+                        IF area_plana(v_clip) > 0 THEN
+                            IF v_union IS NULL THEN
+                                v_union := v_clip;
+                            ELSE
+                                v_union := sdo_geom.sdo_union(v_union, v_clip, c_tol);
+                            END IF;
+
+                        END IF;
+
+                    END IF;
+
+                END LOOP;
+
+                IF v_n = 0 THEN
+                    raise_application_error(-20128, 'Camada vazia; confirme a carga antes de calcular.');
+                END IF;
+            END LOOP;
+
+            RETURN v_union;
+        END;
+
+        -- Acrescenta areaHa e percentual = areaHa / denominadorHa * 100; denominador zero gera percentual nulo.
+
+        PROCEDURE medida (
+            p_nome        VARCHAR2,
+            p_ha          NUMBER,
+            p_denominador NUMBER
+        ) IS
+            v_obj json_object_t := json_object_t();
+        BEGIN
+            v_obj.put('areaHa', p_ha);
+            IF p_denominador = 0 THEN
+                v_obj.put_null('percentual');
+            ELSE
+                v_obj.put('percentual', p_ha / p_denominador * 100);
+            END IF;
+
+            v_out.put(p_nome, v_obj);
+        END;
+
+    BEGIN
+        v_cfg := json_object_t.parse(p_config);
+        v_cfg.on_error(1);
+        IF p_indicador IN ( 'TODOS', 'IRL' ) THEN
+            v_rl_min := v_cfg.get_number('rlMinimoPercentual');
+            IF v_rl_min IS NULL
+               OR v_rl_min < 0
+            OR v_rl_min > 100 THEN
+                raise_application_error(-20129, 'Informe o percentual minimo de RL entre 0 e 100.');
+            END IF;
+
+            IF v_cfg.get_string('fundamentoRl') IS NULL THEN
+                raise_application_error(-20129, 'Informe o fundamento do percentual de RL adotado.');
+            END IF;
+
+        END IF;
+
+        IF p_indicador IN ( 'TODOS', 'IFC', 'IDESMAT' ) THEN
+            v_fim := data_iso(v_cfg.get_string('fim'));
+        END IF;
+
+        IF p_indicador IN ( 'TODOS', 'IFC' ) THEN
+            v_inicio := data_iso(v_cfg.get_string('inicio'));
+            IF v_inicio > v_fim THEN
+                raise_application_error(-20124, 'Periodo invertido.');
+            END IF;
+        END IF;
+
+        SELECT
+            f.fei_geometria,
+            f.cam_id
+        INTO
+            v_raw,
+            v_calc
+        FROM
+            feicao f
+        WHERE
+            f.fei_id = p_imovel_id;
+
+        IF MOD(v_raw.sdo_gtype, 100) NOT IN ( 3, 7 ) THEN
+            raise_application_error(-20127, 'Imovel deve ser poligonal.');
+        END IF;
+
+        rastrear(v_calc);
+        v_imovel := projetar(v_raw);
+        v_area := area_plana(v_imovel);
+        IF v_area <= 0 THEN
+            raise_application_error(-20127, 'Imovel sem area positiva.');
+        END IF;
+        IF p_indicador IN ( 'TODOS', 'ICV', 'IAPP' ) THEN
+            v_native := unir('vegetacao');
+        END IF;
+        IF p_indicador IN ( 'TODOS', 'ICV' ) THEN
+            medida('ICV',
+                   area_plana(v_native),
+                   v_area);
+        END IF;
+        IF p_indicador IN ( 'TODOS', 'IRL' ) THEN
+            v_rl := unir('reservaLegal');
+            v_rl_area := area_plana(v_rl);
+            medida('IRL', v_rl_area, v_area);
+            v_details := v_out.get_object('IRL');
+            v_details.put('minimoPercentual', v_rl_min);
+            v_details.put('deficitHa',
+                          greatest(v_area * v_rl_min / 100 - v_rl_area, 0));
+
+            v_details.put('excedenteHa',
+                          greatest(v_rl_area - v_area * v_rl_min / 100, 0));
+
+            v_out.put('IRL', v_details);
+        END IF;
+        IF p_indicador IN ( 'TODOS', 'IAPP' ) THEN
+            v_app := unir('app');
+            v_app_area := area_plana(v_app);
+            v_conservada := area_plana(recortar(v_app, v_native));
+            medida('IAPP', v_conservada, v_app_area);
+            v_details := v_out.get_object('IAPP');
+            v_details.put('appTotalHa', v_app_area);
+            v_details.put('passivoHa',
+                          greatest(v_app_area - v_conservada, 0));
+            v_out.put('IAPP', v_details);
+        END IF;
+        IF p_indicador IN ( 'TODOS', 'ISAP' ) THEN
+            medida('ISAP',
+                   area_plana(unir('areasProtegidas')),
+                   v_area);
+        END IF;
+        IF p_indicador IN ( 'TODOS', 'IAE' ) THEN
+            medida('IAE',
+                   area_plana(unir('embargos')),
+                   v_area);
+        END IF;
+        IF p_indicador IN ( 'TODOS', 'IDESMAT' ) THEN
+            medida('IDesmat2008',
+                   area_plana(unir('desmatamento', DATE '2008-07-22', v_fim)),
+                   v_area);
+
+            medida('IDesmat2019',
+                   area_plana(unir('desmatamento', DATE '2019-07-31', v_fim)),
+                   v_area);
+
+            medida('IDesmat2020',
+                   area_plana(unir('desmatamento', DATE '2020-12-31', v_fim)),
+                   v_area);
+
+        END IF;
+        IF p_indicador IN ( 'TODOS', 'IFC' ) THEN
+            v_geom := unir('focos', v_inicio, v_fim, TRUE);
+            v_details := json_object_t();
+            v_details.put('quantidade', v_focos);
+            v_details.put('porMilHa', v_focos / v_area * 1000);
+            v_out.put('IFC', v_details);
+        END IF;
+
+        v_out.put('imovelId', p_imovel_id);
+        v_out.put('areaImovelHa', v_area);
+        v_out.put('regra', c_regra);
+        v_out.put_null('epsgCalculo');
+        v_out.put('projecaoCalculo', 'SIRGAS2000 / Albers Brasil (local)');
+        v_out.put('epsgBaseCalculo', 4674);
+        v_out.put('metodoEpsgCalculo', 9822);
+        v_out.put('sridOracleCalculo',
+                  pkg_ambiental_crs.srid_calculo());
+        v_out.put('toleranciaMetros', c_tol);
+        v_out.put('fontes', v_trace);
+        v_out.put('parametros', v_cfg);
+        v_out.put('calculadoEm',
+                  to_char(systimestamp AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.FF3"Z"'));
+        RETURN v_out.to_clob();
+    END;
+
+
+    FUNCTION icv (
+        p_imovel_id NUMBER,
+        p_config    CLOB
+    ) RETURN CLOB IS
+    BEGIN
+        RETURN resultado(p_imovel_id, p_config, 'ICV');
+    END;
+
+
+    FUNCTION irl (
+        p_imovel_id NUMBER,
+        p_config    CLOB
+    ) RETURN CLOB IS
+    BEGIN
+        RETURN resultado(p_imovel_id, p_config, 'IRL');
+    END;
+
+
+    FUNCTION iapp (
+        p_imovel_id NUMBER,
+        p_config    CLOB
+    ) RETURN CLOB IS
+    BEGIN
+        RETURN resultado(p_imovel_id, p_config, 'IAPP');
+    END;
+
+
+    FUNCTION isap (
+        p_imovel_id NUMBER,
+        p_config    CLOB
+    ) RETURN CLOB IS
+    BEGIN
+        RETURN resultado(p_imovel_id, p_config, 'ISAP');
+    END;
+
+
+    FUNCTION iae (
+        p_imovel_id NUMBER,
+        p_config    CLOB
+    ) RETURN CLOB IS
+    BEGIN
+        RETURN resultado(p_imovel_id, p_config, 'IAE');
+    END;
+
+
+    FUNCTION idesmat (
+        p_imovel_id NUMBER,
+        p_config    CLOB
+    ) RETURN CLOB IS
+    BEGIN
+        RETURN resultado(p_imovel_id, p_config, 'IDESMAT');
+    END;
+
+
+    FUNCTION ifc (
+        p_imovel_id NUMBER,
+        p_config    CLOB
+    ) RETURN CLOB IS
+    BEGIN
+        RETURN resultado(p_imovel_id, p_config, 'IFC');
+    END;
+
+
+    PROCEDURE calcular (
+        p_imovel_id NUMBER,
+        p_config    CLOB,
+        p_resultado OUT CLOB
+    ) IS
+        v_calc NUMBER;
+        v_out  json_object_t;
+    BEGIN
+        SAVEPOINT calculo_ambiental;
+        p_resultado := resultado(p_imovel_id, p_config, 'TODOS');
+        INSERT INTO calculo_ambiental (
+            fei_imovel_id,
+            calc_regra,
+            calc_parametros,
+            calc_resultado
+        ) VALUES ( p_imovel_id,
+                   c_regra,
+                   p_config,
+                   p_resultado ) RETURNING calc_id INTO v_calc;
+
+        v_out := json_object_t.parse(p_resultado);
+        v_out.put('calculoId', v_calc);
+        p_resultado := v_out.to_clob();
+    EXCEPTION
+        WHEN OTHERS THEN
+            ROLLBACK TO calculo_ambiental;
+            RAISE;
+    END;
+
+END;
+/
+
+CREATE OR REPLACE PROCEDURE pr_calcular_indicador (
+    p_feicao    NUMBER,
+    p_indicador VARCHAR2,
+    p_config    CLOB,
+    p_resultado OUT CLOB
+)
+    AUTHID definer
+IS
+
+    v_json       json_object_t;
+    v_config     json_object_t;
+    v_id         NUMBER;
+    v_regra      VARCHAR2(30);
+    v_indicador  VARCHAR2(20) := lower(p_indicador);
+    v_parametros CLOB;
+BEGIN
+    SAVEPOINT salvar_indicador;
+    CASE v_indicador
+        WHEN 'icv' THEN
+            p_resultado := pkg_indicadores_ambientais.icv(p_feicao, p_config);
+        WHEN 'irl' THEN
+            p_resultado := pkg_indicadores_ambientais.irl(p_feicao, p_config);
+        WHEN 'iapp' THEN
+            p_resultado := pkg_indicadores_ambientais.iapp(p_feicao, p_config);
+        WHEN 'isap' THEN
+            p_resultado := pkg_indicadores_ambientais.isap(p_feicao, p_config);
+        WHEN 'iae' THEN
+            p_resultado := pkg_indicadores_ambientais.iae(p_feicao, p_config);
+        WHEN 'idesmat' THEN
+            p_resultado := pkg_indicadores_ambientais.idesmat(p_feicao, p_config);
+        WHEN 'ifc' THEN
+            p_resultado := pkg_indicadores_ambientais.ifc(p_feicao, p_config);
+        ELSE
+            raise_application_error(-20163, 'Indicador desconhecido.');
+    END CASE;
+
+    v_json := json_object_t.parse(p_resultado);
+    v_regra := v_json.get_string('regra');
+    v_config := json_object_t.parse(p_config);
+    v_config.put('indicador', v_indicador);
+    v_parametros := v_config.to_clob();
+    INSERT INTO calculo_ambiental (
+        fei_imovel_id,
+        calc_regra,
+        calc_parametros,
+        calc_resultado
+    ) VALUES ( p_feicao,
+               v_regra,
+               v_parametros,
+               p_resultado ) RETURNING calc_id INTO v_id;
+
+    v_json.put('calculoId', v_id);
+    p_resultado := v_json.to_clob();
+    -- calc_id identifica a linha; calculoId e acrescentado somente a resposta.
+    -- Nao faz UPDATE: o historico existente e imutavel.
+    -- Sem COMMIT: Spring confirma somente se a chamada inteira concluir.
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK TO salvar_indicador;
+        RAISE;
+END;
+/
+
+
+
+-- Cria somente uma funcao de leitura; nao cria tabelas, nao persiste mapas.
+-- DDL faz commit implicito: use uma sessao sem alteracoes pendentes.
+-- Representacao geografica das contribuicoes, NAO a inversa da geometria Albers.
+-- Nao recalcula/substitui os valores publicados pelo package de indicadores.
+CREATE OR REPLACE FUNCTION fn_ambiental_mapa (
+    p_feicao    NUMBER,
+    p_indicador VARCHAR2,
+    p_config    CLOB
+) RETURN CLOB
+    AUTHID definer
+IS
+
+    cfg         json_object_t := json_object_t.parse(p_config);
+    output      json_object_t := json_object_t();
+    features    json_array_t := json_array_t();
+    area        mdsys.sdo_geometry;
+    geom        mdsys.sdo_geometry;
+    app_geom    mdsys.sdo_geometry;
+    native_geom mdsys.sdo_geometry;
+    validated   CLOB;
+    response    CLOB;
+    indicator   VARCHAR2(20) := upper(p_indicador);
+    since_date  DATE;
+    until_date  DATE;
+    scanned     NUMBER := 0;
+    vertices    NUMBER := 0;
+    output_size NUMBER := 0;
+    cleaned     NUMBER := 0;
+    tol         CONSTANT NUMBER := 0.05; -- metros, operacoes geodesicas
+    TYPE events_t IS
+        TABLE OF BOOLEAN INDEX BY VARCHAR2(4000);
+    events      events_t;
+
+    FUNCTION geographic (
+        g       mdsys.sdo_geometry,
+        p_id    NUMBER,
+        p_papel VARCHAR2
+    ) RETURN mdsys.sdo_geometry IS
+        converted  mdsys.sdo_geometry;
+        diagnostic VARCHAR2(4000);
+    BEGIN
+        IF g IS NULL
+           OR g.sdo_srid IS NULL
+        OR g.sdo_srid NOT IN ( 4326, 4674 ) THEN
+            raise_application_error(-20160, 'Mapa exige geometrias de origem em 4326 ou 4674. A inversa de Albers local nao e utilizada.'
+            );
+        END IF;
+
+        IF g.sdo_srid = 4326 THEN
+            converted := g;
+        ELSE
+            converted := sdo_cs.transform(g, 4326);
+        END IF;
+
+        diagnostic := nvl(
+            sdo_geom.validate_geometry_with_context(converted, tol),
+            'INVALID'
+        );
+        -- Trata somente 13356 em uma copia temporaria para visualizacao.
+        -- REMOVE_DUPLICATE_VERTICES tambem considera proximidade dentro da tolerancia.
+        IF
+            substr(diagnostic, 1, 5) = '13356'
+            AND MOD(converted.sdo_gtype, 100) IN ( 2, 3, 6, 7 )
+        THEN
+            converted := sdo_util.remove_duplicate_vertices(converted, tol);
+            diagnostic := nvl(
+                sdo_geom.validate_geometry_with_context(converted, tol),
+                'INVALID'
+            );
+            IF diagnostic = 'TRUE' THEN
+                cleaned := cleaned + 1;
+            END IF;
+        END IF;
+
+        IF diagnostic <> 'TRUE' THEN
+            raise_application_error(-20161,
+                                    'Mapa: feicao '
+                                    || p_id
+                                    || ', papel '
+                                    || p_papel
+                                    || ', SRID '
+                                    || converted.sdo_srid
+                                    || ', tolerancia '
+                                    || tol
+                                    || ' m. Diagnostico Oracle: '
+                                    || substr(diagnostic, 1, 1200));
+        END IF;
+
+        vertices := vertices + sdo_util.getnumvertices(converted);
+        IF vertices > 200000 THEN
+            raise_application_error(-20162, 'Mapa excede 200 mil vertices de entrada. Use uma area ou camadas menores.');
+        END IF;
+        RETURN converted;
+    END;
+
+    PROCEDURE append_feature (
+        g         mdsys.sdo_geometry,
+        role_name VARCHAR2,
+        event_id  VARCHAR2 DEFAULT NULL
+    ) IS
+        item          json_object_t := json_object_t();
+        props         json_object_t := json_object_t();
+        geometry_json CLOB;
+    BEGIN
+        IF g IS NULL THEN
+            RETURN;
+        END IF;
+        IF features.get_size() >= 5000 THEN
+            raise_application_error(-20162, 'Mapa excede 5 mil feicoes. Reduza o periodo ou a area de analise.');
+        END IF;
+
+        geometry_json := sdo_util.to_geojson(g);
+        output_size := output_size + dbms_lob.getlength(geometry_json);
+        IF output_size > 4900000 THEN
+            raise_application_error(-20162, 'Mapa excede o limite de tamanho. Nenhuma geometria foi truncada.');
+        END IF;
+        item.put('type', 'Feature');
+        item.put('geometry',
+                 json_object_t.parse(geometry_json));
+        props.put('papel', role_name);
+        IF event_id IS NOT NULL THEN
+            props.put('id_evento', event_id);
+        END IF;
+        item.put('properties', props);
+        features.append(item);
+    END;
+
+    FUNCTION contribution (
+        role_name VARCHAR2,
+        from_date DATE DEFAULT NULL,
+        p_until   DATE DEFAULT NULL,
+        points    BOOLEAN DEFAULT FALSE
+    ) RETURN mdsys.sdo_geometry IS
+
+        ids        json_array_t;
+        layer_id   NUMBER;
+        combined   mdsys.sdo_geometry;
+        raw_geom   mdsys.sdo_geometry;
+        clipped    mdsys.sdo_geometry;
+        attrs      json_object_t;
+        date_value DATE;
+        event_id   VARCHAR2(4000);
+    BEGIN
+        ids := cfg.get_array(role_name);
+        FOR j IN 0..ids.get_size() - 1 LOOP
+            layer_id := ids.get_number(j);
+            FOR f IN (
+                SELECT
+                    fei_id,
+                    fei_geometria,
+                    fei_atributos
+                FROM
+                    feicao
+                WHERE
+                    cam_id = layer_id
+                ORDER BY
+                    fei_id
+            ) LOOP
+                scanned := scanned + 1;
+                IF scanned > 50000 THEN
+                    raise_application_error(-20162, 'Mapa excede 50 mil registros examinados. Reduza os insumos.');
+                END IF;
+                IF from_date IS NOT NULL THEN
+                    attrs := json_object_t.parse(f.fei_atributos);
+                    date_value := TO_DATE ( attrs.get_string('data_evento'), 'FXYYYY-MM-DD' );
+                    IF date_value < from_date
+                    OR date_value > p_until THEN
+                        CONTINUE;
+                    END IF;
+                END IF;
+
+                raw_geom := geographic(f.fei_geometria, f.fei_id, role_name);
+                IF sdo_geom.relate(area, 'ANYINTERACT', raw_geom, tol) <> 'TRUE' THEN
+                    CONTINUE;
+                END IF;
+
+                IF points THEN
+                    event_id := attrs.get_string('id_evento');
+                    IF NOT events.EXISTS(event_id) THEN
+                        events(event_id) := TRUE;
+                        append_feature(raw_geom, 'IFC', event_id);
+                    END IF;
+
+                ELSE
+                    clipped := sdo_geom.sdo_intersection(area, raw_geom, tol);
+                    IF
+                        clipped IS NOT NULL
+                        AND MOD(clipped.sdo_gtype, 100) IN ( 3, 7 )
+                    THEN
+                        IF combined IS NULL THEN
+                            combined := clipped;
+                        ELSE
+                            combined := sdo_geom.sdo_union(combined, clipped, tol);
+                        END IF;
+
+                        IF sdo_util.getnumvertices(combined) > 200000 THEN
+                            raise_application_error(-20162, 'Geometria de visualizacao excede 200 mil vertices.');
+                        END IF;
+
+                    END IF;
+
+                END IF;
+
+            END LOOP;
+
+        END LOOP;
+
+        RETURN combined;
+    END;
+
+BEGIN
+    -- Reutiliza as validacoes oficiais (tipos, periodos, aprovacoes e dados obrigatorios).
+    -- Funcoes individuais sao de leitura. O JSON numerico nao e modificado nem persistido.
+    CASE indicator
+        WHEN 'ICV' THEN
+            validated := pkg_indicadores_ambientais.icv(p_feicao, p_config);
+        WHEN 'IRL' THEN
+            validated := pkg_indicadores_ambientais.irl(p_feicao, p_config);
+        WHEN 'IAPP' THEN
+            validated := pkg_indicadores_ambientais.iapp(p_feicao, p_config);
+        WHEN 'ISAP' THEN
+            validated := pkg_indicadores_ambientais.isap(p_feicao, p_config);
+        WHEN 'IAE' THEN
+            validated := pkg_indicadores_ambientais.iae(p_feicao, p_config);
+        WHEN 'IDESMAT' THEN
+            validated := pkg_indicadores_ambientais.idesmat(p_feicao, p_config);
+        WHEN 'IFC' THEN
+            validated := pkg_indicadores_ambientais.ifc(p_feicao, p_config);
+        ELSE
+            raise_application_error(-20160, 'Indicador invalido.');
+    END CASE;
+
+    SELECT
+        fei_geometria
+    INTO geom
+    FROM
+        feicao
+    WHERE
+        fei_id = p_feicao;
+
+    area := geographic(geom, p_feicao, 'area de analise');
+    append_feature(area, 'analise');
+    IF indicator IN ( 'IFC', 'IDESMAT' ) THEN
+        until_date := TO_DATE ( cfg.get_string('fim'), 'FXYYYY-MM-DD' );
+    END IF;
+
+    CASE indicator
+        WHEN 'ICV' THEN
+            geom := contribution('vegetacao');
+            append_feature(geom, 'ICV');
+        WHEN 'IRL' THEN
+            geom := contribution('reservaLegal');
+            append_feature(geom, 'IRL');
+        WHEN 'ISAP' THEN
+            geom := contribution('areasProtegidas');
+            append_feature(geom, 'ISAP');
+        WHEN 'IAE' THEN
+            geom := contribution('embargos');
+            append_feature(geom, 'IAE');
+        WHEN 'IAPP' THEN
+            app_geom := contribution('app');
+            native_geom := contribution('vegetacao');
+            append_feature(app_geom, 'APP');
+            IF
+                app_geom IS NOT NULL
+                AND native_geom IS NOT NULL
+            THEN
+                geom := sdo_geom.sdo_intersection(app_geom, native_geom, tol);
+                IF
+                    geom IS NOT NULL
+                    AND MOD(geom.sdo_gtype, 100) IN ( 3, 7 )
+                THEN
+                    append_feature(geom, 'IAPP');
+                END IF;
+
+            END IF;
+
+        WHEN 'IDESMAT' THEN
+            geom := contribution('desmatamento', DATE '2008-07-22', until_date);
+            append_feature(geom, 'IDesmat2008');
+            geom := contribution('desmatamento', DATE '2019-07-31', until_date);
+            append_feature(geom, 'IDesmat2019');
+            geom := contribution('desmatamento', DATE '2020-12-31', until_date);
+            append_feature(geom, 'IDesmat2020');
+        WHEN 'IFC' THEN
+            since_date := TO_DATE ( cfg.get_string('inicio'), 'FXYYYY-MM-DD' );
+            geom := contribution('focos', since_date, until_date, TRUE);
+    END CASE;
+
+    output.put('type', 'FeatureCollection');
+    output.put('features', features);
+    output.put('aviso', 'Representacao geografica das contribuicoes, recortadas no Oracle em WGS84. Pode diferir nos limites da geometria Albers usada nas medidas. Nao representa a localizacao de deficits de reserva legal.'
+    );
+    IF cleaned > 0 THEN
+        output.put('ajustesVisualizacao', cleaned);
+        output.put('aviso', 'Representacao geografica: vertices redundantes foram removidos de '
+                            || cleaned
+                            || ' copia(s) temporaria(s) para visualizacao, com tolerancia de 0.05 m. Nenhuma geometria armazenada ou medida oficial foi alterada. O recorte pode diferir nos limites do calculo Albers.'
+                            );
+    END IF;
+
+    output.put('toleranciaMetros', tol);
+    output.put('indicador', indicator);
+    response := output.to_clob();
+    IF dbms_lob.getlength(response) > 5000000 THEN
+        raise_application_error(-20162, 'Mapa excede o limite de tamanho.');
+    END IF;
+
+    RETURN response;
+END;
+/
+
+SHOW ERRORS PROCEDURE pr_calcular_indicador;
+SHOW ERRORS FUNCTION fn_ambiental_mapa;
+SHOW ERRORS PACKAGE pkg_indicadores_ambientais;
+SHOW ERRORS PACKAGE BODY pkg_indicadores_ambientais;

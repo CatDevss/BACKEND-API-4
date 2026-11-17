@@ -6,8 +6,7 @@ public record RecordValidationResult(
         int recordIndex,
         String rawContent,
         boolean valid,
-        List<String> errors
-) {
+        List<String> errors) {
     public static RecordValidationResult ok(int index, String raw) {
         return new RecordValidationResult(index, raw, true, List.of());
     }

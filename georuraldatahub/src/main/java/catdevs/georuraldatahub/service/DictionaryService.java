@@ -33,7 +33,7 @@ public class DictionaryService {
                 .orElseThrow(() -> missing("Esta fonte não possui dicionário de dados cadastrado."));
     }
 
-    // Same source lock as create/update/delete: selection and first use are atomic.
+    // O bloqueio da fonte protege a seleção e o primeiro uso do dicionário.
     @Transactional
     public Dictionary acquireForValidation(Long sourceId) {
         return acquireForValidation(sourceId, null);
@@ -47,8 +47,10 @@ public class DictionaryService {
 
     @Transactional(readOnly = true)
     public Dictionary findForValidation(Long sourceId, Long dictionaryId) {
-        if (dictionaryId == null) return findLatestBySourceId(sourceId);
-        if (dictionaryId <= 0) throw new IllegalArgumentException("Informe um ID de dicionário positivo.");
+        if (dictionaryId == null)
+            return findLatestBySourceId(sourceId);
+        if (dictionaryId <= 0)
+            throw new IllegalArgumentException("Informe um ID de dicionário positivo.");
         Dictionary dictionary = entity(dictionaryId);
         if (!Objects.equals(dictionary.getSource().getId(), sourceId))
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT,
@@ -64,12 +66,14 @@ public class DictionaryService {
         int nextVersion = dictionaries.findFirstBySource_IdOrderByVersionDesc(sourceId)
                 .map(previous -> {
                     Integer version = previous.getVersion();
-                    if (version == null || version < 1) throw new ResponseStatusException(
-                            HttpStatus.CONFLICT, "Dicionário existente possui versão inválida.");
+                    if (version == null || version < 1)
+                        throw new ResponseStatusException(
+                                HttpStatus.CONFLICT, "Dicionário existente possui versão inválida.");
                     return version + 1;
                 }).orElse(1);
-        if (nextVersion > 99) throw new ResponseStatusException(HttpStatus.CONFLICT,
-                "Esta fonte atingiu o limite de 99 versões permitido pelo banco atual.");
+        if (nextVersion > 99)
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Esta fonte atingiu o limite de 99 versões permitido pelo banco atual.");
         d.setVersion(nextVersion);
         apply(d, request);
         return response(dictionaries.save(d));
@@ -77,12 +81,15 @@ public class DictionaryService {
 
     @Transactional(readOnly = true)
     public List<DictionaryResponseDTO> list(Long sourceId) {
-        if (!sources.existsById(sourceId)) throw missing("Fonte não encontrada.");
+        if (!sources.existsById(sourceId))
+            throw missing("Fonte não encontrada.");
         return dictionaries.findBySource_IdOrderByVersionDesc(sourceId).stream().map(this::response).toList();
     }
 
     @Transactional(readOnly = true)
-    public DictionaryResponseDTO get(Long id) { return response(entity(id)); }
+    public DictionaryResponseDTO get(Long id) {
+        return response(entity(id));
+    }
 
     @Transactional
     public DictionaryResponseDTO update(Long id, DictionaryRequestDTO request) {
@@ -107,7 +114,8 @@ public class DictionaryService {
 
     public List<FieldRule> rules(Dictionary d) {
         try {
-            List<FieldRule> rules = mapper.readValue(d.getStructure(), new TypeReference<List<FieldRule>>() {});
+            List<FieldRule> rules = mapper.readValue(d.getStructure(), new TypeReference<List<FieldRule>>() {
+            });
             validateRules(rules);
             return rules;
         } catch (Exception e) {
@@ -120,47 +128,67 @@ public class DictionaryService {
         lockSource(dictionaries.findSourceIdById(id).orElseThrow(() -> missing("Dicionário não encontrado.")));
         return dictionaries.findLockedById(id).orElseThrow(() -> missing("Dicionário não encontrado."));
     }
+
     private Source lockSource(Long id) {
         return sources.findLockedById(id).orElseThrow(() -> missing("Fonte não encontrada."));
     }
+
     private Dictionary entity(Long id) {
         return dictionaries.findById(id).orElseThrow(() -> missing("Dicionário não encontrado."));
     }
-    private boolean used(Dictionary d) { return ingestions.existsByDictionary_Id(d.getId()); }
-    private void ensureDraft(Dictionary d) {
-        if (used(d)) throw new ResponseStatusException(HttpStatus.CONFLICT,
-                "Dicionário já utilizado em validações. Crie uma nova versão para alterar as regras.");
+
+    private boolean used(Dictionary d) {
+        return ingestions.existsByDictionary_Id(d.getId());
     }
+
+    private void ensureDraft(Dictionary d) {
+        if (used(d))
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Dicionário já utilizado em validações. Crie uma nova versão para alterar as regras.");
+    }
+
     private void apply(Dictionary d, DictionaryRequestDTO request) {
         validateRules(request.rules());
-        if (request.name() == null || request.name().isBlank()) throw new IllegalArgumentException("Nome obrigatório.");
+        if (request.name() == null || request.name().isBlank())
+            throw new IllegalArgumentException("Nome obrigatório.");
         String name = request.name().trim();
         ensureFits(name, 100, "Nome");
         ensureFits(request.description(), 500, "Descrição");
         String structure;
-        try { structure = mapper.writeValueAsString(request.rules()); }
-        catch (Exception e) { throw new IllegalArgumentException("Regras inválidas.", e); }
+        try {
+            structure = mapper.writeValueAsString(request.rules());
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Regras inválidas.", e);
+        }
         ensureFits(structure, 10000, "Estrutura de regras");
         d.setName(name);
         d.setDescription(request.description());
         d.setStructure(structure);
     }
+
     private void ensureFits(String value, int maxBytes, String field) {
         if (value != null && value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > maxBytes)
             throw new IllegalArgumentException(field + " excede o limite de " + maxBytes + " bytes do banco atual.");
     }
+
     private void validateRules(List<FieldRule> rules) {
-        if (rules == null || rules.isEmpty()) throw new IllegalArgumentException("Informe ao menos uma regra.");
+        if (rules == null || rules.isEmpty())
+            throw new IllegalArgumentException("Informe ao menos uma regra.");
         Set<String> names = new HashSet<>();
         for (FieldRule rule : rules) {
             if (rule == null || rule.name() == null || rule.name().isBlank() || rule.type() == null
                     || !rule.name().equals(rule.name().trim()) || !names.add(rule.name()))
-                throw new IllegalArgumentException("Campos devem ter nome único, sem espaços nas extremidades, e tipo válido.");
+                throw new IllegalArgumentException(
+                        "Campos devem ter nome único, sem espaços nas extremidades, e tipo válido.");
         }
     }
+
     private DictionaryResponseDTO response(Dictionary d) {
         return new DictionaryResponseDTO(d.getId(), d.getSource().getId(), d.getName(), d.getDescription(),
                 d.getVersion(), used(d) ? "UTILIZADO" : "RASCUNHO", rules(d), d.getCreatedOn());
     }
-    private ResponseStatusException missing(String reason) { return new ResponseStatusException(HttpStatus.NOT_FOUND, reason); }
+
+    private ResponseStatusException missing(String reason) {
+        return new ResponseStatusException(HttpStatus.NOT_FOUND, reason);
+    }
 }

@@ -14,16 +14,17 @@ import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 
 public interface QuarantineRepository extends JpaRepository<Quarantine, Long> {
-    @EntityGraph(attributePaths = {"user", "file", "ingestion", "ingestion.dictionary", "ingestion.dictionary.source"})
+    @EntityGraph(attributePaths = { "user", "file", "ingestion", "ingestion.dictionary",
+            "ingestion.dictionary.source" })
     @Query("""
-        select q from Quarantine q
-        left join q.user responsible
-        left join q.file file
-        where (:status is null or q.status = :status)
-          and (:responsibleId is null or responsible.id = :responsibleId)
-          and (:fileId is null or file.id = :fileId)
-          and (:unassigned = false or (responsible is null and q.dateResolution is null and q.status <> 'RESOLVIDA'))
-        """)
+            select q from Quarantine q
+            left join q.user responsible
+            left join q.file file
+            where (:status is null or q.status = :status)
+              and (:responsibleId is null or responsible.id = :responsibleId)
+              and (:fileId is null or file.id = :fileId)
+              and (:unassigned = false or (responsible is null and q.dateResolution is null and q.status <> 'RESOLVIDA'))
+            """)
     Page<Quarantine> search(@Param("status") String status, @Param("responsibleId") Long responsibleId,
             @Param("fileId") Long fileId, @Param("unassigned") boolean unassigned, Pageable pageable);
 

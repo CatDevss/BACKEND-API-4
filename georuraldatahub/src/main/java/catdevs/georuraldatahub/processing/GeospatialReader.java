@@ -10,25 +10,38 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
 
-/** Leitura local por GeoTools: o original é copiado para uma área temporária e nunca alterado. */
+/**
+ * Leitura local por GeoTools: o original é copiado para uma área temporária e
+ * nunca alterado.
+ */
 @Component
 public class GeospatialReader {
     private final ProcessingProperties limits;
 
-    public GeospatialReader(ProcessingProperties limits) { this.limits = limits; }
+    public GeospatialReader(ProcessingProperties limits) {
+        this.limits = limits;
+    }
 
-    public record Result(byte[] content, JsonNode metadata) { }
+    public record Result(byte[] content, JsonNode metadata) {
+    }
 
     public Result read(InputStream input, String format, int sourceSrid) throws IOException {
         return read(input, format, sourceSrid, null);
     }
 
-    /** Filtro espacial de coleta, após reprojeção; o leitor de uploads mantém seu contrato. */
-    public Result read(InputStream input, String format, int sourceSrid, org.locationtech.jts.geom.Envelope bounds) throws IOException {
+    /**
+     * Filtro espacial de coleta, após reprojeção; o leitor de uploads mantém seu
+     * contrato.
+     */
+    public Result read(InputStream input, String format, int sourceSrid, org.locationtech.jts.geom.Envelope bounds)
+            throws IOException {
         return read(input, format, sourceSrid, bounds, false);
     }
 
-    /** Seletor explícito para arquivos oficiais que incluem uma camada auxiliar de pontos. */
+    /**
+     * Seletor explícito para arquivos oficiais que incluem uma camada auxiliar de
+     * pontos.
+     */
     public Result read(InputStream input, String format, int sourceSrid, org.locationtech.jts.geom.Envelope bounds,
             boolean polygonLayer) throws IOException {
         if (!Set.of("zip", "gpkg", "json", "geojson", "tif", "tiff").contains(format))
@@ -48,12 +61,14 @@ public class GeospatialReader {
                 if (format.equals("tif") || format.equals("tiff")) {
                     result = new GeoTiffMetadataReader().read(source, deadline);
                 } else {
-                    if (format.equals("zip")) source = unpack(source, deadline, polygonLayer);
+                    if (format.equals("zip"))
+                        source = unpack(source, deadline, polygonLayer);
                     result = new GeoToolsVectorReader(limits).read(source, format, sourceSrid, deadline, bounds);
                 }
                 checkDeadline(deadline);
                 if (result.content().length > limits.getMaxOutputBytes()
-                        || result.metadata().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > ProcessingProperties.MAX_METADATA_BYTES)
+                        || result.metadata().toString().getBytes(
+                                java.nio.charset.StandardCharsets.UTF_8).length > ProcessingProperties.MAX_METADATA_BYTES)
                     throw invalid("Metadados ou conteúdo convertido excedem o limite.");
                 return result;
             } catch (ResponseStatusException e) {
@@ -66,7 +81,8 @@ public class GeospatialReader {
             }
         } finally {
             try (var paths = Files.walk(directory)) {
-                for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) Files.deleteIfExists(path);
+                for (Path path : paths.sorted(Comparator.reverseOrder()).toList())
+                    Files.deleteIfExists(path);
             }
         }
     }
@@ -77,34 +93,48 @@ public class GeospatialReader {
         int entries = 0;
         Set<Path> seen = new HashSet<>();
         List<Path> shapes = new ArrayList<>();
-        try (var archive = new ZipInputStream(Files.newInputStream(source), java.nio.charset.Charset.forName("IBM437"))) {
+        try (var archive = new ZipInputStream(Files.newInputStream(source),
+                java.nio.charset.Charset.forName("IBM437"))) {
             java.util.zip.ZipEntry entry;
             while ((entry = archive.getNextEntry()) != null) {
                 checkDeadline(deadline);
-                if (++entries > 100) throw invalid("ZIP excede 100 componentes.");
+                if (++entries > 100)
+                    throw invalid("ZIP excede 100 componentes.");
                 String name = entry.getName();
                 Path relative = Path.of(name);
                 if (relative.isAbsolute() || name.contains("\\") || name.contains(":")
-                        || Arrays.asList(name.split("/")).contains("..")) throw invalid("Caminho inválido no ZIP.");
+                        || Arrays.asList(name.split("/")).contains(".."))
+                    throw invalid("Caminho inválido no ZIP.");
                 Path target = destination.resolve(relative).normalize();
-                if (!target.startsWith(destination) || !seen.add(target)) throw invalid("Componente inválido ou duplicado no ZIP.");
-                if (entry.isDirectory()) { Files.createDirectories(target); continue; }
+                if (!target.startsWith(destination) || !seen.add(target))
+                    throw invalid("Componente inválido ou duplicado no ZIP.");
+                if (entry.isDirectory()) {
+                    Files.createDirectories(target);
+                    continue;
+                }
                 Files.createDirectories(target.getParent());
                 try (var output = Files.newOutputStream(target, StandardOpenOption.CREATE_NEW)) {
                     total += copy(archive, output, limits.getMaxExpandedBytes() - total, deadline);
                 }
                 if (name.toLowerCase(Locale.ROOT).endsWith(".shp")) {
-                    if (!polygonLayer) shapes.add(target);
-                    else try (var header = Files.newInputStream(target)) {
-                        byte[] bytes = header.readNBytes(36);
-                        if (bytes.length != 36) throw invalid("Cabeçalho SHP truncado.");
-                        int type = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN).getInt(32);
-                        if (Set.of(5, 15, 25).contains(type)) shapes.add(target);
-                    }
+                    if (!polygonLayer)
+                        shapes.add(target);
+                    else
+                        try (var header = Files.newInputStream(target)) {
+                            byte[] bytes = header.readNBytes(36);
+                            if (bytes.length != 36)
+                                throw invalid("Cabeçalho SHP truncado.");
+                            int type = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                                    .getInt(32);
+                            if (Set.of(5, 15, 25).contains(type))
+                                shapes.add(target);
+                        }
                 }
             }
         }
-        if (shapes.size() != 1) throw invalid("Envie um ZIP com exatamente um Shapefile e seus componentes, ou selecione a camada publicada.");
+        if (shapes.size() != 1)
+            throw invalid(
+                    "Envie um ZIP com exatamente um Shapefile e seus componentes, ou selecione a camada publicada.");
         return shapes.getFirst();
     }
 
@@ -114,17 +144,20 @@ public class GeospatialReader {
         int count;
         while ((count = input.read(buffer)) != -1) {
             checkDeadline(deadline);
-            if ((total += count) > maximum) throw invalid("Arquivo ou ZIP expandido excede o limite geoespacial.");
+            if ((total += count) > maximum)
+                throw invalid("Arquivo ou ZIP expandido excede o limite geoespacial.");
             output.write(buffer, 0, count);
         }
         return total;
     }
 
     static void checkDeadline(long deadline) {
-        if (Thread.currentThread().isInterrupted()) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                "Leitura geoespacial interrompida.");
-        if (System.nanoTime() >= deadline) throw new ResponseStatusException(HttpStatus.GATEWAY_TIMEOUT,
-                "Leitura geoespacial excedeu o prazo configurado.");
+        if (Thread.currentThread().isInterrupted())
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Leitura geoespacial interrompida.");
+        if (System.nanoTime() >= deadline)
+            throw new ResponseStatusException(HttpStatus.GATEWAY_TIMEOUT,
+                    "Leitura geoespacial excedeu o prazo configurado.");
     }
 
     static ResponseStatusException invalid(String message) {

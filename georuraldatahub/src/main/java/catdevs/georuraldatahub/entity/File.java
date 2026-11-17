@@ -44,14 +44,14 @@ public class File {
     @Column(name = "arq_localizacao")
     private String location;
 
-    @CreationTimestamp 
+    @CreationTimestamp
     @Column(name = "arq_data_recebimento")
     private LocalDateTime receivedDate;
 
-    @ManyToMany (mappedBy = "files")
+    @ManyToMany(mappedBy = "files")
     private List<Dataset> datasets;
 
-    public File(){
+    public File() {
     }
 
     public Long getId() {

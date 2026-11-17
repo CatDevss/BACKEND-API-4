@@ -16,27 +16,41 @@ public class TreatmentInputService {
     private final VersionRepository versions;
     private final UserService users;
     private final DictionaryService dictionaries;
-    public TreatmentInputService(FileRepository files, VersionRepository versions, UserService users, DictionaryService dictionaries) {
-        this.files = files; this.versions = versions; this.users = users; this.dictionaries = dictionaries;
+
+    public TreatmentInputService(FileRepository files, VersionRepository versions, UserService users,
+            DictionaryService dictionaries) {
+        this.files = files;
+        this.versions = versions;
+        this.users = users;
+        this.dictionaries = dictionaries;
     }
+
     public record Input(Long fileId, Long inputVersionId, String name, String format, String rawLocation,
             String treatedLocation, Long sourceId, String originalHash, Long dictionaryId,
-            Integer dictionaryVersion, List<FieldRule> rules) { }
+            Integer dictionaryVersion, List<FieldRule> rules) {
+    }
+
     @Transactional(readOnly = true)
     public Long uploaderId(Long fileId) {
-        return files.findById(fileId).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Arquivo não encontrado."))
+        return files.findById(fileId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Arquivo não encontrado."))
                 .getIngestion().getUser().getId();
     }
+
     @Transactional(readOnly = true)
     public Input load(Long fileId, Long userId) {
-        if (fileId == null || fileId <= 0 || userId == null || userId <= 0) throw new IllegalArgumentException("Informe IDs positivos.");
+        if (fileId == null || fileId <= 0 || userId == null || userId <= 0)
+            throw new IllegalArgumentException("Informe IDs positivos.");
         if (users.findEntityById(userId).getUserStatus() != 1)
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Usuário inativo não pode iniciar tratamento.");
-        var file = files.findById(fileId).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Arquivo não encontrado."));
-        // A primeira revisão tratada é a saída do dicionário, antes dos derivados espaciais.
+        var file = files.findById(fileId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Arquivo não encontrado."));
+        // A primeira revisão tratada é a saída do dicionário, antes dos derivados
+        // espaciais.
         var version = versions.findFirstByFile_IdAndStatusInAndLocationStartingWithOrderByVersionNumberAsc(
                 fileId, Set.of(VersionStatus.TRATADA, VersionStatus.PUBLICADA), "tratada/")
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "Arquivo sem conteúdo integralmente aprovado pelo dicionário."));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Arquivo sem conteúdo integralmente aprovado pelo dicionário."));
         var dictionary = file.getIngestion().getDictionary();
         return new Input(fileId, version.getId(), file.getName(), file.getFormatFile().toLowerCase(Locale.ROOT),
                 file.getLocation(), version.getLocation(), dictionary.getSource().getId(), file.getHash(),
