@@ -18,7 +18,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import catdevs.georuraldatahub.dto.IndicatorCalculationRequestDTO;
 import catdevs.georuraldatahub.dto.IndicatorCalculationResponseDTO;
 import catdevs.georuraldatahub.repository.EnvironmentalCalculationRepository;
-import catdevs.georuraldatahub.repository.FeatureRepository;
 
 @Service
 public class EnvironmentalIndicatorCalculationService {
@@ -27,20 +26,20 @@ public class EnvironmentalIndicatorCalculationService {
             "{ call PKG_INDICADORES_AMBIENTAIS.CALCULAR(?, ?, ?) }";
 
     private final JdbcTemplate jdbcTemplate;
-    private final FeatureRepository featureRepository;
     private final EnvironmentalCalculationRepository calculationRepository;
     private final ObjectMapper objectMapper;
+    private final IndicatorDatasetAccessService accessService;
 
     public EnvironmentalIndicatorCalculationService(
             JdbcTemplate jdbcTemplate,
-            FeatureRepository featureRepository,
             EnvironmentalCalculationRepository calculationRepository,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            IndicatorDatasetAccessService accessService) {
 
         this.jdbcTemplate = jdbcTemplate;
-        this.featureRepository = featureRepository;
         this.calculationRepository = calculationRepository;
         this.objectMapper = objectMapper;
+        this.accessService = accessService;
     }
 
     /**
@@ -53,11 +52,7 @@ public class EnvironmentalIndicatorCalculationService {
 
         Long featureId = request.featureId();
 
-        if (!featureRepository.existsById(featureId)) {
-            throw new ResponseStatusException(
-                    HttpStatus.NOT_FOUND,
-                    "Feição não encontrada: " + featureId);
-        }
+        accessService.requireFeatureAccess(featureId);
 
         String configJson = serializeConfig(request.config());
 
@@ -104,32 +99,35 @@ public class EnvironmentalIndicatorCalculationService {
                     "O JSON retornado pelo Oracle não contém um calculoId válido.");
         }
 
-        return calculationRepository.findById(idNode.asLong())
+        IndicatorCalculationResponseDTO saved = calculationRepository.findById(idNode.asLong())
                 .orElseThrow(() -> new IllegalStateException(
                         "O Oracle retornou o cálculo " + idNode.asLong()
                                 + ", mas a execução não foi encontrada em CALCULO_AMBIENTAL."));
+        accessService.requireFeatureAccess(saved.featureId());
+        return saved;
     }
 
     @Transactional(readOnly = true)
     public IndicatorCalculationResponseDTO findById(Long calculationId) {
 
-        return calculationRepository.findById(calculationId)
+        IndicatorCalculationResponseDTO result = calculationRepository.findById(calculationId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         "Execução de cálculo não encontrada."));
+        accessService.requireFeatureAccess(result.featureId());
+        return result;
     }
 
     @Transactional(readOnly = true)
     public java.util.List<IndicatorCalculationResponseDTO> findByFeatureId(
-            Long featureId) {
+            Long featureId, int page, int size) {
 
-        if (!featureRepository.existsById(featureId)) {
+        if (page < 0 || size < 1 || size > 100) {
             throw new ResponseStatusException(
-                    HttpStatus.NOT_FOUND,
-                    "Feição não encontrada: " + featureId);
+                    HttpStatus.BAD_REQUEST, "Use page >= 0 e size entre 1 e 100.");
         }
-
-        return calculationRepository.findByFeatureId(featureId);
+        accessService.requireFeatureAccess(featureId);
+        return calculationRepository.findByFeatureId(featureId, page, size);
     }
 
     private String serializeConfig(JsonNode config) {
