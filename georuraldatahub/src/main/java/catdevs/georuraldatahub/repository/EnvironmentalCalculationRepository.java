@@ -38,10 +38,13 @@ public class EnvironmentalCalculationRepository {
         return rows.stream().findFirst();
     }
 
-    public List<IndicatorCalculationResponseDTO> findByFeatureId(Long featureId) {
+    public List<IndicatorCalculationResponseDTO> findByFeatureId(Long featureId, int page, int size) {
+        int offset = Math.multiplyExact(page, size);
         return jdbcTemplate.query(
-                SELECT_COLUMNS + " WHERE fei_imovel_id = ? ORDER BY calc_data DESC, calc_id DESC",
-                rowMapper(), featureId);
+                SELECT_COLUMNS
+                        + " WHERE fei_imovel_id = ? ORDER BY calc_data DESC, calc_id DESC"
+                        + " OFFSET ? ROWS FETCH NEXT ? ROWS ONLY",
+                rowMapper(), featureId, offset, size);
     }
 
     private RowMapper<IndicatorCalculationResponseDTO> rowMapper() {
