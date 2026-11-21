@@ -155,14 +155,27 @@ public class FileService {
         var preparation = IngestionContent.prepare(multipartFile, format, collected, geospatial);
         var prepared = preparation.content();
         var preparationErrors = preparation.errors();
+        // Fonte CAR: não valida registro a registro contra o dicionário (arquivos muito
+        // grandes). A leitura estrutural acima continua valendo: arquivo ilegível ou com
+        // erro de preparo ainda é rejeitado.
+        boolean skipDictionary = preparationErrors == null && isCarSource(dictionary);
         List<RecordValidationResult> records;
-        try (InputStream input = prepared == null ? multipartFile.getInputStream()
-                : new java.io.ByteArrayInputStream(prepared.content())) {
-            records = preparationErrors == null
-                    ? validationService.validate(input, prepared == null ? format : raster ? "json" : "geojson", rules)
-                    : preparationErrors;
+        FileValidationReport report;
+        if (skipDictionary) {
+            records = List.of();
+            // validRecords = -1: registros não contados, pois não houve validação por registro.
+            report = new FileValidationReport("VALIDO", dictionary.getId(), dictionary.getVersion(), -1, 0,
+                    List.of());
+        } else {
+            try (InputStream input = prepared == null ? multipartFile.getInputStream()
+                    : new java.io.ByteArrayInputStream(prepared.content())) {
+                records = preparationErrors == null
+                        ? validationService.validate(input, prepared == null ? format : raster ? "json" : "geojson",
+                                rules)
+                        : preparationErrors;
+            }
+            report = FileValidationReport.of(dictionary.getId(), dictionary.getVersion(), records);
         }
-        var report = FileValidationReport.of(dictionary.getId(), dictionary.getVersion(), records);
         boolean approved = report.status().equals("VALIDO");
         String reportJson = mapper.writeValueAsString(report);
         byte[] accepted;
@@ -170,6 +183,9 @@ public class FileService {
             accepted = new byte[0];
         } else if (raster) {
             accepted = mapper.writeValueAsBytes(prepared.metadata());
+        } else if (skipDictionary) {
+            // Sem validação por registro: o conteúdo lido segue inteiro para a zona tratada.
+            accepted = prepared == null ? multipartFile.getBytes() : prepared.content();
         } else {
             try (InputStream input = prepared == null ? multipartFile.getInputStream()
                     : new java.io.ByteArrayInputStream(prepared.content())) {
@@ -299,6 +315,13 @@ public class FileService {
                 ingestion.getId(),
                 file.getReceivedDate(),
                 user.getId(), report);
+    }
+
+    /** Nome da fonte (único no banco) cujos arquivos não passam pela validação do dicionário. */
+    private static final String CAR_SOURCE_NAME = "CAR";
+
+    private static boolean isCarSource(Dictionary dictionary) {
+        return dictionary.getSource() != null && CAR_SOURCE_NAME.equalsIgnoreCase(dictionary.getSource().getName());
     }
 
     String calculateHash(MultipartFile file) throws IOException, NoSuchAlgorithmException {
