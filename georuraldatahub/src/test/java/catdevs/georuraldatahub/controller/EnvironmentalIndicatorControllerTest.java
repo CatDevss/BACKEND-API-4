@@ -105,4 +105,19 @@ class EnvironmentalIndicatorControllerTest {
         mvc.perform(post("/imoveis/928/indicadores/icv").contentType("application/json"))
                 .andExpect(status().isBadRequest());
     }
+    @Test void repairRequiresExplicitImportParameter() throws Exception {
+        var repository = mock(EnvironmentalIndicatorRepository.class);
+        var result = new EnvironmentalIndicatorRepository.ImportedLayer(31, 20);
+        when(repository.importGeoJson(2, 9)).thenReturn(result);
+        when(repository.importGeoJson(2, 9, true)).thenReturn(result);
+        var mvc = MockMvcBuilders.standaloneSetup(new EnvironmentalIndicatorController(
+                new EnvironmentalIndicatorService(repository))).build();
+        mvc.perform(post("/conjuntos/2/versoes/9/camada-oracle"))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.camadaId").value(31));
+        verify(repository).importGeoJson(2, 9);
+        verify(repository, never()).importGeoJson(anyLong(), anyLong(), anyBoolean());
+        mvc.perform(post("/conjuntos/2/versoes/9/camada-oracle").param("corrigirGeometria", "true"))
+                .andExpect(status().isCreated());
+        verify(repository).importGeoJson(2, 9, true);
+    }
 }

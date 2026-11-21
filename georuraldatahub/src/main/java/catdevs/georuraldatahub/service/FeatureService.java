@@ -24,9 +24,13 @@ public class FeatureService {
 
     @Transactional
     public int insertBatch(Long layerId, int srid, List<NewFeature> input) {
+        if (srid != 4326)
+            throw new IllegalArgumentException("A carga tratada exige EPSG:4326; reprojete antes de persistir.");
         if (input.isEmpty())
-            return 0;
+            throw new IllegalArgumentException("A camada precisa conter pelo menos uma feição.");
         var layer = layers.getReferenceById(layerId);
+        if (!Integer.valueOf(srid).equals(layer.getSrid()))
+            throw new IllegalArgumentException("O SRID da camada difere do SRID da carga.");
         var entities = new ArrayList<Feature>(FLUSH_SIZE);
         var reader = new GeoJsonReader();
         for (var item : input) {
@@ -34,6 +38,11 @@ public class FeatureService {
                 var geometry = reader.read(item.geometryGeoJson());
                 if (geometry.isEmpty() || !geometry.isValid())
                     throw new IllegalArgumentException("Geometria inválida.");
+                for (var coordinate : geometry.getCoordinates()) {
+                    if (!Double.isFinite(coordinate.x) || !Double.isFinite(coordinate.y)
+                            || Math.abs(coordinate.x) > 180 || Math.abs(coordinate.y) > 90)
+                        throw new IllegalArgumentException("Coordenadas fora dos limites EPSG:4326: feição " + item.originId());
+                }
                 geometry.setSRID(srid);
                 var feature = new Feature();
                 feature.setLayer(layer);
@@ -51,6 +60,10 @@ public class FeatureService {
         }
         if (!entities.isEmpty())
             persistAndDetach(entities);
+        // A aprovação depende da validação do SDO_GEOMETRY gravado, na mesma transação.
+        var invalid = features.firstSpatialError(layerId);
+        if (!invalid.isEmpty())
+            throw new IllegalArgumentException("Camada rejeitada pelo Oracle Spatial: " + invalid.getFirst());
         return input.size();
     }
 

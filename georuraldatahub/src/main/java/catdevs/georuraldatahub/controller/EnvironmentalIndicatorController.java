@@ -109,8 +109,9 @@ public class EnvironmentalIndicatorController {
 
     @PostMapping("/conjuntos/{datasetId}/versoes/{versionId}/camada-oracle")
     @ResponseStatus(HttpStatus.CREATED)
-    public ImportedLayer importGeoJson(@PathVariable long datasetId, @PathVariable long versionId) {
-        return service.importGeoJson(datasetId, versionId);
+    public ImportedLayer importGeoJson(@PathVariable long datasetId, @PathVariable long versionId,
+            @RequestParam(defaultValue = "false") boolean corrigirGeometria) {
+        return service.importGeoJson(datasetId, versionId, corrigirGeometria);
     }
 
     @PostMapping(value = "/imoveis/{featureId}/indicadores/calcular", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)

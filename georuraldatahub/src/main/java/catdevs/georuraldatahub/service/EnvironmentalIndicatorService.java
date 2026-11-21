@@ -107,10 +107,16 @@ public class EnvironmentalIndicatorService {
 
     @Transactional
     public EnvironmentalIndicatorRepository.ImportedLayer importGeoJson(long datasetId, long versionId) {
+        return importGeoJson(datasetId, versionId, false);
+    }
+
+    @Transactional
+    public EnvironmentalIndicatorRepository.ImportedLayer importGeoJson(long datasetId, long versionId, boolean repair) {
         positive(datasetId);
         positive(versionId);
         try {
-            return repository.importGeoJson(datasetId, versionId);
+            return repair ? repository.importGeoJson(datasetId, versionId, true)
+                    : repository.importGeoJson(datasetId, versionId);
         } catch (DataAccessException e) {
             throw translate(e);
         }

@@ -156,11 +156,7 @@ public class EnvironmentalIndicatorRepository {
             name = "COALESCE(JSON_VALUE(f.fei_atributos, '$.\"" + field
                     + "\"' RETURNING VARCHAR2(4000) NULL ON ERROR),f.fei_id_origem,TO_CHAR(f.fei_id))";
         } else {
-            name = "COALESCE(" + java.util.stream.Stream
-                    .of("NM_MUN", "nm_mun", "NM_MUNICIP", "nome", "NOME", "name", "NAME", "nom_imovel", "NOM_IMOVEL",
-                            "NM_BIOMA", "Bioma")
-                    .map(k -> "JSON_VALUE(f.fei_atributos, '$." + k + "' RETURNING VARCHAR2(4000) NULL ON ERROR)")
-                    .collect(java.util.stream.Collectors.joining(",")) + ",f.fei_id_origem,TO_CHAR(f.fei_id))";
+            name = featureNameSql("f.fei_id");
         }
         String from = " FROM feicao f JOIN camada c ON c.cam_id=f.cam_id JOIN versao v ON v.ver_id=c.ver_id "
                 + "WHERE f.cam_id=? AND v.ver_status IN ('TRATADA','PUBLICADA') "
@@ -186,13 +182,21 @@ public class EnvironmentalIndicatorRepository {
     }
 
     public ImportedLayer importGeoJson(long datasetId, long versionId) {
+        return importGeoJson(datasetId, versionId, false);
+    }
+
+    public ImportedLayer importGeoJson(long datasetId, long versionId, boolean repair) {
         return jdbc.execute((ConnectionCallback<ImportedLayer>) connection -> {
-            try (var call = connection.prepareCall("{call pkg_carga_ambiental.importar_geojson(?,?,?,?)}")) {
+            String command = repair ? "{call pkg_carga_ambiental.importar_geojson(?,?,?,?,?)}"
+                    : "{call pkg_carga_ambiental.importar_geojson(?,?,?,?)}";
+            try (var call = connection.prepareCall(command)) {
                 call.setQueryTimeout(300);
                 call.setLong(1, datasetId);
                 call.setLong(2, versionId);
                 call.registerOutParameter(3, Types.NUMERIC);
                 call.registerOutParameter(4, Types.NUMERIC);
+                if (repair)
+                    call.setInt(5, 1);
                 call.execute();
                 return new ImportedLayer(call.getLong(3), call.getInt(4));
             }
@@ -256,8 +260,21 @@ public class EnvironmentalIndicatorRepository {
     public record HistoryDetail(HistoryEntry calculation, String parameters, String result) {
     }
 
-    private static final String HISTORY_NAME = "COALESCE(JSON_VALUE(f.fei_atributos,'$.NM_MUN'),JSON_VALUE(f.fei_atributos,'$.nome'),"
-            + "JSON_VALUE(f.fei_atributos,'$.name'),JSON_VALUE(f.fei_atributos,'$.NM_BIOMA'),JSON_VALUE(f.fei_atributos,'$.Bioma'),f.fei_id_origem,'Feicao '||h.fei_imovel_id)";
+    private static final String HISTORY_NAME = featureNameSql("h.fei_imovel_id");
+
+    private static String featureNameSql(String fallbackId) {
+        // O nome da terra indigena tem prioridade sobre o municipio onde ela fica.
+        return "COALESCE(" + java.util.stream.Stream.of(
+                "terrai_nome", "TERRAI_NOME", "ti_nome", "TI_NOME", "nome_ti", "NOME_TI",
+                "nome_uc", "NOME_UC", "NM_UC", "NM_MUN", "nm_mun", "NM_MUNICIP",
+                "nome", "NOME", "name", "NAME", "nom_imovel", "NOM_IMOVEL", "NM_IMOVEL",
+                "NM_BIOMA", "nm_bioma", "Bioma", "bioma")
+                .map(key -> "TRIM(JSON_VALUE(f.fei_atributos, '$." + key
+                        + "' RETURNING VARCHAR2(1000) NULL ON ERROR))")
+                .collect(java.util.stream.Collectors.joining(","))
+                + ",'Area sem nome ('||" + fallbackId + "||')')";
+    }
+
     private static final String HISTORY_INDICATOR = "CASE WHEN JSON_EXISTS(h.calc_resultado,'$.ICV') AND JSON_EXISTS(h.calc_resultado,'$.IFC') THEN 'todos' "
             + "WHEN JSON_EXISTS(h.calc_resultado,'$.ICV') THEN 'icv' WHEN JSON_EXISTS(h.calc_resultado,'$.IRL') THEN 'irl' "
             + "WHEN JSON_EXISTS(h.calc_resultado,'$.IAPP') THEN 'iapp' WHEN JSON_EXISTS(h.calc_resultado,'$.ISAP') THEN 'isap' "
