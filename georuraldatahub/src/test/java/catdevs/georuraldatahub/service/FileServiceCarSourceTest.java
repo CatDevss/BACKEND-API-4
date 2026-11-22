@@ -5,6 +5,7 @@ import static org.mockito.Mockito.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import org.junit.jupiter.api.*;
+import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.transaction.support.*;
 import catdevs.georuraldatahub.entity.*;
@@ -53,6 +54,7 @@ class FileServiceCarSourceTest {
         assertEquals("VALIDO", response.validation().status());
         verify(bucket).uploadSourceTreatedContent(any(), eq(4L), any(), any());
         verify(quarantine, never()).save(any());
+        assertEquals("CAR_SICAR", savedIngestion().getConnector());
     }
     @Test void otherSourcesStillValidateAgainstTheDictionary() throws Exception {
         dictionaryOfSource("INPE");
@@ -60,5 +62,12 @@ class FileServiceCarSourceTest {
         assertEquals("REJEITADO", response.validation().status());
         verify(bucket, never()).uploadSourceTreatedContent(any(), any(), any(), any());
         verify(quarantine).save(any());
+        assertNull(savedIngestion().getConnector());
+    }
+
+    private DataIngestion savedIngestion() {
+        var captor = ArgumentCaptor.forClass(DataIngestion.class);
+        verify(ingestions).save(captor.capture());
+        return captor.getValue();
     }
 }

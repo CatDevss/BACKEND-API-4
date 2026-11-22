@@ -50,8 +50,8 @@ public class DictionaryGenerationService {
     }
 
     public Result fromUpload(Long sourceId, Long userId, MultipartFile file) throws Exception {
-        requireGenerator(sourceId, userId);
-        return generate(sourceId, file, null);
+        var source = requireGenerator(sourceId, userId);
+        return generate(sourceId, file, null, isCarSource(source));
     }
 
     // Download e inferência acontecem antes da transação curta de criação do
@@ -71,7 +71,8 @@ public class DictionaryGenerationService {
                     e);
         }
         return generate(sourceId, new DownloadedMultipartFile(data.filename(),
-                "csv".equals(data.format()) ? "text/csv" : "application/geo+json", data.content()), data);
+                "csv".equals(data.format()) ? "text/csv" : "application/geo+json", data.content()), data,
+                isCarSource(source));
     }
 
     private catdevs.georuraldatahub.entity.Source requireGenerator(Long sourceId, Long userId) {
@@ -88,7 +89,13 @@ public class DictionaryGenerationService {
         return source;
     }
 
-    private Result generate(Long sourceId, MultipartFile file, CollectedData collected) throws Exception {
+    // Fonte CAR: não revalida o arquivo registro a registro (arquivos muito grandes).
+    private static boolean isCarSource(catdevs.georuraldatahub.entity.Source source) {
+        return source != null && FileService.CAR_SOURCE_NAME.equalsIgnoreCase(source.getName());
+    }
+
+    private Result generate(Long sourceId, MultipartFile file, CollectedData collected, boolean skipValidation)
+            throws Exception {
         if (file == null || file.isEmpty())
             throw new IllegalArgumentException("Selecione um arquivo com conteúdo.");
         if (file.getSize() > limits.getMaxInputBytes())
@@ -115,8 +122,11 @@ public class DictionaryGenerationService {
         if (content.length > limits.getMaxOutputBytes())
             throw new IllegalArgumentException("Conteúdo excede o limite de leitura para geração de dicionário.");
         List<FieldRule> rules = inference.infer(new ByteArrayInputStream(content), format, limits.getMaxFeatures());
-        var records = validation.validate(new ByteArrayInputStream(content), format, rules);
-        var report = FileValidationReport.of(null, null, records);
+        // Os campos são detectados em todos os casos. Para a fonte CAR, a revalidação do arquivo
+        // inteiro é dispensada: ela monta um resultado por registro e esgota a memória.
+        List<RecordValidationResult> records = skipValidation ? List.of()
+                : validation.validate(new ByteArrayInputStream(content), format, rules);
+        var report = skipValidation ? null : FileValidationReport.of(null, null, records);
         if (records.stream().anyMatch(r -> r.recordIndex() < 0))
             throw new IllegalArgumentException("Arquivo com erro estrutural; nenhum dicionário foi salvo.");
         String hash = files.calculateHash(file);
@@ -126,6 +136,10 @@ public class DictionaryGenerationService {
                 new DictionaryRequestDTO(fit("Inferido · " + filename, 100), description, rules));
         var issues = records.stream().filter(r -> !r.valid()).limit(20)
                 .map(r -> new Issue(r.recordIndex(), r.errors())).toList();
+        if (skipValidation)
+            return new Result(saved, filename, hash, new Check("VALIDO", -1, 0, List.of()),
+                    List.of("Fonte CAR: campos e tipos foram detectados, mas o arquivo não foi validado registro a registro.",
+                            "O dicionário foi salvo como uma nova versão."));
         return new Result(saved, filename, hash,
                 new Check(report.status(), report.validRecords(), report.rejectedRecords(), issues),
                 List.of("Campos e tipos foram detectados em todos os registros. Revise as regras de negócio, os domínios e a unicidade.",

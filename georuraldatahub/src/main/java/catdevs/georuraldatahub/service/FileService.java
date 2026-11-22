@@ -158,7 +158,8 @@ public class FileService {
         // Fonte CAR: não valida registro a registro contra o dicionário (arquivos muito
         // grandes). A leitura estrutural acima continua valendo: arquivo ilegível ou com
         // erro de preparo ainda é rejeitado.
-        boolean skipDictionary = preparationErrors == null && isCarSource(dictionary);
+        boolean carSource = isCarSource(dictionary);
+        boolean skipDictionary = preparationErrors == null && carSource;
         List<RecordValidationResult> records;
         FileValidationReport report;
         if (skipDictionary) {
@@ -255,7 +256,8 @@ public class FileService {
         ingestion.setDictionary(dictionary);
         ingestion.setUser(user);
         ingestion.setType(ingestionType);
-        ingestion.setConnector(connector);
+        // Upload manual da fonte CAR: registra a origem com o código do catálogo (CAR_SICAR).
+        ingestion.setConnector(connector != null ? connector : carSource ? CAR_CONNECTOR : null);
         ingestion.setIngStatus(approved ? IngestionStatus.CONCLUIDO : IngestionStatus.ERRO);
         ingestion = ingestionRepository.save(ingestion);
 
@@ -318,7 +320,10 @@ public class FileService {
     }
 
     /** Nome da fonte (único no banco) cujos arquivos não passam pela validação do dicionário. */
-    private static final String CAR_SOURCE_NAME = "CAR";
+    static final String CAR_SOURCE_NAME = "CAR";
+
+    /** Código do CAR no catálogo de coleta (CollectionCatalog), gravado como conector da ingestão. */
+    private static final String CAR_CONNECTOR = "CAR_SICAR";
 
     private static boolean isCarSource(Dictionary dictionary) {
         return dictionary.getSource() != null && CAR_SOURCE_NAME.equalsIgnoreCase(dictionary.getSource().getName());
