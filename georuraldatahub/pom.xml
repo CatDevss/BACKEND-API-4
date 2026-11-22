@@ -74,6 +74,12 @@
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
 
+        <!-- Keycloak: valida os tokens JWT (OAuth2 Resource Server) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security-oauth2-resource-server</artifactId>
+        </dependency>
+
         <!-- Spring Web MVC -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

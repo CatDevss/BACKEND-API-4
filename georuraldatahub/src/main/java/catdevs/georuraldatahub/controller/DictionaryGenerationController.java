@@ -1,5 +1,8 @@
 package catdevs.georuraldatahub.controller;
 
+import org.springframework.security.access.prepost.PreAuthorize;
+import catdevs.georuraldatahub.security.Permissions;
+
 import catdevs.georuraldatahub.collection.CollectionRequest;
 import catdevs.georuraldatahub.service.DictionaryGenerationService;
 import jakarta.validation.Valid;
@@ -9,7 +12,6 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 @RestController
-@CrossOrigin
 @RequestMapping("/fontes/{sourceId}/dicionarios")
 public class DictionaryGenerationController {
     private final DictionaryGenerationService service;
@@ -18,6 +20,7 @@ public class DictionaryGenerationController {
         this.service = service;
     }
 
+    @PreAuthorize(Permissions.DICTIONARIES_GENERATE)
     @PostMapping(value = "/gerar-arquivo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
     public DictionaryGenerationService.Result upload(@PathVariable Long sourceId, @RequestParam Long userId,
@@ -25,6 +28,7 @@ public class DictionaryGenerationController {
         return service.fromUpload(sourceId, userId, file);
     }
 
+    @PreAuthorize(Permissions.DICTIONARIES_GENERATE)
     @PostMapping("/gerar-coleta")
     @ResponseStatus(HttpStatus.CREATED)
     public DictionaryGenerationService.Result collect(@PathVariable Long sourceId,
