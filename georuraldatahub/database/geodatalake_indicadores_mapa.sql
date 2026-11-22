@@ -496,7 +496,7 @@ END;
 CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
 
     c_tol   CONSTANT NUMBER := 0.01; -- metros em SIRGAS2000 / Albers Brasil local
-    c_regra CONSTANT VARCHAR2(30) := 'GEORURAL-1.2';
+    c_regra CONSTANT VARCHAR2(30) := 'GEORURAL-1.3';
 
     -- Transforma para Albers Brasil e valida a geometria; nao usa a inversa local.
 
@@ -605,6 +605,27 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
             TABLE OF BOOLEAN INDEX BY VARCHAR2(4000);
         v_eventos    eventos_t;
         v_evento     VARCHAR2(4000);
+        v_registros_elegiveis NUMBER := 0;
+        v_dias_focos NUMBER := 0;
+        v_dias_eventos eventos_t;
+        v_reparos json_array_t := json_array_t();
+        v_reparos_vistos eventos_t;
+        v_area_attrs CLOB;
+
+        PROCEDURE registrar_reparo(p_id NUMBER, p_papel VARCHAR2, p_attrs CLOB) IS
+            attrs json_object_t; item json_object_t; chave VARCHAR2(4000) := p_papel || ':' || p_id;
+        BEGIN
+            IF p_attrs IS NULL OR v_reparos_vistos.EXISTS(chave) THEN RETURN; END IF;
+            attrs := json_object_t.parse(p_attrs);
+            IF attrs.has('_tratamento_espacial') THEN
+                item := json_object_t(); item.put('feicaoId', p_id); item.put('papel', p_papel);
+                item.put('nome', coalesce(attrs.get_string('terrai_nome'), attrs.get_string('NM_MUN'),
+                    attrs.get_string('nome'), attrs.get_string('name'), 'Feicao ' || p_id));
+                item.put('registro', attrs.get('_tratamento_espacial'));
+                v_reparos.append(item); v_reparos_vistos(chave) := TRUE;
+            END IF;
+        END;
+
 
         -- Converte uma data obrigatoria no formato YYYY-MM-DD.
 
@@ -639,6 +660,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
             v_location VARCHAR2(500);
             v_dic      NUMBER;
             v_dic_ver  NUMBER;
+            v_reparadas NUMBER;
         BEGIN
             SELECT
                 v.ver_status,
@@ -671,6 +693,9 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
                 raise_application_error(-20125, 'Indicadores exigem camadas de versoes aprovadas.');
             END IF;
 
+            SELECT COUNT(*) INTO v_reparadas FROM feicao f
+            WHERE f.cam_id = p_cam AND JSON_EXISTS(f.fei_atributos, '$._tratamento_espacial');
+            v_obj.put('geometriasComReparoRegistrado', v_reparadas);
             v_obj.put('camadaId', p_cam);
             v_obj.put('versaoId', v_ver);
             v_obj.put('arquivoId', v_arq);
@@ -698,6 +723,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
             v_union mdsys.sdo_geometry;
             v_clip  mdsys.sdo_geometry;
         BEGIN
+            v_registros_elegiveis := 0;
             IF NOT v_cfg.has(p_papel) THEN
                 raise_application_error(-20126, 'Informe camadas para '
                                                 || p_papel
@@ -730,6 +756,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
                 v_n := 0;
                 FOR f IN (
                     SELECT
+                        fei_id,
                         fei_geometria,
                         fei_atributos
                     FROM
@@ -759,8 +786,13 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
                         END IF;
                     END IF;
 
+                    v_registros_elegiveis := v_registros_elegiveis + 1;
                     v_geom := projetar(f.fei_geometria);
                     IF p_pontos THEN
+                        IF NOT v_dias_eventos.EXISTS(to_char(v_date, 'YYYY-MM-DD')) THEN
+                            v_dias_eventos(to_char(v_date, 'YYYY-MM-DD')) := TRUE;
+                            v_dias_focos := v_dias_focos + 1;
+                        END IF;
                         v_details := json_object_t.parse(f.fei_atributos);
                         v_evento := v_details.get_string('id_evento');
                         IF v_evento IS NULL THEN
@@ -771,6 +803,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
                             sdo_geom.relate(v_imovel, 'ANYINTERACT', v_geom, c_tol) = 'TRUE'
                             AND NOT v_eventos.EXISTS(v_evento)
                         THEN
+                            registrar_reparo(f.fei_id, p_papel, f.fei_atributos);
                             v_focos := v_focos + 1;
                             v_eventos(v_evento) := TRUE;
                         END IF;
@@ -778,6 +811,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
                     ELSE
                         v_clip := recortar(v_imovel, v_geom);
                         IF area_plana(v_clip) > 0 THEN
+                            registrar_reparo(f.fei_id, p_papel, f.fei_atributos);
                             IF v_union IS NULL THEN
                                 v_union := v_clip;
                             ELSE
@@ -807,6 +841,13 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
         ) IS
             v_obj json_object_t := json_object_t();
         BEGIN
+            IF p_ha IS NULL THEN
+                v_obj.put_null('areaHa'); v_obj.put_null('percentual');
+                v_obj.put('situacao', 'SEM_DADOS');
+                v_obj.put('mensagem', 'Nenhum registro temporal nas camadas para esta janela; ausencia nao comprova zero.');
+                v_out.put(p_nome, v_obj); RETURN;
+            END IF;
+            v_obj.put('situacao', CASE WHEN p_denominador = 0 THEN 'SEM_BASE' ELSE 'DADOS_PRESENTES' END);
             v_obj.put('areaHa', p_ha);
             IF p_denominador = 0 THEN
                 v_obj.put_null('percentual');
@@ -861,6 +902,8 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
         END IF;
 
         rastrear(v_calc);
+        SELECT fei_atributos INTO v_area_attrs FROM feicao WHERE fei_id = p_imovel_id;
+        registrar_reparo(p_imovel_id, 'areaAnalise', v_area_attrs);
         v_imovel := projetar(v_raw);
         v_area := area_plana(v_imovel);
         IF v_area <= 0 THEN
@@ -910,24 +953,33 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
                    v_area);
         END IF;
         IF p_indicador IN ( 'TODOS', 'IDESMAT' ) THEN
-            medida('IDesmat2008',
-                   area_plana(unir('desmatamento', DATE '2008-07-22', v_fim)),
-                   v_area);
+            v_geom := unir('desmatamento', DATE '2008-07-22', v_fim);
+            medida('IDesmat2008', CASE WHEN v_registros_elegiveis = 0 THEN NULL ELSE area_plana(v_geom) END, v_area);
 
-            medida('IDesmat2019',
-                   area_plana(unir('desmatamento', DATE '2019-07-31', v_fim)),
-                   v_area);
+            v_geom := unir('desmatamento', DATE '2019-07-31', v_fim);
+            medida('IDesmat2019', CASE WHEN v_registros_elegiveis = 0 THEN NULL ELSE area_plana(v_geom) END, v_area);
 
-            medida('IDesmat2020',
-                   area_plana(unir('desmatamento', DATE '2020-12-31', v_fim)),
-                   v_area);
+            v_geom := unir('desmatamento', DATE '2020-12-31', v_fim);
+            medida('IDesmat2020', CASE WHEN v_registros_elegiveis = 0 THEN NULL ELSE area_plana(v_geom) END, v_area);
 
         END IF;
         IF p_indicador IN ( 'TODOS', 'IFC' ) THEN
             v_geom := unir('focos', v_inicio, v_fim, TRUE);
             v_details := json_object_t();
-            v_details.put('quantidade', v_focos);
-            v_details.put('porMilHa', v_focos / v_area * 1000);
+            v_details.put('registrosNoPeriodo', v_registros_elegiveis);
+            v_details.put('diasComRegistros', v_dias_focos);
+            v_details.put('diasSolicitados', v_fim - v_inicio + 1);
+            v_details.put('diasSemRegistros', v_fim - v_inicio + 1 - v_dias_focos);
+            IF v_registros_elegiveis = 0 THEN
+                v_details.put_null('quantidade'); v_details.put_null('porMilHa');
+                v_details.put('situacao', 'SEM_DADOS');
+                v_details.put('mensagem', 'Sem registros nas camadas para o periodo; nao e possivel afirmar zero focos.');
+            ELSE
+                v_details.put('quantidade', v_focos);
+                v_details.put('porMilHa', v_focos / v_area * 1000);
+                v_details.put('situacao', CASE WHEN v_dias_focos < v_fim - v_inicio + 1 THEN 'PARCIAL' ELSE 'DADOS_PRESENTES' END);
+                v_details.put('mensagem', 'Contagem nas fontes consultadas. Dias com registros nao comprovam cobertura territorial ou temporal completa.');
+            END IF;
             v_out.put('IFC', v_details);
         END IF;
 
@@ -941,6 +993,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_indicadores_ambientais AS
         v_out.put('sridOracleCalculo',
                   pkg_ambiental_crs.srid_calculo());
         v_out.put('toleranciaMetros', c_tol);
+        v_out.put('reparos', v_reparos);
         v_out.put('fontes', v_trace);
         v_out.put('parametros', v_cfg);
         v_out.put('calculadoEm',

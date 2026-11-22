@@ -1,5 +1,9 @@
 package catdevs.georuraldatahub.controller;
 
+import java.time.LocalDate;
+import org.springframework.format.annotation.DateTimeFormat;
+import catdevs.georuraldatahub.repository.EnvironmentalHistoryFilter;
+
 import java.util.Map;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -81,9 +85,13 @@ public class EnvironmentalIndicatorController {
     @GetMapping("/ambiental/calculos")
     public Object history(@RequestParam(defaultValue = "") String busca,
             @RequestParam(defaultValue = "") String indicador,
+            @RequestParam(required = false) Long camadaId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate inicio,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fim,
             @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
         checkPage(page, size);
-        return service.history(busca, indicador, page, size);
+        return service.history(busca, indicador, page, size,
+                new EnvironmentalHistoryFilter(camadaId, inicio, fim));
     }
 
     @GetMapping(value = "/ambiental/calculos/{id}", produces = MediaType.APPLICATION_JSON_VALUE)

@@ -24,4 +24,14 @@ class EnvironmentalFeatureNamesTest {
             assertFalse(sql.contains("fei_id_origem"));
         }
     }
+    @Test void searchesIndicatorInsideCombinedCalculations() {
+        var jdbc = mock(JdbcTemplate.class);
+        when(jdbc.queryForObject(anyString(), eq(Long.class), eq("%%"))).thenReturn(0L);
+        new EnvironmentalIndicatorRepository(jdbc).history("", "ifc", 0, 20);
+        var query = ArgumentCaptor.forClass(String.class);
+        verify(jdbc).queryForObject(query.capture(), eq(Long.class), eq("%%"));
+        assertTrue(query.getValue().contains("AND JSON_EXISTS(h.calc_resultado,'$.IFC')"));
+        assertFalse(query.getValue().contains("END=?"));
+    }
+
 }

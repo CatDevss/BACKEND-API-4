@@ -262,7 +262,7 @@ public class EnvironmentalIndicatorRepository {
 
     private static final String HISTORY_NAME = featureNameSql("h.fei_imovel_id");
 
-    private static String featureNameSql(String fallbackId) {
+    static String featureNameSql(String fallbackId) {
         // O nome da terra indigena tem prioridade sobre o municipio onde ela fica.
         return "COALESCE(" + java.util.stream.Stream.of(
                 "terrai_nome", "TERRAI_NOME", "ti_nome", "TI_NOME", "nome_ti", "NOME_TI",
@@ -290,14 +290,44 @@ public class EnvironmentalIndicatorRepository {
                 r.getString(6));
     }
 
+    private boolean calculationExclusionTableExists() {
+        return Integer.valueOf(1).equals(jdbc.queryForObject("SELECT COUNT(*) FROM user_tables WHERE table_name='CALCULO_AMBIENTAL_EXCLUSAO'", Integer.class));
+    }
+    public boolean calculationDeletionAvailable() {
+        return calculationExclusionTableExists() && Integer.valueOf(3).equals(jdbc.queryForObject(
+            "SELECT COUNT(*) FROM user_triggers t JOIN user_objects o ON o.object_name=t.trigger_name AND o.object_type='TRIGGER' WHERE t.status='ENABLED' AND o.status='VALID' AND t.trigger_name IN ('TRG_CALC_EXCLUSAO_VALIDAR','TRG_CALC_EXCLUSAO_IMUTAVEL','TRG_AUD_CALC_EXCLUSAO')",Integer.class));
+    }
+    private String visibleCalculation() {
+        return calculationExclusionTableExists() ? " AND NOT EXISTS (SELECT 1 FROM calculo_ambiental_exclusao x WHERE x.calc_id=h.calc_id)" : "";
+    }
+    public void lockCalculation(long id) {
+        jdbc.queryForObject("SELECT calc_id FROM calculo_ambiental WHERE calc_id=? FOR UPDATE",Long.class,id);
+    }
+    public void excludeCalculation(long id,long user) {
+        jdbc.update("INSERT INTO calculo_ambiental_exclusao(calc_id,usr_id) VALUES(?,?)",id,user);
+    }
     public Page<HistoryEntry> history(String search, String indicator, int page, int size) {
-        String where = " WHERE LOWER(" + HISTORY_NAME + ") LIKE ?";
+        return history(search, indicator, page, size, EnvironmentalHistoryFilter.empty());
+    }
+
+    public Page<HistoryEntry> history(String search, String indicator, int page, int size,
+            EnvironmentalHistoryFilter filters) {
+        String where = " WHERE LOWER(" + HISTORY_NAME + ") LIKE ?" + visibleCalculation();
         var args = new java.util.ArrayList<Object>();
         args.add("%" + search.toLowerCase(java.util.Locale.ROOT) + "%");
         if (!indicator.isBlank()) {
-            where += " AND " + HISTORY_INDICATOR + "=?";
-            args.add(indicator);
+            var groups = java.util.Map.of("icv", "ICV", "irl", "IRL", "iapp", "IAPP", "isap", "ISAP",
+                    "iae", "IAE", "ifc", "IFC", "idesmat", "IDesmat2008");
+            String group = groups.get(indicator);
+            if (group != null) {
+                // Inclui o indicador salvo sozinho ou junto dos demais.
+                where += " AND JSON_EXISTS(h.calc_resultado,'$." + group + "')";
+            } else {
+                where += " AND " + HISTORY_INDICATOR + "=?";
+                args.add(indicator);
+            }
         }
+        where += filters.calculations(args);
         long total = jdbc.queryForObject("SELECT COUNT(*)" + HISTORY_FROM + where, Long.class, args.toArray());
         args.add(page * size);
         args.add(size);
@@ -310,7 +340,7 @@ public class EnvironmentalIndicatorRepository {
 
     public HistoryDetail historyDetail(long id) {
         return jdbc.queryForObject(
-                HISTORY_SELECT + ",h.calc_parametros,h.calc_resultado" + HISTORY_FROM + " WHERE h.calc_id=?",
+                HISTORY_SELECT + ",h.calc_parametros,h.calc_resultado" + HISTORY_FROM + " WHERE h.calc_id=?" + visibleCalculation(),
                 (r, n) -> new HistoryDetail(historyRow(r), r.getString(7), r.getString(8)), id);
     }
 

@@ -523,8 +523,10 @@ CREATE OR REPLACE PACKAGE BODY pkg_carga_ambiental AS
             FOR tentativa IN 1..4 LOOP
                 IF regexp_like(v_validation, '^13356([^0-9]|$)') THEN
                     v_geom := sdo_util.remove_duplicate_vertices(v_geom, 0.005);
+                    v_repaired := TRUE;
                 ELSIF regexp_like(v_validation, '^13367([^0-9]|$)') THEN
                     v_geom := sdo_util.rectify_geometry(v_geom, 0.005);
+                    v_repaired := TRUE;
                 ELSIF p_corrigir_geometria = 1 AND regexp_like(v_validation, '^13349([^0-9]|$)') THEN
                     BEGIN
                         v_geom := sdo_util.rectify_geometry(v_geom, 0.005);
@@ -538,9 +540,10 @@ CREATE OR REPLACE PACKAGE BODY pkg_carga_ambiental AS
                 END IF;
                 v_validation := sdo_geom.validate_geometry_with_context(v_geom, 0.005);
             END LOOP;
-            IF v_repaired AND (v_geom.sdo_gtype IS NULL OR v_geom.sdo_gtype NOT IN (2003, 2007)
-                OR v_geom.sdo_srid IS NULL OR v_geom.sdo_srid <> 4326) THEN
-                raise_application_error(-20109, 'Correcao nao preservou poligono EPSG:4326: feicao ' || (i + 1));
+            IF v_repaired AND (v_geom.sdo_gtype IS NULL OR v_geom.sdo_gtype NOT IN (2001, 2002, 2003, 2005, 2006, 2007)
+                OR v_geom.sdo_srid IS NULL OR v_geom.sdo_srid <> 4326
+                OR (MOD(v_original_gtype,100) IN (3,7) AND MOD(v_geom.sdo_gtype,100) NOT IN (3,7))) THEN
+                raise_application_error(-20109, 'Correcao nao preservou geometria suportada EPSG:4326: feicao ' || (i + 1));
             END IF;
             IF nvl(v_validation, 'INVALID') <> 'TRUE' THEN
                 raise_application_error(-20109, 'Geometria invalida: indice ' || i
@@ -558,14 +561,14 @@ CREATE OR REPLACE PACKAGE BODY pkg_carga_ambiental AS
                 v_props := v_item.get_object('properties').to_clob();
             END IF;
 
+            v_properties := json_object_t.parse(v_props);
+            IF v_properties.has('_tratamento_espacial') THEN
+                raise_application_error(-20109, 'Campo reservado para rastreabilidade: _tratamento_espacial.');
+            END IF;
             IF v_repaired THEN
-                v_properties := json_object_t.parse(v_props);
-                IF v_properties.has('_tratamento_espacial') THEN
-                    raise_application_error(-20109, 'Campo reservado para rastreabilidade: _tratamento_espacial.');
-                END IF;
                 v_trace := json_object_t();
-                v_trace.put('metodo', 'SDO_UTIL.RECTIFY_GEOMETRY');
-                v_trace.put('motivo', '13349');
+                v_trace.put('metodo', 'Validacao e reparo Oracle Spatial');
+                v_trace.put('motivo', substr(v_original_validation, 1, 5));
                 v_trace.put('diagnosticoOriginal', v_original_validation);
                 v_trace.put('tipoOriginal', v_original_gtype);
                 v_trace.put('tipoFinal', v_geom.sdo_gtype);
