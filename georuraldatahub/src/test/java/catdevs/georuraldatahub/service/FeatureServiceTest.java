@@ -12,16 +12,16 @@ import org.mockito.ArgumentCaptor;
 class FeatureServiceTest {
     @Test void mapsLargeGeometryAndAttributesToJpaWithoutTruncatingClobData() {
         var repository = mock(FeatureRepository.class); var layers = mock(LayerRepository.class);
-        var layer = new Layer(); layer.setId(10L); when(layers.getReferenceById(10L)).thenReturn(layer);
+        var layer = new Layer(); layer.setId(10L); layer.setSrid(4326); when(layers.getReferenceById(10L)).thenReturn(layer);
         var geometry = new org.locationtech.jts.geom.GeometryFactory().createPoint(new org.locationtech.jts.geom.Coordinate(-51, -25)).buffer(0.01, 200);
         var writer = new org.locationtech.jts.io.geojson.GeoJsonWriter(); writer.setEncodeCRS(false);
         String json = writer.write(geometry); assertTrue(json.length() > 4000);
         String properties = "{\"texto\":\"" + "á".repeat(3000) + "\"}";
         int total = new FeatureService(repository, layers, mock(jakarta.persistence.EntityManager.class)).insertBatch(10L, 4326, List.of(new NewFeature("origem-1", json, properties)));
         assertEquals(1, total);
-        @SuppressWarnings("unchecked") var captor = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<Feature>> captor = ArgumentCaptor.captor();
         verify(repository).saveAllAndFlush(captor.capture());
-        Feature feature = (Feature) captor.getValue().getFirst();
+        Feature feature = captor.getValue().getFirst();
         assertSame(layer, feature.getLayer()); assertEquals(4326, feature.getGeometry().getSRID());
         assertEquals(geometry.getNumPoints(), feature.getGeometry().getNumPoints()); assertEquals(properties, feature.getAttributes());
     }
@@ -30,6 +30,8 @@ class FeatureServiceTest {
         var repository = mock(FeatureRepository.class);
         var layers = mock(LayerRepository.class);
         var manager = mock(jakarta.persistence.EntityManager.class);
+        var layer = new Layer(); layer.setSrid(4326);
+        when(layers.getReferenceById(1L)).thenReturn(layer);
         var feature = new NewFeature("1", "{\"type\":\"Point\",\"coordinates\":[-51,-25]}", "{}");
         var service = new FeatureService(repository, layers, manager);
         java.util.List<Integer> sizes = new ArrayList<>();
@@ -46,5 +48,35 @@ class FeatureServiceTest {
         order.verify(repository).saveAllAndFlush(anyList());
         order.verify(manager, times(500)).detach(any(Feature.class));
         order.verify(repository).saveAllAndFlush(anyList());
+    }
+    @Test void rejectsProjectedCoordinatesAndMismatchedSridBeforeSaving() {
+        var repository = mock(FeatureRepository.class);
+        var layers = mock(LayerRepository.class);
+        var layer = new Layer(); layer.setSrid(4326);
+        when(layers.getReferenceById(1L)).thenReturn(layer);
+        var service = new FeatureService(repository, layers, mock(jakarta.persistence.EntityManager.class));
+        var projected = new NewFeature("1", "{\"type\":\"Point\",\"coordinates\":[500000,7200000]}", "{}");
+        assertThrows(IllegalArgumentException.class, () -> service.insertBatch(1L, 4326, List.of(projected)));
+        assertThrows(IllegalArgumentException.class, () -> service.insertBatch(1L, 31983, List.of(projected)));
+        layer.setSrid(4674);
+        var geographic = new NewFeature("1", "{\"type\":\"Point\",\"coordinates\":[-51,-25]}", "{}");
+        assertThrows(IllegalArgumentException.class, () -> service.insertBatch(1L, 4326, List.of(geographic)));
+        verify(repository, never()).saveAllAndFlush(anyList());
+    }
+
+    @Test void rejectsLayerWhenOracleReportsInvalidStoredGeometry() {
+        var repository = mock(FeatureRepository.class);
+        var layers = mock(LayerRepository.class);
+        var layer = new Layer(); layer.setSrid(4326);
+        when(layers.getReferenceById(1L)).thenReturn(layer);
+        when(repository.firstSpatialError(1L)).thenReturn(List.of("feicao 7: 13367"));
+        var service = new FeatureService(repository, layers, mock(jakarta.persistence.EntityManager.class));
+        var point = new NewFeature("1", "{\"type\":\"Point\",\"coordinates\":[-51,-25]}", "{}");
+        var error = assertThrows(IllegalArgumentException.class,
+                () -> service.insertBatch(1L, 4326, List.of(point)));
+        assertTrue(error.getMessage().contains("13367"));
+        var order = inOrder(repository);
+        order.verify(repository).saveAllAndFlush(anyList());
+        order.verify(repository).firstSpatialError(1L);
     }
 }

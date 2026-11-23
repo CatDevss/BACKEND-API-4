@@ -20,10 +20,9 @@ class BucketServiceValidationReportTest {
     @Test void newFilesUseSourcePathsWithoutCollidingWithHistoricalDatasetPaths() throws Exception {
         var file = new org.springframework.mock.web.MockMultipartFile("file", "test.csv", "text/csv", new byte[]{1});
         assertEquals("bruta/fontes/4/hash_test.csv", service.uploadToSourceRawZone(file, 4L, "hash", "test.csv"));
-        assertEquals("validada/fontes/4/hash_test.csv", service.uploadSourceValidatedContent(new byte[]{1}, 4L, "hash", "test.csv"));
+        assertEquals("tratada/fontes/4/hash_test.csv", service.uploadSourceTreatedContent(new byte[]{1}, 4L, "hash", "test.csv"));
         assertEquals("bruta/fontes/5/hash_test.csv", service.uploadToSourceRawZone(file, 5L, "hash", "test.csv"));
-        assertEquals("bruta/4/hash_test.csv", service.uploadToRawZone(file, 4L, "hash", "test.csv"));
-        verify(client, times(4)).putObject(any(PutObjectRequest.class));
+        verify(client, times(3)).putObject(any(PutObjectRequest.class));
     }
     @Test void reportIsStoredAlongsideRawObjectWithUtf8AndJsonContentType() throws Exception {
         String json = "{\"erro\":\"Campo obrigatório\"}";
@@ -36,7 +35,7 @@ class BucketServiceValidationReportTest {
         assertEquals(json, new String(request.getValue().getPutObjectBody().readAllBytes(), StandardCharsets.UTF_8));
     }
     @Test void reportIsReadFromDeterministicObjectKey() throws Exception {
-        String json = "{\"status\":\"PARCIAL\"}";
+        String json = "{\"status\":\"REJEITADO\"}";
         when(client.getObject(any(GetObjectRequest.class))).thenReturn(GetObjectResponse.builder()
                 .inputStream(new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8))).build());
         assertEquals(json, service.readValidationReport("bruta/test.csv"));
@@ -64,6 +63,6 @@ class BucketServiceValidationReportTest {
         assertArrayEquals(file.getBytes(), request.getValue().getPutObjectBody().readAllBytes());
         verify(client, never()).deleteObject(any());
         assertEquals("quarentena/9/hash_test.csv", BucketService.quarantineLocation("bruta/9/hash_test.csv"));
-        assertThrows(IllegalArgumentException.class, () -> BucketService.quarantineLocation("validada/test.csv"));
+        assertThrows(IllegalArgumentException.class, () -> BucketService.quarantineLocation("tratada/test.csv"));
     }
 }

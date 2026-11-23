@@ -40,15 +40,15 @@ public class Quarantine {
     @Column(name = "qua_tratamento")
     private String treatment;
 
-    @CreationTimestamp 
+    @CreationTimestamp
     @Column(name = "qua_data_entrada")
     private LocalDateTime dateEntry;
 
-    @Column (name = "qua_data_resolucao")
+    @Column(name = "qua_data_resolucao")
     private LocalDateTime dateResolution;
 
-    @ManyToOne (fetch = FetchType.LAZY)
-    @JoinColumn (name = "usr_id", referencedColumnName = "usr_id")
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "usr_id", referencedColumnName = "usr_id")
     private User user;
 
     public Quarantine() {
@@ -126,5 +126,4 @@ public class Quarantine {
         this.user = user;
     }
 
-    
 }

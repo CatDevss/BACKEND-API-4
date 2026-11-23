@@ -26,6 +26,9 @@ public final class GeoJsonFeatureExtractor {
     }
 
     public static Extraction extract(JsonNode collection) {
+        if (collection == null || !"FeatureCollection".equals(collection.path("type").asText())
+                || collection.has("crs"))
+            throw new IllegalArgumentException("Exige FeatureCollection em EPSG:4326, sem declaração crs; reprojete antes da carga.");
         JsonNode array = collection.get("features");
         if (array == null || !array.isArray()) {
             throw new IllegalArgumentException("O GeoJSON precisa possuir um array chamado features.");
@@ -37,6 +40,8 @@ public final class GeoJsonFeatureExtractor {
 
         for (JsonNode feature : array) {
             position++;
+            if (!"Feature".equals(feature.path("type").asText()))
+                throw new IllegalArgumentException("Elemento " + position + " não é uma feição GeoJSON.");
             JsonNode geometry = feature.get("geometry");
             if (geometry == null || geometry.isNull() || !geometry.hasNonNull("type")) {
                 throw new IllegalArgumentException("A feição " + position + " não possui geometria.");
@@ -61,22 +66,29 @@ public final class GeoJsonFeatureExtractor {
         }
     }
 
-    /** Usa o "id" da feição quando existe; senão, a posição dela no arquivo (a partir de 1). */
+    /**
+     * Usa o "id" da feição quando existe; senão, a posição dela no arquivo (a
+     * partir de 1).
+     */
     private static String originId(JsonNode feature, int position) {
         JsonNode id = feature.get("id");
         String value = (id == null || id.isNull()) ? String.valueOf(position) : id.asText();
-        if (value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= MAX_ORIGIN_ID_LENGTH) return value;
-        return "sha256:" + catdevs.georuraldatahub.processing.VectorTreatment.hash(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        if (value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= MAX_ORIGIN_ID_LENGTH)
+            return value;
+        return "sha256:" + catdevs.georuraldatahub.processing.VectorTreatment
+                .hash(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
     private static String attributes(JsonNode feature) {
         JsonNode properties = feature.get("properties");
         JsonNode id = feature.get("id");
-        if (id != null && !id.isNull() && id.asText().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > MAX_ORIGIN_ID_LENGTH) {
+        if (id != null && !id.isNull()
+                && id.asText().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > MAX_ORIGIN_ID_LENGTH) {
             var copy = properties != null && properties.isObject()
                     ? ((com.fasterxml.jackson.databind.node.ObjectNode) properties).deepCopy()
                     : new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
-            if (copy.has("_id_origem_completo")) throw new IllegalArgumentException("Campo reservado para rastreabilidade: _id_origem_completo.");
+            if (copy.has("_id_origem_completo"))
+                throw new IllegalArgumentException("Campo reservado para rastreabilidade: _id_origem_completo.");
             copy.set("_id_origem_completo", id);
             return copy.toString();
         }

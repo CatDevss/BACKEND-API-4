@@ -25,7 +25,7 @@ class QuarantineControllerTest {
     private MockMvc mvc;
 
     @BeforeEach void setup() {
-        quarantine.setId(1L); quarantine.setStatus("REGISTROS_REJEITADOS"); quarantine.setReason("INVALID_TYPE: id");
+        quarantine.setId(1L); quarantine.setStatus("ARQUIVO_REJEITADO"); quarantine.setReason("INVALID_TYPE: id");
         when(repository.findById(1L)).thenReturn(Optional.of(quarantine));
         when(repository.findLockedById(1L)).thenReturn(Optional.of(quarantine));
         when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -36,7 +36,7 @@ class QuarantineControllerTest {
     }
     @Test void volunteerWorkflowRecordsPersonObservationAndResolution() throws Exception {
         mvc.perform(get("/quarentenas/1")).andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("REGISTROS_REJEITADOS"))
+                .andExpect(jsonPath("$.status").value("ARQUIVO_REJEITADO"))
                 .andExpect(jsonPath("$.responsibleId").doesNotExist());
         mvc.perform(post("/quarentenas/1/assumir").contentType(MediaType.APPLICATION_JSON).content("{\"userId\":3}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.responsibleId").value(3))

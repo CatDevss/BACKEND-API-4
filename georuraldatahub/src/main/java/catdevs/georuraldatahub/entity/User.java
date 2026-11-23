@@ -66,5 +66,5 @@ public class User {
 
     public void setUserStatus(int userStatus) {
         this.userStatus = userStatus;
-    }   
+    }
 }

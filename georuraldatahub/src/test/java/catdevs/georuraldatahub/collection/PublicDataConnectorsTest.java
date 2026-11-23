@@ -136,10 +136,22 @@ class PublicDataConnectorsTest {
         assertTrue(output.contains("4106902"));assertFalse(output.contains("3550308"));
         assertArrayEquals(csv.getBytes(StandardCharsets.UTF_8),result.originals().getFirst().content());
     }
-    @Test void catalogKeepsUnapprovedProductsAndCarOnManualPath() {
+    @Test void catalogRegistersEveryConnectorAndKeepsCarOnManualPath() {
         var entries = new CollectionCatalog().list();
-        assertEquals(4, entries.stream().filter(e -> e.access().equals("AUTOMATICO")).count());
-        assertEquals(6, entries.stream().filter(e -> e.access().equals("AGUARDA_HOMOLOGACAO")).count());
+        assertEquals(Product.values().length, entries.stream().filter(e -> e.access().equals("AUTOMATICO")).count());
+        for (var product : Product.values()) assertEquals(product.name(), new CollectionCatalog().entry(product).id());
         assertEquals("MANUAL", entries.stream().filter(e -> e.id().equals("CAR_SICAR")).findFirst().orElseThrow().access());
+    }
+    @Test void rejectsFireFileFromAnotherDayAndDuplicateHeaders() throws Exception {
+        when(http.download(argThat(uri -> !boundaryUri(uri)))).thenReturn(fixture("inpe-focos-sample.csv"));
+        assertThrows(ResponseStatusException.class, () -> connectors.collect(request(Product.INPE_QUEIMADAS,"2026-10-17",null,null,null)));
+        String csv = "id,lat,lon,data_hora_gmt,satelite,estado_id,municipio_id,id\n";
+        when(http.download(argThat(uri -> !boundaryUri(uri)))).thenReturn(csv.getBytes(StandardCharsets.UTF_8));
+        assertThrows(ResponseStatusException.class, () -> connectors.collect(request(Product.INPE_QUEIMADAS,"2026-10-18",null,null,null)));
+    }
+    @Test void currentOnlySourcesRejectHistoricalYearsBeforeDownloading() throws Exception {
+        for (Product product : List.of(Product.FUNAI, Product.INCRA, Product.ICMBIO, Product.ICMBIO_EMBARGOS, Product.IBAMA))
+            assertThrows(IllegalArgumentException.class, () -> connectors.collect(request(product,"2020",null,null,null)));
+        verify(http,never()).download(any());
     }
 }

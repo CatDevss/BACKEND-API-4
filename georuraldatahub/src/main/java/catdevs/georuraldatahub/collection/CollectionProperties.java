@@ -8,10 +8,22 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class CollectionProperties {
     @jakarta.validation.constraints.Min(1)
     @jakarta.validation.constraints.Max(268435456)
-    private int maxDownloadBytes = 64 * 1024 * 1024;
+    private int maxDownloadBytes = 256 * 1024 * 1024;
     @jakarta.validation.constraints.Min(1)
     @jakarta.validation.constraints.Max(536870912)
-    private int maxTotalBytes = 128 * 1024 * 1024;
+    private int maxTotalBytes = 512 * 1024 * 1024;
+    @jakarta.validation.constraints.Min(1)
+    @jakarta.validation.constraints.Max(2147483648L)
+    private long maxExpandedBytes = 2147483648L;
+
+    public long getMaxExpandedBytes() {
+        return maxExpandedBytes;
+    }
+
+    public void setMaxExpandedBytes(long value) {
+        maxExpandedBytes = value;
+    }
+
     @jakarta.validation.constraints.Min(1)
     @jakarta.validation.constraints.Max(10000)
     private int pageSize = 1000;
@@ -21,26 +33,72 @@ public class CollectionProperties {
     @jakarta.validation.constraints.Min(1)
     @jakarta.validation.constraints.Max(300)
     private int requestTimeoutSeconds = 90;
-    public int getRequestTimeoutSeconds() { return requestTimeoutSeconds; }
-    public void setRequestTimeoutSeconds(int value) { requestTimeoutSeconds = value; }
+
+    public int getRequestTimeoutSeconds() {
+        return requestTimeoutSeconds;
+    }
+
+    public void setRequestTimeoutSeconds(int value) {
+        requestTimeoutSeconds = value;
+    }
+
     @jakarta.validation.constraints.Min(1)
     @jakarta.validation.constraints.Max(900)
     private int maxDurationSeconds = 180;
-    public int getMaxDurationSeconds() { return maxDurationSeconds; }
-    public void setMaxDurationSeconds(int value) { maxDurationSeconds = value; }
-    @jakarta.validation.Valid
-    private List<Job> jobs = List.of();
-    public int getMaxDownloadBytes() { return maxDownloadBytes; }
-    public void setMaxDownloadBytes(int value) { maxDownloadBytes = value; }
-    public int getMaxTotalBytes() { return maxTotalBytes; }
-    public void setMaxTotalBytes(int value) { maxTotalBytes = value; }
-    public int getPageSize() { return pageSize; }
-    public void setPageSize(int value) { pageSize = value; }
-    public int getMaxFeatures() { return maxFeatures; }
-    public void setMaxFeatures(int value) { maxFeatures = value; }
-    public List<Job> getJobs() { return jobs; }
-    public void setJobs(List<Job> value) { jobs = value; }
-    // competence may be D-1 only for daily INPE_QUEIMADAS jobs.
+
+    public int getMaxDurationSeconds() {
+        return maxDurationSeconds;
+    }
+
+    public void setMaxDurationSeconds(int value) {
+        maxDurationSeconds = value;
+    }
+
+    @jakarta.validation.constraints.NotNull
+    private List<@jakarta.validation.constraints.NotNull @jakarta.validation.Valid Job> jobs = List.of();
+
+    public int getMaxDownloadBytes() {
+        return maxDownloadBytes;
+    }
+
+    public void setMaxDownloadBytes(int value) {
+        maxDownloadBytes = value;
+    }
+
+    public int getMaxTotalBytes() {
+        return maxTotalBytes;
+    }
+
+    public void setMaxTotalBytes(int value) {
+        maxTotalBytes = value;
+    }
+
+    public int getPageSize() {
+        return pageSize;
+    }
+
+    public void setPageSize(int value) {
+        pageSize = value;
+    }
+
+    public int getMaxFeatures() {
+        return maxFeatures;
+    }
+
+    public void setMaxFeatures(int value) {
+        maxFeatures = value;
+    }
+
+    public List<Job> getJobs() {
+        return jobs;
+    }
+
+    public void setJobs(List<Job> value) {
+        jobs = value;
+    }
+
+    // A competência pode ser D-1 apenas nas coletas diárias INPE_QUEIMADAS.
     public record Job(@jakarta.validation.constraints.NotNull @jakarta.validation.constraints.Positive Long sourceId,
-            @jakarta.validation.Valid @jakarta.validation.constraints.NotNull CollectionRequest request) {}
+            @jakarta.validation.Valid @jakarta.validation.constraints.NotNull CollectionRequest request) {
+    }
 }

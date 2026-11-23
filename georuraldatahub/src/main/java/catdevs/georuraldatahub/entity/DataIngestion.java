@@ -18,37 +18,36 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
-@Entity 
-@Table (name = "ingestao")
+@Entity
+@Table(name = "ingestao")
 public class DataIngestion {
 
-    @Id 
-    @GeneratedValue (strategy = GenerationType.IDENTITY)
-    @Column (name = "ing_id")
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "ing_id")
     private Long id;
 
-    @ManyToOne (fetch = FetchType.LAZY)
-    @JoinColumn (name = "dic_id", referencedColumnName = "dic_id")
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "dic_id", referencedColumnName = "dic_id")
     private Dictionary dictionary;
 
-    @ManyToOne (fetch = FetchType.LAZY)
-    @JoinColumn (name = "usr_id", referencedColumnName = "usr_id")
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "usr_id", referencedColumnName = "usr_id")
     private User user;
 
-     @Enumerated( EnumType.STRING)
-    @Column (name = "ing_tipo")
+    @Enumerated(EnumType.STRING)
+    @Column(name = "ing_tipo")
     private DataIngestionType type;
 
-
-    @Enumerated( EnumType.STRING)
-    @Column (name = "ing_status")
+    @Enumerated(EnumType.STRING)
+    @Column(name = "ing_status")
     private IngestionStatus ingStatus;
 
     @Column(name = "ing_conector")
     private String connector;
 
-    @CreationTimestamp 
-    @Column (name = "ing_inicio")
+    @CreationTimestamp
+    @Column(name = "ing_inicio")
     private LocalDateTime startTime;
 
     public DataIngestion() {

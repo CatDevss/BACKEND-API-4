@@ -22,10 +22,6 @@ import com.oracle.bmc.objectstorage.requests.PutObjectRequest;
 
 import catdevs.georuraldatahub.config.ObjectStorageProperties;
 
-/**
- * Responsável por conversar com o bucket: listar, enviar e baixar arquivos.
- */
-
 @Service
 public class BucketService {
 
@@ -59,15 +55,6 @@ public class BucketService {
                                 .toList();
         }
 
-        /**
-         * Envia o arquivo para a zona bruta do bucket, no formato
-         * "bruta/{datasetId}/{hash}_{nomeOriginal}", e retorna o nome do objeto salvo.
-         */
-        public String uploadToRawZone(MultipartFile file, Long datasetId, String hash, String sanitizedFilename)
-                        throws IOException {
-                return uploadToRawScope(file, datasetId.toString(), hash, sanitizedFilename);
-        }
-
         public String uploadToSourceRawZone(MultipartFile file, Long sourceId, String hash, String filename)
                         throws IOException {
                 return uploadToRawScope(file, "fontes/" + sourceId, hash, filename);
@@ -92,56 +79,40 @@ public class BucketService {
         private String uploadMultipart(MultipartFile file, String objectName) throws IOException {
                 try (InputStream body = file.getInputStream()) {
                         PutObjectRequest request = PutObjectRequest.builder()
-                                .namespaceName(props.namespace())
-                                .bucketName(props.bucketName())
-                                .objectName(objectName)
-                                .putObjectBody(body)
-                                .contentLength(file.getSize())
-                                .build();
+                                        .namespaceName(props.namespace())
+                                        .bucketName(props.bucketName())
+                                        .objectName(objectName)
+                                        .putObjectBody(body)
+                                        .contentLength(file.getSize())
+                                        .build();
                         client.putObject(request);
                 }
                 return objectName;
         }
 
-        public String uploadValidatedContent(byte[] content, Long datasetId, String hash, String filename) {
-                return uploadValidatedScope(content, datasetId.toString(), hash, filename);
+        public String uploadSourceTreatedContent(byte[] content, Long sourceId, String hash, String filename) {
+                return uploadTreatedScope(content, "fontes/" + sourceId, hash, filename);
         }
 
-        public String uploadSourceValidatedContent(byte[] content, Long sourceId, String hash, String filename) {
-                return uploadValidatedScope(content, "fontes/" + sourceId, hash, filename);
-        }
-
-        private String uploadValidatedScope(byte[] content, String scope, String hash, String filename) {
-                String key = "validada/" + scope + "/" + hash + "_" + filename;
-                try (var input = new java.io.ByteArrayInputStream(content)) {
-                        client.putObject(PutObjectRequest.builder()
-                                .namespaceName(props.namespace()).bucketName(props.bucketName())
-                                .objectName(key).putObjectBody(input).contentLength((long) content.length).build());
-                } catch (IOException e) { throw new java.io.UncheckedIOException(e); }
-                return key;
+        private String uploadTreatedScope(byte[] content, String scope, String hash, String filename) {
+                return uploadCollectionArtifact("tratada/" + scope + "/" + hash + "_" + filename, content, null);
         }
 
         public String uploadValidationReport(String rawLocation, String json) {
-                String key = rawLocation + ".validation.json";
-                byte[] content = json.getBytes(StandardCharsets.UTF_8);
-                try (var input = new java.io.ByteArrayInputStream(content)) {
-                        client.putObject(PutObjectRequest.builder()
-                                .namespaceName(props.namespace()).bucketName(props.bucketName())
-                                .objectName(key).putObjectBody(input).contentLength((long) content.length)
-                                .contentType("application/json").build());
-                } catch (IOException e) { throw new java.io.UncheckedIOException(e); }
-                return key;
+                return uploadCollectionArtifact(rawLocation + ".validation.json", json.getBytes(StandardCharsets.UTF_8),
+                                "application/json");
         }
 
         public String readValidationReport(String rawLocation) throws IOException {
                 var request = GetObjectRequest.builder().namespaceName(props.namespace())
-                        .bucketName(props.bucketName()).objectName(rawLocation + ".validation.json").build();
+                                .bucketName(props.bucketName()).objectName(rawLocation + ".validation.json").build();
                 try (InputStream input = client.getObject(request).getInputStream()) {
                         return new String(input.readAllBytes(), StandardCharsets.UTF_8);
                 } catch (com.oracle.bmc.model.BmcException e) {
-                        if (e.getStatusCode() == 404) throw new org.springframework.web.server.ResponseStatusException(
-                                org.springframework.http.HttpStatus.NOT_FOUND,
-                                "Arquivo ainda não possui relatório de validação.");
+                        if (e.getStatusCode() == 404)
+                                throw new org.springframework.web.server.ResponseStatusException(
+                                                org.springframework.http.HttpStatus.NOT_FOUND,
+                                                "Arquivo ainda não possui relatório de validação.");
                         throw e;
                 }
         }
@@ -149,35 +120,42 @@ public class BucketService {
         public String uploadCollectionArtifact(String key, byte[] bytes, String contentType) {
                 try (InputStream input = new java.io.ByteArrayInputStream(bytes)) {
                         client.putObject(PutObjectRequest.builder().namespaceName(props.namespace())
-                                .bucketName(props.bucketName()).objectName(key).putObjectBody(input)
-                                .contentLength((long) bytes.length).contentType(contentType).build());
-                } catch (IOException e) { throw new java.io.UncheckedIOException(e); }
+                                        .bucketName(props.bucketName()).objectName(key).putObjectBody(input)
+                                        .contentLength((long) bytes.length).contentType(contentType).build());
+                } catch (IOException e) {
+                        throw new java.io.UncheckedIOException(e);
+                }
                 return key;
         }
 
         public String readCollectionMetadata(String rawLocation) throws IOException {
                 var request = GetObjectRequest.builder().namespaceName(props.namespace()).bucketName(props.bucketName())
-                        .objectName(rawLocation + ".collection.json").build();
+                                .objectName(rawLocation + ".collection.json").build();
                 try (InputStream input = client.getObject(request).getInputStream()) {
                         return new String(input.readAllBytes(), StandardCharsets.UTF_8);
                 } catch (com.oracle.bmc.model.BmcException e) {
-                        if (e.getStatusCode() == 404) throw new org.springframework.web.server.ResponseStatusException(
-                                org.springframework.http.HttpStatus.NOT_FOUND, "Arquivo não possui metadados de coleta automática.");
+                        if (e.getStatusCode() == 404)
+                                throw new org.springframework.web.server.ResponseStatusException(
+                                                org.springframework.http.HttpStatus.NOT_FOUND,
+                                                "Arquivo não possui metadados de coleta automática.");
                         throw e;
                 }
         }
 
         public String readGeospatialMetadata(String rawLocation) throws IOException {
                 var request = GetObjectRequest.builder().namespaceName(props.namespace()).bucketName(props.bucketName())
-                        .objectName(rawLocation + ".geospatial.json").build();
+                                .objectName(rawLocation + ".geospatial.json").build();
                 try (InputStream input = client.getObject(request).getInputStream()) {
                         int maximum = catdevs.georuraldatahub.processing.ProcessingProperties.MAX_METADATA_BYTES;
                         byte[] bytes = input.readNBytes(maximum + 1);
-                        if (bytes.length > maximum) throw new IllegalArgumentException("Metadados geoespaciais excedem o limite.");
+                        if (bytes.length > maximum)
+                                throw new IllegalArgumentException("Metadados geoespaciais excedem o limite.");
                         return new String(bytes, StandardCharsets.UTF_8);
                 } catch (com.oracle.bmc.model.BmcException e) {
-                        if (e.getStatusCode() == 404) throw new org.springframework.web.server.ResponseStatusException(
-                                org.springframework.http.HttpStatus.NOT_FOUND, "Arquivo sem metadados geoespaciais extraídos.");
+                        if (e.getStatusCode() == 404)
+                                throw new org.springframework.web.server.ResponseStatusException(
+                                                org.springframework.http.HttpStatus.NOT_FOUND,
+                                                "Arquivo sem metadados geoespaciais extraídos.");
                         throw e;
                 }
         }
@@ -185,16 +163,22 @@ public class BucketService {
         private InputStream bounded(InputStream input) {
                 return new java.io.FilterInputStream(input) {
                         private long remaining = limits.getMaxOutputBytes();
+
                         private void consumed(int count) {
                                 if (count > 0 && (remaining -= count) < 0)
-                                        throw new IllegalArgumentException("Conteúdo vetorial excede o limite de leitura.");
+                                        throw new IllegalArgumentException(
+                                                        "Conteúdo vetorial excede o limite de leitura.");
                         }
-                        @Override public int read() throws IOException {
+
+                        @Override
+                        public int read() throws IOException {
                                 int value = in.read();
                                 consumed(value == -1 ? 0 : 1);
                                 return value;
                         }
-                        @Override public int read(byte[] bytes, int offset, int length) throws IOException {
+
+                        @Override
+                        public int read(byte[] bytes, int offset, int length) throws IOException {
                                 int count = in.read(bytes, offset, (int) Math.min(length, Math.max(0, remaining) + 1));
                                 consumed(count);
                                 return count;
@@ -203,14 +187,15 @@ public class BucketService {
         }
 
         public JsonNode readRasterManifest(String location) throws IOException {
-                if (location == null || !location.startsWith("validada/") || !location.endsWith(".raster.json"))
+                if (location == null || !location.startsWith("tratada/") || !location.endsWith(".raster.json"))
                         throw new IllegalArgumentException("Informe o manifesto da versão raster aprovada.");
                 var request = GetObjectRequest.builder().namespaceName(props.namespace()).bucketName(props.bucketName())
-                        .objectName(location).build();
+                                .objectName(location).build();
                 try (InputStream input = client.getObject(request).getInputStream()) {
                         int maximum = catdevs.georuraldatahub.processing.ProcessingProperties.MAX_METADATA_BYTES;
                         byte[] bytes = input.readNBytes(maximum + 1);
-                        if (bytes.length > maximum) throw new IllegalArgumentException("Metadados geoespaciais excedem o limite.");
+                        if (bytes.length > maximum)
+                                throw new IllegalArgumentException("Metadados geoespaciais excedem o limite.");
                         return objectMapper.readTree(bytes);
                 }
         }
@@ -299,23 +284,32 @@ public class BucketService {
                                 .build();
 
                 try (InputStream input = client.getObject(request).getInputStream();
-                                var reader = new catdevs.georuraldatahub.validation.CsvRecordValidator.TableReader(bounded(input))) {
+                                var reader = new catdevs.georuraldatahub.validation.CsvRecordValidator.TableReader(
+                                                bounded(input))) {
                         List<String> headers = reader.readRecord();
-                        if (headers == null) throw new IllegalArgumentException("O CSV está vazio.");
+                        if (headers == null)
+                                throw new IllegalArgumentException("O CSV está vazio.");
                         headers = headers.stream().map(String::trim).toList();
-                        if (headers.stream().anyMatch(String::isBlank) || new java.util.HashSet<>(headers).size() != headers.size())
+                        if (headers.stream().anyMatch(String::isBlank)
+                                        || new java.util.HashSet<>(headers).size() != headers.size())
                                 throw new IllegalArgumentException("Cabeçalho CSV inválido.");
                         ObjectNode output = objectMapper.createObjectNode().put("type", "FeatureCollection");
                         ArrayNode features = output.putArray("features");
                         List<String> row;
                         int index = 0;
                         while ((row = reader.readRecord()) != null) {
-                                if (row.size() == 1 && row.getFirst().isBlank()) continue;
-                                if (row.size() != headers.size()) throw new IllegalArgumentException("Quantidade de colunas inválida no registro " + index + ".");
+                                if (row.size() == 1 && row.getFirst().isBlank())
+                                        continue;
+                                if (row.size() != headers.size())
+                                        throw new IllegalArgumentException(
+                                                        "Quantidade de colunas inválida no registro " + index + ".");
                                 var record = objectMapper.createObjectNode();
-                                for (int i = 0; i < headers.size(); i++) record.put(headers.get(i), row.get(i).trim());
-                                if (index >= limits.getMaxFeatures()) throw new IllegalArgumentException("Limite de feições excedido.");
-                                features.add(catdevs.georuraldatahub.validation.GeoJsonContent.feature(record, index++));
+                                for (int i = 0; i < headers.size(); i++)
+                                        record.put(headers.get(i), row.get(i).trim());
+                                if (index >= limits.getMaxFeatures())
+                                        throw new IllegalArgumentException("Limite de feições excedido.");
+                                features.add(catdevs.georuraldatahub.validation.GeoJsonContent.feature(record,
+                                                index++));
                         }
                         return output;
                 }

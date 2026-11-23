@@ -42,7 +42,7 @@ class FileValidationServiceTest {
         assertTrue(results.getFirst().valid());
         for (String code : List.of("DUPLICATE_VALUE", "INVALID_TYPE", "UNKNOWN_VALUE", "INVALID_COORDINATES", "REQUIRED_FIELD", "INVALID_COLUMN_COUNT")) has(results, code);
         var report = FileValidationReport.of(1L, 2, results);
-        assertEquals("PARCIAL", report.status()); assertEquals(1, report.validRecords()); assertEquals(4, report.rejectedRecords());
+        assertEquals("REJEITADO", report.status()); assertEquals(1, report.validRecords()); assertEquals(4, report.rejectedRecords());
     }
     @Test void detectsEquivalentNumericDuplicates() throws Exception {
         var results = service.validate(input("n\n1\n1.0"), "csv", List.of(FieldRule.required("n", FieldType.NUMBER)));
@@ -51,6 +51,29 @@ class FileValidationServiceTest {
     @Test void rejectedRowsDoNotReserveUniqueValues() throws Exception {
         var results = csv("id,tipo,latitude,longitude\n1,desconhecido,0,0\n1,rural,0,0");
         assertFalse(results.get(0).valid()); assertTrue(results.get(1).valid());
+    }
+    @Test void uniquenessAndDictionaryDomainsAreIsolatedPerFile() throws Exception {
+        String text = "id,tipo,latitude,longitude\n1,rural,0,0";
+        assertTrue(csv(text).getFirst().valid());
+        assertTrue(csv(text).getFirst().valid());
+        var differentDictionary = List.of(new FieldRule("tipo", true, FieldType.STRING, List.of("outro", "outro"), false));
+        assertTrue(service.validate(input("tipo\noutro"), "csv", differentDictionary).getFirst().valid());
+        has(csv("id,tipo,latitude,longitude\n1,outro,0,0"), "UNKNOWN_VALUE");
+    }
+
+    @Test void invalidGeoJsonEnvelopeNeitherReservesNorChecksPreviousUniqueValues() throws Exception {
+        var fields = List.of(new FieldRule("id", true, FieldType.INTEGER, List.of(), true));
+        String text = collection(feature("{\"id\":1}", point) + ","
+                + feature("{\"id\":1}", "null") + ","
+                + feature("{\"id\":2}", "null") + ","
+                + feature("{\"id\":2}", point) + ","
+                + feature("{\"id\":1}", point));
+        var results = service.validate(input(text), "geojson", fields);
+        assertTrue(results.get(0).valid());
+        assertEquals(List.of("INVALID_GEOMETRY"), results.get(1).errors());
+        assertEquals(List.of("INVALID_GEOMETRY"), results.get(2).errors());
+        assertTrue(results.get(3).valid());
+        assertEquals(List.of("DUPLICATE_VALUE: id", "DUPLICATE_RECORD"), results.get(4).errors());
     }
     @Test void handlesQuotedMultilineAndEscapedQuotes() throws Exception {
         String text = "name\r\n\"a,\"\"b\"\"\ntexto\"\r\n";
@@ -65,12 +88,10 @@ class FileValidationServiceTest {
         has(results, "MALFORMED_FILE");
         assertEquals(0, service.acceptedContent(input(""), "csv", results).length);
     }
-    @Test void acceptedCsvContainsOnlyApprovedRecordsAndHeader() throws Exception {
+    @Test void mixedCsvDoesNotProduceTreatedSubset() throws Exception {
         String text = "id,tipo,latitude,longitude\n1,rural,0,0\n2,invalido,0,0";
         var results = csv(text);
-        String out = new String(service.acceptedContent(input(text), "csv", results), StandardCharsets.UTF_8);
-        assertTrue(out.contains("\"id\"")); assertTrue(out.contains("\"1\"")); assertFalse(out.contains("invalido"));
-        assertEquals(1, csv(out).size());
+        assertEquals(0,service.acceptedContent(input(text), "csv", results).length);
     }
     @Test void handlesEmptyUnsupportedAndDuplicateHeaders() throws Exception {
         has(csv(""), "EMPTY_FILE"); has(csv("id,id\n1,2"), "INVALID_HEADER");
@@ -118,13 +139,12 @@ class FileValidationServiceTest {
             assertTrue(results.getFirst().valid(), results.toString());
         }
     }
-    @Test void filtersGeoJsonAndDetectsDuplicateFeatures() throws Exception {
+    @Test void rejectsWholeGeoJsonWithDuplicateOrInvalidFeatures() throws Exception {
         String valid = feature("{\"name\":\"a\"}", point);
         String text = collection(valid + "," + valid + "," + feature("{\"name\":\"b\"}", "null"));
         var results = service.validate(input(text), "geojson", List.of(FieldRule.required("name", FieldType.STRING)));
         has(results, "DUPLICATE_RECORD"); has(results, "INVALID_GEOMETRY");
         byte[] accepted = service.acceptedContent(input(text), "geojson", results);
-        var filtered = service.validate(new ByteArrayInputStream(accepted), "geojson", List.of(FieldRule.required("name", FieldType.STRING)));
-        assertEquals(1, filtered.size()); assertTrue(filtered.getFirst().valid());
+        assertEquals(0,accepted.length);
     }
 }

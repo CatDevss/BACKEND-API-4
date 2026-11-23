@@ -121,4 +121,10 @@ class VectorTreatmentTest {
         assertThrows(IllegalArgumentException.class, () -> treatment.apply(collection("{\"_origens\":\"A\"}", polygon()),
                 List.of(), new TreatmentRequest(1L, 3L, null, true, List.of("_origens"))));
     }
+    @Test void rejectsDeclaredCrsBeforeClippingOrDownloadingBoundary() throws Exception {
+        var input = (com.fasterxml.jackson.databind.node.ObjectNode) collection("{}", polygon());
+        input.putObject("crs").put("type", "name").putObject("properties").put("name", "EPSG:31983");
+        assertThrows(IllegalArgumentException.class, () -> treatment.apply(input, List.of(), defaults));
+        verify(http, never()).download(any());
+    }
 }

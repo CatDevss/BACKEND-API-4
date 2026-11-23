@@ -36,6 +36,13 @@ class ParanaSpatialFilterTest {
         assertFalse(boundary.geometry().isEmpty());
         assertTrue(boundary.original().origin().contains("/estados/PR"));
     }
+    @Test void bboxRestrictsTheGeometryAndRejectsDisjointBounds() {
+        var boundary = new ParanaSpatialFilter.Boundary(new GeometryFactory().toGeometry(new Envelope(-51,-49,-25,-23)), null);
+        var cropped = filter.restrict(boundary,java.util.List.of(-50.5,-24.5,-49.5,-23.5));
+        assertEquals(1.0,cropped.geometry().getArea(),1e-9);
+        assertTrue(boundary.geometry().covers(cropped.geometry()));
+        assertThrows(IllegalArgumentException.class,() -> filter.restrict(boundary,java.util.List.of(-60.,-30.,-59.,-29.)));
+    }
     @Test void rejectsDifferentStateInsteadOfClippingToWrongRegion() throws Exception {
         when(http.download(any())).thenReturn("{\"type\":\"FeatureCollection\",\"features\":[{\"properties\":{\"codarea\":\"35\"}}]}".getBytes(StandardCharsets.UTF_8));
         assertThrows(org.springframework.web.server.ResponseStatusException.class,filter::boundary);

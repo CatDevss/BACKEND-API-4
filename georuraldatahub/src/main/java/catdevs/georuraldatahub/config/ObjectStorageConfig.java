@@ -23,14 +23,16 @@ public class ObjectStorageConfig {
         return ObjectStorageClient.builder()
                 .configuration(ClientConfiguration.builder().connectionTimeoutMillis(10000).readTimeoutMillis(60000)
                         .retryConfiguration(RetryConfiguration.builder()
-                                .terminationStrategy(new MaxAttemptsTerminationStrategy(2)).build()).build())
+                                .terminationStrategy(new MaxAttemptsTerminationStrategy(2)).build())
+                        .build())
                 .build(new ConfigFileAuthenticationDetailsProvider(fileConfig));
     }
 
     static Path configPath(String configured) {
         if (configured != null && !configured.isBlank()) {
             String path = configured.trim();
-            if (path.startsWith("~/")) path = System.getProperty("user.home") + path.substring(1);
+            if (path.startsWith("~/"))
+                path = System.getProperty("user.home") + path.substring(1);
             return Path.of(path);
         }
         var homeConfig = Path.of(System.getProperty("user.home"), ".oci", "config");

@@ -15,7 +15,7 @@ class TreatmentServiceTest {
     private final BucketService bucket = mock(BucketService.class);
     private final TreatmentRequest request = new TreatmentRequest(1L, 3L, null, false, null);
     private final TreatmentInputService.Input input = new TreatmentInputService.Input(7L, 10L, "arquivo.csv", "csv",
-            "bruta/original.csv", "validada/arquivo.csv", 5L, "hash", 2L, 1, List.of());
+            "bruta/original.csv", "tratada/arquivo.csv", 5L, "hash", 2L, 1, List.of());
     @Test void disabledPersistenceDoesNotAccessDatabaseBucketOrVectorTreatment() {
         var service = new TreatmentService(Optional.empty(), inputs, vectors, bucket);
         assertEquals(503, assertThrows(ResponseStatusException.class, () -> service.start(7L, request)).getStatusCode().value());
@@ -24,7 +24,7 @@ class TreatmentServiceTest {
     @Test void failedTransformationRecordsFailureWithoutApprovingOrPersistingAResult() throws Exception {
         when(inputs.load(7L, 3L)).thenReturn(input); when(store.start(input, request)).thenReturn(20L);
         var content = new ObjectMapper().createObjectNode();
-        when(bucket.readCsvAsGeoJson("validada/arquivo.csv")).thenReturn(content);
+        when(bucket.readCsvAsGeoJson("tratada/arquivo.csv")).thenReturn(content);
         when(vectors.apply(content, input.rules(), request)).thenThrow(new IllegalArgumentException("Data inválida"));
         var service = new TreatmentService(Optional.of(store), inputs, vectors, bucket);
         assertThrows(IllegalArgumentException.class, () -> service.start(7L, request));
@@ -34,17 +34,17 @@ class TreatmentServiceTest {
     @Test void successPassesApprovedSubsetAndProvenanceToAtomicPersistence() throws Exception {
         when(inputs.load(7L, 3L)).thenReturn(input); when(store.start(input, request)).thenReturn(20L);
         var content = new ObjectMapper().createObjectNode(); var trace = new ObjectMapper().createObjectNode().put("targetSrid", 4326);
-        when(bucket.readCsvAsGeoJson(input.validatedLocation())).thenReturn(content);
+        when(bucket.readCsvAsGeoJson(input.treatedLocation())).thenReturn(content);
         when(vectors.apply(content, input.rules(), request)).thenReturn(new VectorTreatment.Result(content, trace, 4, 2));
         new TreatmentService(Optional.of(store), inputs, vectors, bucket).start(7L, request);
         verify(store).complete(20L, input, request, content, trace, 4, 2, false); verify(store, never()).fail(any(), any());
     }
     @Test void rasterPathVerifiesParanaCoverageAndNeverConvertsPixelsToFeatures() throws Exception {
         var rasterInput = new TreatmentInputService.Input(7L, 10L, "raster.tif", "tif", "bruta/raster.tif",
-                "validada/raster.tif.raster.json", 5L, "hash", 2L, 1, List.of());
+                "tratada/raster.tif.raster.json", 5L, "hash", 2L, 1, List.of());
         var rasterRequest = new TreatmentRequest(null, 3L, null, false, null);
         when(inputs.load(7L, 3L)).thenReturn(rasterInput); when(store.start(rasterInput, rasterRequest)).thenReturn(20L);
-        when(bucket.readRasterManifest(rasterInput.validatedLocation())).thenReturn(new ObjectMapper().readTree("""
+        when(bucket.readRasterManifest(rasterInput.treatedLocation())).thenReturn(new ObjectMapper().readTree("""
             {"kind":"RASTER","sourceSrid":31982,"toolVersion":"GeoTools 35.2","summary":{"footprint":{"type":"Polygon","coordinates":[[[-51,-25],[-50,-25],[-50,-24],[-51,-24],[-51,-25]]]}}}
             """));
         var envelope = new ObjectMapper().readTree("""
@@ -59,6 +59,31 @@ class TreatmentServiceTest {
                 eq(1), eq(1), eq(true));
         verify(bucket, never()).readGeoJson(any()); verify(bucket, never()).readCsvAsGeoJson(any());
         verify(bucket, never()).readGeospatialMetadata(any());
+    }
+
+    @Test void datasetTreatmentLoadsApprovedInputOnlyOnceAndRetainsFailureTracking() throws Exception {
+        when(inputs.uploaderId(7L)).thenReturn(3L);
+        when(inputs.load(7L, 3L)).thenReturn(input);
+        when(store.start(input, request)).thenReturn(20L);
+        when(bucket.readCsvAsGeoJson(input.treatedLocation())).thenThrow(new java.io.IOException("Leitura falhou"));
+        var service = new TreatmentService(Optional.of(store), inputs, vectors, bucket);
+        assertThrows(java.io.IOException.class, () -> service.startForDataset(1L, 7L, null));
+        verify(inputs).uploaderId(7L);
+        verify(inputs).load(7L, 3L);
+        verifyNoMoreInteractions(inputs);
+        verify(store).fail(20L, "Leitura falhou");
+        verify(store, never()).complete(any(), any(), any(), any(), any(), anyInt(), anyInt(), anyBoolean());
+    }
+
+    @Test void datasetTreatmentUsesExplicitActorAndKeepsRasterOutOfVectorLayers() {
+        var raster = new TreatmentInputService.Input(7L, 10L, "raster.tif", "tif", "bruta/raster.tif",
+                "tratada/raster.tif.raster.json", 5L, "hash", 2L, 1, List.of());
+        when(inputs.load(7L, 3L)).thenReturn(raster);
+        var service = new TreatmentService(Optional.of(store), inputs, vectors, bucket);
+        assertThrows(IllegalArgumentException.class, () -> service.startForDataset(1L, 7L, 3L));
+        verify(inputs).load(7L, 3L);
+        verifyNoMoreInteractions(inputs);
+        verifyNoInteractions(store, bucket, vectors);
     }
 
 }

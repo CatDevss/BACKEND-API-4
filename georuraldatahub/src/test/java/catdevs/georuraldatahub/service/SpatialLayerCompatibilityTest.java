@@ -43,12 +43,21 @@ class SpatialLayerCompatibilityTest {
         dataset.getFiles().add(file); when(datasets.findById(1L)).thenReturn(Optional.of(dataset));
         when(datasets.findLockedById(1L)).thenReturn(Optional.of(dataset));
         when(files.findLockedById(7L)).thenReturn(Optional.of(file));
-        var version = new Version(); version.setId(10L); version.setFile(file); version.setStatus(VersionStatus.BRUTA);
-        version.setLocation("validada/teste.geojson");
-        when(versions.findFirstByFile_IdAndStatusAndLocationStartingWithOrderByVersionNumberDesc(7L, VersionStatus.BRUTA, "validada/"))
+        var version = new Version(); version.setId(10L); version.setVersionNumber(2); version.setFile(file); version.setStatus(VersionStatus.TRATADA);
+        version.setLocation("tratada/teste.geojson");
+        when(versions.findFirstByFile_IdAndStatusAndLocationStartingWithOrderByVersionNumberDesc(7L, VersionStatus.TRATADA, "tratada/"))
                 .thenReturn(Optional.of(version));
         when(versions.findById(10L)).thenReturn(Optional.of(version));
-        when(layers.saveAndFlush(any())).thenAnswer(i -> { Layer layer = i.getArgument(0); layer.setId(30L); return layer; });
+        when(versions.findFirstByFile_IdOrderByVersionNumberDesc(7L)).thenReturn(Optional.of(version));
+        when(versions.saveAndFlush(any())).thenAnswer(i -> { Version output = i.getArgument(0); output.setId(11L); return output; });
+        when(layers.saveAndFlush(any())).thenAnswer(i -> {
+            Layer layer = i.getArgument(0); layer.setId(30L);
+            assertEquals(VersionStatus.BRUTA,layer.getVersion().getStatus());
+            assertEquals(VersionStatus.TRATADA,version.getStatus());
+            assertNotSame(version,layer.getVersion());
+            when(layers.existsByVersion_File_Id(7L)).thenReturn(true);
+            return layer;
+        });
         when(features.insertBatch(eq(30L), eq(4326), any())).thenReturn(1);
         return version;
     }
@@ -69,7 +78,7 @@ class SpatialLayerCompatibilityTest {
         order.verify(bucket).readGeoJson(version.getLocation());
         order.verify(files).findLockedById(7L);
         order.verify(features).insertBatch(any(), anyInt(), any());
-        order.verify(versions).saveAndFlush(version);
+        order.verify(versions).saveAndFlush(argThat(v -> v != version && v.getVersionNumber()==3 && v.getStatus()==VersionStatus.TRATADA));
     }
 
     @Test void secondLoadOfSameSnapshotCannotCreateDuplicateLayer() throws Exception {
@@ -87,17 +96,19 @@ class SpatialLayerCompatibilityTest {
         var version = prepare();
         when(bucket.readGeoJson(version.getLocation())).thenThrow(new java.io.IOException("Storage offline"));
         assertThrows(java.io.IOException.class, () -> service.createLayerFromFile(1L, 7L, null));
-        assertEquals(VersionStatus.BRUTA, version.getStatus());
-        verifyNoInteractions(layers, features, files);
+        assertEquals(VersionStatus.TRATADA, version.getStatus());
+        verify(layers,never()).saveAndFlush(any());
+        verifyNoInteractions(features, files);
         verify(versions, never()).saveAndFlush(any());
     }
 
-    @Test void refreshesStateAfterLockToDetectConcurrentCompletionHiddenByRequestCache() throws Exception {
+    @Test void refreshesStateAfterLockToDetectRevokedApprovalHiddenByRequestCache() throws Exception {
         var version = prepare();
         var input = legacy.load(1L, 7L);
-        doAnswer(call -> { version.setStatus(VersionStatus.TRATADA); return null; }).when(manager).refresh(version);
+        doAnswer(call -> { version.setStatus(VersionStatus.QUARENTENA); return null; }).when(manager).refresh(version);
         assertEquals(409, assertThrows(ResponseStatusException.class,
                 () -> legacy.complete(input, GeoJsonFeatureExtractor.extract(content()))).getStatusCode().value());
-        verifyNoInteractions(layers, features);
+        verify(layers,never()).saveAndFlush(any());
+        verifyNoInteractions(features);
     }
 }

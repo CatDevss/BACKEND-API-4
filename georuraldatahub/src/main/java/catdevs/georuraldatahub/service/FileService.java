@@ -42,7 +42,6 @@ import catdevs.georuraldatahub.validation.FileValidationReport;
 import catdevs.georuraldatahub.validation.FileValidationService;
 import catdevs.georuraldatahub.validation.RecordValidationResult;
 
-/** Serviço de ingestão e consulta de arquivos. */
 @Service
 public class FileService {
 
@@ -83,40 +82,38 @@ public class FileService {
         this.geospatial = geospatial;
     }
 
-     /** Envia um arquivo para uma fonte, sem associar a nenhum dataset. */
+    /** Envia um arquivo para uma fonte, sem associar a nenhum dataset. */
     @Transactional(rollbackFor = Exception.class)
     public FileResponseDTO uploadToSource(MultipartFile file, Long sourceId, Long userId) throws Exception {
         return uploadToSource(file, sourceId, userId, null);
     }
 
-    /** Igual ao anterior, mas permite escolher o dicionário. */
     @Transactional(rollbackFor = Exception.class)
-    public FileResponseDTO uploadToSource(MultipartFile file, Long sourceId, Long userId, Long dictionaryId) throws Exception {
+    public FileResponseDTO uploadToSource(MultipartFile file, Long sourceId, Long userId, Long dictionaryId)
+            throws Exception {
         return ingest(file, null, userId, sourceId, null, dictionaryId, DataIngestionType.UPLOAD, null);
     }
 
-     /** Endpoint de compatibilidade: envia para a fonte e já associa ao dataset. */
+    /** Endpoint de compatibilidade: envia para a fonte e já associa ao dataset. */
     @Transactional(rollbackFor = Exception.class)
     public FileResponseDTO uploadFile(MultipartFile multipartFile, Long datasetId, Long userId, Long sourceId)
             throws Exception {
         return uploadFile(multipartFile, datasetId, userId, sourceId, null);
     }
 
-    /** Igual ao anterior, mas permite escolher o dicionário. */
     @Transactional(rollbackFor = Exception.class)
     public FileResponseDTO uploadFile(MultipartFile multipartFile, Long datasetId, Long userId, Long sourceId,
             Long dictionaryId) throws Exception {
         return ingest(multipartFile, datasetId, userId, sourceId, null, dictionaryId, DataIngestionType.UPLOAD, null);
     }
 
-     /** Ingere um arquivo vindo de coleta automática e associa ao dataset. */
+    /** Ingere um arquivo vindo de coleta automática e associa ao dataset. */
     @Transactional(rollbackFor = Exception.class)
     public FileResponseDTO uploadCollectedFile(CollectedData collected,
             Long datasetId, Long userId, Long sourceId) throws Exception {
         return uploadCollectedFile(collected, datasetId, userId, sourceId, null, null);
     }
-    
-      /** Igual ao anterior, mas permite escolher o dicionário. */
+
     @Transactional(rollbackFor = Exception.class)
     public FileResponseDTO uploadCollectedFile(CollectedData collected,
             Long datasetId, Long userId, Long sourceId, Long dictionaryId, String connector) throws Exception {
@@ -125,98 +122,108 @@ public class FileService {
         return ingest(file, datasetId, userId, sourceId, collected, dictionaryId, DataIngestionType.API, connector);
     }
 
-    /** Fluxo principal: valida, guarda no bucket e salva ingestão, arquivo e versões. */
+    /**
+     * Fluxo principal: valida, guarda no bucket e salva ingestão, arquivo e
+     * versões.
+     */
     private FileResponseDTO ingest(MultipartFile multipartFile, Long datasetId, Long userId, Long sourceId,
-            CollectedData collected, Long dictionaryId, DataIngestionType ingestionType, String connector) throws Exception {
+            CollectedData collected, Long dictionaryId, DataIngestionType ingestionType, String connector)
+            throws Exception {
         String hash = calculateHash(multipartFile);
 
         User user = userService.findEntityById(userId);
-         // Bloqueia a fonte e pega o dicionário; se não informado, usa a versão mais recente.
+        // Bloqueia a fonte e pega o dicionário; se não informado, usa a versão mais
+        // recente.
         Dictionary dictionary = dictionaryService.acquireForValidation(sourceId, dictionaryId);
-        // O bloqueio da fonte também evita duplicidade entre uploads e coletas agendadas.
+        // O bloqueio da fonte também evita duplicidade entre uploads e coletas
+        // agendadas.
         if (fileRepository.existsByHashAndIngestion_Dictionary_Source_Id(hash, sourceId)) {
-            throw new DuplicateFileException("Este conteúdo já foi enviado para esta fonte. Selecione o arquivo existente para compor o conjunto.");
+            throw new DuplicateFileException(
+                    "Este conteúdo já foi enviado para esta fonte. Selecione o arquivo existente para compor o conjunto.");
         }
         Dataset dataset = datasetId == null ? null : datasetService.findLockedEntityById(datasetId);
 
         String sanitizedFilename = sanitizeFilename(multipartFile.getOriginalFilename());
         String format = extractFormat(sanitizedFilename);
-        if (sanitizedFilename.length() > 200) throw new IllegalArgumentException("Nome do arquivo excede 200 caracteres.");
+        if (sanitizedFilename.length() > 200)
+            throw new IllegalArgumentException("Nome do arquivo excede 200 caracteres.");
         if (format == null || format.isBlank() || format.length() > 10)
             throw new IllegalArgumentException("Informe um arquivo com extensão de até 10 caracteres.");
 
         var rules = dictionaryService.rules(dictionary);
-        catdevs.georuraldatahub.processing.GeospatialReader.Result prepared = null;
-        List<RecordValidationResult> preparationErrors = null;
         boolean raster = java.util.Set.of("tif", "tiff").contains(format);
-        int sourceSrid = 0;
-        boolean declaredCrs = false;
-        if (collected != null && collected.metadata() != null
-                && "shapefile.zip".equals(collected.metadata().originFormat())
-                && java.util.Set.of("IBGE_BIOMAS", "IBGE_MUNICIPIOS").contains(collected.metadata().product())) {
-            // O leitor IBGE já verificou SIRGAS 2000 geográfico; converter para GeoJSON não reprojeta o datum.
-            sourceSrid = 4674;
-        } else if (java.util.Set.of("geojson", "json").contains(format)) {
-            try (InputStream input = multipartFile.getInputStream()) {
-                var root = mapper.readTree(input);
-                declaredCrs = root != null && root.hasNonNull("crs")
-                        && java.util.Set.of("FeatureCollection", "Feature").contains(root.path("type").asText());
-            } catch (com.fasterxml.jackson.core.JsonProcessingException ignored) {
-                // O validador abaixo registra o erro estrutural e preserva o original na quarentena.
-            }
-        }
-        if (raster || java.util.Set.of("zip", "gpkg").contains(format) || sourceSrid != 0 || declaredCrs) {
-            try (InputStream input = multipartFile.getInputStream()) {
-                prepared = geospatial.read(input, format.equals("json") ? "geojson" : format, sourceSrid);
-            } catch (ResponseStatusException e) {
-                if (e.getStatusCode().value() != 422) throw e;
-                preparationErrors = List.of(RecordValidationResult.invalid(-1, "",
-                        List.of("INVALID_GEOSPATIAL_FILE: " + e.getReason())));
-            }
-        }
+        var preparation = IngestionContent.prepare(multipartFile, format, collected, geospatial);
+        var prepared = preparation.content();
+        var preparationErrors = preparation.errors();
+        // Fonte CAR: não valida registro a registro contra o dicionário (arquivos muito
+        // grandes). A leitura estrutural acima continua valendo: arquivo ilegível ou com
+        // erro de preparo ainda é rejeitado.
+        boolean carSource = isCarSource(dictionary);
+        boolean skipDictionary = preparationErrors == null && carSource;
         List<RecordValidationResult> records;
-        try (InputStream input = prepared == null ? multipartFile.getInputStream()
-                : new java.io.ByteArrayInputStream(prepared.content())) {
-            records = preparationErrors == null
-                    ? validationService.validate(input, prepared == null ? format : raster ? "json" : "geojson", rules)
-                    : preparationErrors;
+        FileValidationReport report;
+        if (skipDictionary) {
+            records = List.of();
+            // validRecords = -1: registros não contados, pois não houve validação por registro.
+            report = new FileValidationReport("VALIDO", dictionary.getId(), dictionary.getVersion(), -1, 0,
+                    List.of());
+        } else {
+            try (InputStream input = prepared == null ? multipartFile.getInputStream()
+                    : new java.io.ByteArrayInputStream(prepared.content())) {
+                records = preparationErrors == null
+                        ? validationService.validate(input, prepared == null ? format : raster ? "json" : "geojson",
+                                rules)
+                        : preparationErrors;
+            }
+            report = FileValidationReport.of(dictionary.getId(), dictionary.getVersion(), records);
         }
-        var report = FileValidationReport.of(dictionary.getId(), dictionary.getVersion(), records);
+        boolean approved = report.status().equals("VALIDO");
         String reportJson = mapper.writeValueAsString(report);
         byte[] accepted;
-        if (preparationErrors != null) {
+        if (!approved) {
             accepted = new byte[0];
         } else if (raster) {
-            accepted = report.status().equals("VALIDO") ? mapper.writeValueAsBytes(prepared.metadata()) : new byte[0];
+            accepted = mapper.writeValueAsBytes(prepared.metadata());
+        } else if (skipDictionary) {
+            // Sem validação por registro: o conteúdo lido segue inteiro para a zona tratada.
+            accepted = prepared == null ? multipartFile.getBytes() : prepared.content();
         } else {
             try (InputStream input = prepared == null ? multipartFile.getInputStream()
                     : new java.io.ByteArrayInputStream(prepared.content())) {
                 accepted = validationService.acceptedContent(input, prepared == null ? format : "geojson", records);
             }
         }
-        String validatedFilename = sanitizedFilename + (prepared == null || java.util.Set.of("json", "geojson").contains(format)
-                ? "" : raster ? ".raster.json" : ".geojson");
-        // O conteúdo bruto fica guardado para auditoria. Só o arquivo filtrado segue para tratamento.
+        String treatedFilename = sanitizedFilename
+                + (prepared == null || java.util.Set.of("json", "geojson").contains(format)
+                        ? ""
+                        : raster ? ".raster.json" : ".geojson");
+        // O original é preservado para auditoria; aprovação exige o arquivo inteiro
+        // válido.
         String location = bucketService.uploadToSourceRawZone(multipartFile, sourceId, hash, sanitizedFilename);
 
         List<String> uploaded = new ArrayList<>();
         uploaded.add(location);
-         // Se a transação der rollback (inclusive no commit), apaga do bucket o que já foi enviado.
+        // Se a transação der rollback (inclusive no commit), apaga do bucket o que já
+        // foi enviado.
         TransactionSynchronizationManager.registerSynchronization(
-            new TransactionSynchronization() {
-                @Override public void afterCompletion(int status) {
-                    if (status == STATUS_ROLLED_BACK) for (String key : uploaded) {
-                        try { bucketService.deleteObject(key); }
-                        catch (RuntimeException cleanupError) {
-                            LoggerFactory.getLogger(FileService.class).error("Falha ao remover objeto {}", key, cleanupError);
-                        }
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCompletion(int status) {
+                        if (status == STATUS_ROLLED_BACK)
+                            for (String key : uploaded) {
+                                try {
+                                    bucketService.deleteObject(key);
+                                } catch (RuntimeException cleanupError) {
+                                    LoggerFactory.getLogger(FileService.class).error("Falha ao remover objeto {}", key,
+                                            cleanupError);
+                                }
+                            }
                     }
-                }
-            });
+                });
         String reportLocation = bucketService.uploadValidationReport(location, reportJson);
         uploaded.add(reportLocation);
 
-         if (prepared != null) {
+        if (prepared != null) {
             uploaded.add(bucketService.uploadCollectionArtifact(location + ".geospatial.json",
                     mapper.writeValueAsBytes(prepared.metadata()), "application/json"));
         }
@@ -233,9 +240,10 @@ public class FileService {
                     mapper.writeValueAsBytes(collected.metadata()), "application/json"));
         }
 
-        if (!report.status().equals("VALIDO")) {
-            // A zona física acompanha a quarentena do banco. O original bruto e o histórico ficam preservados.
-            String quarantineLocation = BucketService.quarantineLocation(location);
+        String quarantineLocation = BucketService.quarantineLocation(location);
+        if (!approved) {
+            // A zona física acompanha a quarentena do banco. O original bruto e o histórico
+            // ficam preservados.
             // Registrar antes do envio também cobre falha de rede após a gravação no OCI.
             uploaded.add(quarantineLocation);
             bucketService.uploadToQuarantineZone(multipartFile, location);
@@ -243,16 +251,16 @@ public class FileService {
             bucketService.uploadValidationReport(quarantineLocation, reportJson);
         }
 
-         // Salva a ingestão (ERRO se o arquivo foi rejeitado por completo)
+        // Qualquer reprovação impede a aprovação integral do arquivo.
         DataIngestion ingestion = new DataIngestion();
         ingestion.setDictionary(dictionary);
         ingestion.setUser(user);
         ingestion.setType(ingestionType);
-        ingestion.setConnector(connector);
-        ingestion.setIngStatus(report.status().equals("REJEITADO") ? IngestionStatus.ERRO : IngestionStatus.CONCLUIDO);
+        // Upload manual da fonte CAR: registra a origem com o código do catálogo (CAR_SICAR).
+        ingestion.setConnector(connector != null ? connector : carSource ? CAR_CONNECTOR : null);
+        ingestion.setIngStatus(approved ? IngestionStatus.CONCLUIDO : IngestionStatus.ERRO);
         ingestion = ingestionRepository.save(ingestion);
 
-        // Salva o arquivo.
         File file = new File();
         file.setIngestion(ingestion);
         file.setName(sanitizedFilename);
@@ -262,7 +270,7 @@ public class FileService {
         file.setLocation(location);
         file = fileRepository.save(file);
 
-         // Versão 1: conteúdo bruto.
+        // Versão 1: conteúdo bruto.
         Version version = new Version();
         version.setFile(file);
         version.setVersionNumber(1);
@@ -270,31 +278,34 @@ public class FileService {
         version.setLocation(location);
         versionRepository.save(version);
 
-          // Se não for totalmente válido, vai para a quarentena.
-        if (!report.status().equals("VALIDO")) {
+        // Se não for totalmente válido, vai para a quarentena.
+        if (!approved) {
             var quarantine = new Quarantine();
             quarantine.setIngestion(ingestion);
             quarantine.setFile(file);
-            quarantine.setStatus(report.status().equals("REJEITADO") ? "ARQUIVO_REJEITADO" : "REGISTROS_REJEITADOS");
+            quarantine.setStatus("ARQUIVO_REJEITADO");
             quarantine.setReason(quarantineSummary(report));
             quarantineRepository.save(quarantine);
         }
 
-          // Versão 2: só os registros aceitos, se houver algum.
-        if (accepted.length > 0) {
-            String acceptedLocation = bucketService.uploadSourceValidatedContent(accepted, sourceId, hash, validatedFilename);
-            uploaded.add(acceptedLocation);
-            Version validated = new Version();
-            validated.setFile(file);
-            validated.setVersionNumber(2);
-            // Filtrar só valida os registros; não significa que já foi tratado ou publicado.
-            validated.setStatus(VersionStatus.BRUTA);
-            validated.setLocation(acceptedLocation);
-            versionRepository.save(validated);
+        // Versão 2: resultado integral da validação do dicionário.
+        Version outcome = new Version();
+        outcome.setFile(file);
+        outcome.setVersionNumber(2);
+        if (approved) {
+            String treatedLocation = bucketService.uploadSourceTreatedContent(accepted, sourceId, hash,
+                    treatedFilename);
+            uploaded.add(treatedLocation);
+            outcome.setStatus(VersionStatus.TRATADA);
+            outcome.setLocation(treatedLocation);
+        } else {
+            outcome.setStatus(VersionStatus.QUARENTENA);
+            outcome.setLocation(quarantineLocation);
         }
+        versionRepository.save(outcome);
 
-         // Associa ao dataset, se informado.
-        if (dataset != null) dataset.getFiles().add(file);
+        if (dataset != null)
+            dataset.getFiles().add(file);
 
         return new FileResponseDTO(
                 file.getId(),
@@ -308,8 +319,16 @@ public class FileService {
                 user.getId(), report);
     }
 
+    /** Nome da fonte (único no banco) cujos arquivos não passam pela validação do dicionário. */
+    static final String CAR_SOURCE_NAME = "CAR";
 
-    /** Calcula o hash SHA-256 do arquivo, em hexadecimal. */
+    /** Código do CAR no catálogo de coleta (CollectionCatalog), gravado como conector da ingestão. */
+    private static final String CAR_CONNECTOR = "CAR_SICAR";
+
+    private static boolean isCarSource(Dictionary dictionary) {
+        return dictionary.getSource() != null && CAR_SOURCE_NAME.equalsIgnoreCase(dictionary.getSource().getName());
+    }
+
     String calculateHash(MultipartFile file) throws IOException, NoSuchAlgorithmException {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
 
@@ -322,15 +341,10 @@ public class FileService {
 
         }
 
-          // Converte os bytes do hash para texto hexadecimal.
-        StringBuilder sb = new StringBuilder();
-        for (byte b : digest.digest()) {
-            sb.append(String.format("%02x", b));
-        }
-        return sb.toString();
+        return java.util.HexFormat.of().formatHex(digest.digest());
     }
 
-      /** Retorna a extensão do arquivo em minúsculas, ou null se não tiver. */
+    /** Retorna a extensão do arquivo em minúsculas, ou null se não tiver. */
     private String extractFormat(String filename) {
         if (filename == null || !filename.contains(".")) {
             return null;
@@ -338,7 +352,7 @@ public class FileService {
         return filename.substring(filename.lastIndexOf(".") + 1).toLowerCase(java.util.Locale.ROOT);
     }
 
-   /**
+    /**
      * Remove acentos e troca espaços/caracteres especiais por "_",
      * pra gerar um nome seguro pra usar como chave de objeto no bucket.
      */
@@ -351,7 +365,9 @@ public class FileService {
         return semAcento.replaceAll("[^a-zA-Z0-9._-]", "_");
     }
 
-     /** Monta o resumo do motivo da quarentena (só ASCII, máximo de 500 caracteres). */
+    /**
+     * Monta o resumo do motivo da quarentena (só ASCII, máximo de 500 caracteres).
+     */
     private String quarantineSummary(FileValidationReport report) {
         String codes = report.records().stream().flatMap(r -> r.errors().stream())
                 .map(error -> error.split(":", 2)[0].replaceAll("[^A-Z_]", ""))
@@ -362,7 +378,6 @@ public class FileService {
         return summary.substring(0, Math.min(summary.length(), 500));
     }
 
-     /** Busca o relatório de validação de um arquivo. */
     @Transactional(readOnly = true)
     public FileValidationReport validationReport(Long fileId) throws Exception {
         File file = fileRepository.findById(fileId).orElseThrow(() -> new ResponseStatusException(
@@ -370,7 +385,6 @@ public class FileService {
         return mapper.readValue(bucketService.readValidationReport(file.getLocation()), FileValidationReport.class);
     }
 
-       /** Busca os metadados da coleta de um arquivo. */
     @Transactional(readOnly = true)
     public CollectedData.Metadata collectionMetadata(Long fileId) throws Exception {
         File file = fileRepository.findById(fileId).orElseThrow(() -> new ResponseStatusException(
@@ -379,14 +393,13 @@ public class FileService {
                 CollectedData.Metadata.class);
     }
 
-      @Transactional(readOnly = true)
+    @Transactional(readOnly = true)
     public com.fasterxml.jackson.databind.JsonNode geospatialMetadata(Long fileId) throws Exception {
         File file = fileRepository.findById(fileId).orElseThrow(() -> new ResponseStatusException(
                 HttpStatus.NOT_FOUND, "Arquivo não encontrado."));
         return mapper.readTree(bucketService.readGeospatialMetadata(file.getLocation()));
     }
 
-    /** Lista os arquivos de uma fonte, do mais recente para o mais antigo. */
     @Transactional(readOnly = true)
     public List<FileResponseDTO> findBySourceId(Long sourceId) {
         return fileRepository.findByIngestion_Dictionary_Source_IdOrderByIdDesc(sourceId).stream()
@@ -396,7 +409,6 @@ public class FileService {
                 .toList();
     }
 
-      /** Lista os arquivos de um dataset. */
     @Transactional(readOnly = true)
     public List<FileResponseDTO> findByDatasetId(Long datasetId) {
 

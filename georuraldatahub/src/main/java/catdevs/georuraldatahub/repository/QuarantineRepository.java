@@ -3,7 +3,6 @@ package catdevs.georuraldatahub.repository;
 import catdevs.georuraldatahub.entity.Quarantine;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.QueryHint;
-import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -15,18 +14,17 @@ import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 
 public interface QuarantineRepository extends JpaRepository<Quarantine, Long> {
-    List<Quarantine> findByStatus(String status);
-
-    @EntityGraph(attributePaths = {"user", "file", "ingestion", "ingestion.dictionary", "ingestion.dictionary.source"})
+    @EntityGraph(attributePaths = { "user", "file", "ingestion", "ingestion.dictionary",
+            "ingestion.dictionary.source" })
     @Query("""
-        select q from Quarantine q
-        left join q.user responsible
-        left join q.file file
-        where (:status is null or q.status = :status)
-          and (:responsibleId is null or responsible.id = :responsibleId)
-          and (:fileId is null or file.id = :fileId)
-          and (:unassigned = false or (responsible is null and q.dateResolution is null and q.status <> 'RESOLVIDA'))
-        """)
+            select q from Quarantine q
+            left join q.user responsible
+            left join q.file file
+            where (:status is null or q.status = :status)
+              and (:responsibleId is null or responsible.id = :responsibleId)
+              and (:fileId is null or file.id = :fileId)
+              and (:unassigned = false or (responsible is null and q.dateResolution is null and q.status <> 'RESOLVIDA'))
+            """)
     Page<Quarantine> search(@Param("status") String status, @Param("responsibleId") Long responsibleId,
             @Param("fileId") Long fileId, @Param("unassigned") boolean unassigned, Pageable pageable);
 

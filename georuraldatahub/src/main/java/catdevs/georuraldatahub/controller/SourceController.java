@@ -1,10 +1,12 @@
 package catdevs.georuraldatahub.controller;
 
+import org.springframework.security.access.prepost.PreAuthorize;
+import catdevs.georuraldatahub.security.Permissions;
+
 import java.util.List;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -21,7 +23,6 @@ import catdevs.georuraldatahub.service.SourceService;
 import jakarta.validation.Valid;
 
 @RestController
-@CrossOrigin
 @RequestMapping("/fontes")
 public class SourceController {
 
@@ -31,7 +32,7 @@ public class SourceController {
         this.sourceService = sourceService;
     }
 
-    // CADASTRAR FONTE
+    @PreAuthorize(Permissions.SOURCES_CREATE)
     @PostMapping
     public ResponseEntity<SourceResponseDTO> create(
             @Valid @RequestBody SourceCreateRequestDTO request) {
@@ -40,21 +41,21 @@ public class SourceController {
                 .body(sourceService.create(request));
     }
 
-    // LISTAR FONTES
+    @PreAuthorize(Permissions.SOURCES_READ)
     @GetMapping
     public ResponseEntity<List<SourceResponseDTO>> listAll() {
         return ResponseEntity.status(HttpStatus.OK)
                 .body(sourceService.listAll());
     }
 
-    // BUSCAR FONTE POR ID
+    @PreAuthorize(Permissions.SOURCES_READ)
     @GetMapping("/{id}")
     public ResponseEntity<SourceResponseDTO> findById(@PathVariable Long id) {
         return ResponseEntity.status(HttpStatus.OK)
                 .body(sourceService.findById(id));
     }
 
-    // ALTERAR FONTE
+    @PreAuthorize(Permissions.SOURCES_UPDATE)
     @PutMapping("/{id}")
     public ResponseEntity<SourceResponseDTO> update(@PathVariable Long id,
             @Valid @RequestBody SourceUpdateRequestDTO request) {
@@ -62,14 +63,14 @@ public class SourceController {
                 .body(sourceService.update(id, request));
     }
 
-    // DESATIVAR FONTE
+    @PreAuthorize(Permissions.SOURCES_UPDATE)
     @PatchMapping("/{id}/desativar")
     public ResponseEntity<SourceResponseDTO> deactivate(@PathVariable Long id) {
         return ResponseEntity.status(HttpStatus.OK)
                 .body(sourceService.deactivate(id));
     }
 
-    // ATIVAR FONTE
+    @PreAuthorize(Permissions.SOURCES_UPDATE)
     @PatchMapping("/{id}/ativar")
     public ResponseEntity<SourceResponseDTO> activate(@PathVariable Long id) {
         return ResponseEntity.status(HttpStatus.OK)
