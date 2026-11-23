@@ -82,4 +82,10 @@ class GeoJsonFeatureExtractorTest {
         assertEquals("origem", mapper.readTree(result.attributesJson()).path("nome").asText());
     }
 
+    @Test
+    void rejectsLegacyCrsInsteadOfRelabelingProjectedCoordinates() throws Exception {
+        var root = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(collection(POINT));
+        root.putObject("crs").put("type", "name").putObject("properties").put("name", "EPSG:31983");
+        assertThrows(IllegalArgumentException.class, () -> GeoJsonFeatureExtractor.extract(root));
+    }
 }

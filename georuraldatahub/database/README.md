@@ -12,9 +12,11 @@ Use Oracle com **Spatial e DBMS_CLOUD** disponíveis. No SQL Developer, conecte-
 | 4 | `geodatalake_credencial_modelo.sql` | Criar a credencial de acesso ao bucket. Preencha seu usuário OCI e Auth Token antes de executar. |
 | 5 | `geodatalake_indicadores_mapa.sql` | Criar a projeção de cálculo, os indicadores, a gravação do histórico e a função do mapa. |
 
+Os objetos de relatórios e exclusões fazem parte de `geodatalake_ddl.sql`.
+
 No script do bucket, ajuste `bucket_uri` e `credential_name` para seu ambiente. O nome da credencial deve ser o mesmo usado em `DBMS_CLOUD.CREATE_CREDENTIAL`. Não salve credenciais preenchidas no Git.
 
-O cadastro da projeção requer permissão no catálogo MDSYS. Confira os erros após cada arquivo antes de continuar. Os scripts contêm DDL e COMMIT: use uma sessão sem alterações pendentes. Em banco já instalado, aplique somente os objetos necessários; não repita os cadastros iniciais.
+O cadastro da projeção requer permissão no catálogo MDSYS. Confira os erros após cada arquivo antes de continuar. Os scripts contêm DDL e COMMIT: use uma sessão sem alterações pendentes. Em banco já instalado, aplique somente os objetos necessários.
 
 Confira a compilação:
 
@@ -27,7 +29,7 @@ ORDER BY name, sequence;
 
 A consulta não deve retornar erros dos objetos instalados.
 
-## 2. Preparar dados para os testes
+## 2. Importar dados para os indicadores
 
 No backend, configure e reinicie a aplicação:
 
@@ -65,7 +67,7 @@ Uma camada reúne várias feições. Cada papel aceita uma ou mais camadas, por 
 
 Desmatamento precisa de `data_evento` nos atributos. Focos precisam de `data_evento` e `id_evento`; a importação CSV normaliza esses campos. Datas dos testes usam `YYYY-MM-DD`.
 
-## 3. Como os indicadores são calculados
+## 3. Catálogo dos indicadores
 
 Os cálculos são executados no **Oracle Spatial**. As áreas são calculadas em hectares, com projeção equivalente Albers baseada em SIRGAS 2000. As camadas são recortadas pela área de análise e as sobreposições de áreas são dissolvidas para evitar dupla contagem.
 
@@ -83,9 +85,9 @@ Considere **A** como a área total da feição analisada, em hectares.
 
 Os indicadores de área retornam hectares e percentual. IFC retorna quantidade e densidade. No IAPP, se a APP do recorte tiver área zero, o percentual é nulo. Uma camada ausente ou vazia gera erro; não equivale a resultado zero. O mínimo de RL é informado por quem faz a chamada, junto de seu fundamento.
 
-## 4. Testar com POST e JSON
+## 4. Consultar os indicadores com POST e JSON
 
-No Postman, selecione **POST → Body → raw → JSON**, com `Content-Type: application/json`.
+No Postman, selecione **POST > Body > raw > JSON**, com `Content-Type: application/json`.
 
 **Todos os IDs abaixo são exemplos.** Substitua `928` por uma feição poligonal existente e os IDs dos arrays pelas camadas correspondentes do seu banco.
 
@@ -153,7 +155,7 @@ Retorna `IDesmat2008`, `IDesmat2019` e `IDesmat2020`, cada um com `areaHa` e `pe
 {"focos": [36], "inicio": "2021-01-01", "fim": "2026-11-15"}
 ```
 
-Retorna `IFC.quantidade` e `IFC.porMilHa`.
+Retorna `IFC.quantidade` e `IFC.porMilHa`. Para um boletim diário, envie o mesmo dia em `inicio` e `fim`. Sem registros no período, os valores são nulos; zero indica que não foram encontrados focos na área nas fontes consultadas.
 
 ### Calcular e gravar no histórico
 
@@ -182,19 +184,3 @@ Para calcular os **sete indicadores e salvar juntos**, use:
 ```
 
 Essa rota exige todos os insumos. A API confirma a transação; o retorno inclui `calculoId`.
-
-## 5. Conferir o resultado do teste
-
-- Confira os valores, unidades, `areaImovelHa`, `fontes` e `parametros` no JSON retornado.
-- Para conferir as fórmulas, use uma área de teste com medidas conhecidas. Exemplo: área total de 100 ha e vegetação de 25 ha devem produzir ICV de 25%.
-- Para testar a gravação, use uma rota com `/calcular` e procure o `calculoId` retornado em `calculo_ambiental`:
-
-```sql
-SELECT calc_id, fei_imovel_id, calc_data, calc_regra
-FROM calculo_ambiental
-ORDER BY calc_id DESC
-FETCH FIRST 10 ROWS ONLY;
-```
-
-- Uma chamada individual sem `/calcular` não deve criar registro nessa tabela.
-- Teste um insumo obrigatório ausente: a chamada deve retornar erro, sem criar cálculo parcial.
