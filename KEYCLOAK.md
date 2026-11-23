@@ -124,6 +124,23 @@ VITE_KEYCLOAK_CLIENT_ID=georural-frontend
 Com `VITE_KEYCLOAK_ENABLED=false` e `KEYCLOAK_ENABLED=false` no backend, volta a prévia de
 cargo de desenvolvimento, sem login.
 
+## Backend no Dev Container (VS Code)
+
+Se o backend roda no Dev Container (o terminal mostra `vscode ➜ /workspaces/...`), `localhost` dentro dele é o
+próprio container, não a sua máquina. O login funciona no navegador, mas o backend responde
+`Connection refused` ao buscar as chaves do Keycloak. Informe, no `georuraldatahub/.env`, um endereço da máquina
+que o container alcance:
+
+```properties
+# Windows/Mac (Docker Desktop)
+KEYCLOAK_JWK_SET_URI=http://host.docker.internal:8081/realms/georural/protocol/openid-connect/certs
+# Linux
+# KEYCLOAK_JWK_SET_URI=http://172.17.0.1:8081/realms/georural/protocol/openid-connect/certs
+```
+
+Teste antes com `curl -s http://host.docker.internal:8081/realms/georural` no terminal do container. Não mude o
+`KEYCLOAK_ISSUER_URI`: ele continua `http://localhost:8081/realms/georural`, que é o endereço gravado no token.
+
 ## 6. Testar via linha de comando
 
 ```bash
