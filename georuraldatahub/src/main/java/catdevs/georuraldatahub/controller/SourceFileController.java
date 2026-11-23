@@ -1,5 +1,8 @@
 package catdevs.georuraldatahub.controller;
 
+import org.springframework.security.access.prepost.PreAuthorize;
+import catdevs.georuraldatahub.security.Permissions;
+
 import java.util.List;
 import catdevs.georuraldatahub.dto.FileResponseDTO;
 import catdevs.georuraldatahub.service.FileService;
@@ -10,7 +13,6 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 @RestController
-@CrossOrigin
 @RequestMapping("/fontes/{sourceId}/arquivos")
 public class SourceFileController {
     private final FileService files;
@@ -21,6 +23,7 @@ public class SourceFileController {
         this.sources = sources;
     }
 
+    @PreAuthorize(Permissions.INGESTION_RUN)
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
     public FileResponseDTO upload(@PathVariable Long sourceId, @RequestParam Long userId,
@@ -29,6 +32,7 @@ public class SourceFileController {
         return files.uploadToSource(file, sourceId, userId, dictionaryId);
     }
 
+    @PreAuthorize(Permissions.FILES_READ)
     @GetMapping
     public List<FileResponseDTO> list(@PathVariable Long sourceId) {
         sources.findEntityById(sourceId);

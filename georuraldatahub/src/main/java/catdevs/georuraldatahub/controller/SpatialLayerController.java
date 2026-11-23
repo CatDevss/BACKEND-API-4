@@ -1,8 +1,10 @@
 package catdevs.georuraldatahub.controller;
 
+import org.springframework.security.access.prepost.PreAuthorize;
+import catdevs.georuraldatahub.security.Permissions;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -11,7 +13,6 @@ import catdevs.georuraldatahub.service.SpatialLayerService;
 import catdevs.georuraldatahub.service.SpatialLayerService.LayerLoadResult;
 
 @RestController
-@CrossOrigin
 public class SpatialLayerController {
 
     private final SpatialLayerService spatialLayerService;
@@ -24,6 +25,7 @@ public class SpatialLayerController {
      * Cria a camada Oracle Spatial a partir de um arquivo já tratado pelo
      * dicionário.
      */
+    @PreAuthorize(Permissions.INGESTION_RUN)
     @PostMapping("/conjuntos/{datasetId}/arquivos/{fileId}/camada")
     public ResponseEntity<LayerLoadResult> createLayer(@PathVariable Long datasetId,
             @PathVariable Long fileId,

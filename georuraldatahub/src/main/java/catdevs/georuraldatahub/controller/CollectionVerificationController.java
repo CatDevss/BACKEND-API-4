@@ -1,5 +1,8 @@
 package catdevs.georuraldatahub.controller;
 
+import org.springframework.security.access.prepost.PreAuthorize;
+import catdevs.georuraldatahub.security.Permissions;
+
 import catdevs.georuraldatahub.collection.*;
 import catdevs.georuraldatahub.validation.CsvRecordValidator;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -14,7 +17,6 @@ import org.springframework.web.bind.annotation.*;
  * OCI.
  */
 @RestController
-@CrossOrigin
 @RequestMapping("/fontes/conectores")
 public class CollectionVerificationController {
     private final PublishedResources resources;
@@ -32,6 +34,7 @@ public class CollectionVerificationController {
     public record Verification(String status, long records, long bytes, CollectedData.Metadata collection) {
     }
 
+    @PreAuthorize(Permissions.SOURCES_READ)
     @GetMapping("/{product}/edicoes")
     public PublishedResources.Availability editions(@PathVariable CollectionRequest.Product product)
             throws IOException, InterruptedException {
@@ -44,6 +47,7 @@ public class CollectionVerificationController {
         }
     }
 
+    @PreAuthorize(Permissions.INGESTION_RUN)
     @PostMapping("/{product}/verificacao")
     public Verification verify(@PathVariable CollectionRequest.Product product, @Valid @RequestBody Request request)
             throws IOException, InterruptedException {
