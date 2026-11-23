@@ -1,5 +1,8 @@
 package catdevs.georuraldatahub.controller;
 
+import org.springframework.security.access.prepost.PreAuthorize;
+import catdevs.georuraldatahub.security.Permissions;
+
 import catdevs.georuraldatahub.repository.EnvironmentalLayerDataRepository;
 import catdevs.georuraldatahub.repository.EnvironmentalHistoryFilter;
 import catdevs.georuraldatahub.service.*;
@@ -12,7 +15,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@CrossOrigin
 @ConditionalOnProperty(name = "environmental.enabled", havingValue = "true")
 public class EnvironmentalReportController {
     private final EnvironmentalReportService reports;
@@ -27,25 +29,30 @@ public class EnvironmentalReportController {
     public record Request(
         String id, long layerId, String name, String indicator, JsonNode parameters, List<Long> featureIds) {}
     public record Failure(String message) {}
+    @PreAuthorize(Permissions.MAP_READ)
     @GetMapping("/ambiental/relatorios/recursos")
     public Object capabilities() {
         return Map.of("enabled", reports.available(), "deletionEnabled", reports.deletionAvailable(),
             "calculationDeletionEnabled", reports.calculationDeletionAvailable());
     }
+    @PreAuthorize(Permissions.MAP_READ)
     @GetMapping("/ambiental/camadas/{id}/dados")
     public Object data(@PathVariable long id) {
         indicators.layer(id);
         return data.data(id);
     }
+    @PreAuthorize(Permissions.MAP_READ)
     @PostMapping("/ambiental/relatorios")
     @ResponseStatus(HttpStatus.CREATED)
     public Object create(@RequestBody Request r) {
         return reports.create(r.id(), r.layerId(), r.name(), r.indicator(), r.parameters(), r.featureIds());
     }
+    @PreAuthorize(Permissions.MAP_READ)
     @PostMapping("/ambiental/relatorios/{id}/feicoes/{feature}/calcular")
     public JsonNode calculate(@PathVariable String id, @PathVariable long feature) {
         return reports.calculate(id, feature);
     }
+    @PreAuthorize(Permissions.MAP_READ)
     @PostMapping("/ambiental/relatorios/{id}/feicoes/{feature}/falha")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void fail(@PathVariable String id, @PathVariable long feature, @RequestBody Failure r) {
@@ -55,6 +62,7 @@ public class EnvironmentalReportController {
         if (page < 0 || page > 100000 || size < 1 || size > 100)
             throw new IllegalArgumentException("Paginacao invalida.");
     }
+    @PreAuthorize(Permissions.MAP_READ)
     @GetMapping("/ambiental/relatorios")
     public Object list(@RequestParam(defaultValue = "") String busca,
         @RequestParam(defaultValue = "") String indicador,
@@ -68,16 +76,19 @@ public class EnvironmentalReportController {
         return filters.isEmpty() ? reports.list(busca, indicador, page, size)
             : reports.list(busca, indicador, page, size, filters);
     }
+    @PreAuthorize(Permissions.REPORTS_DELETE)
     @DeleteMapping("/ambiental/calculos/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteCalculation(@PathVariable long id, @RequestParam long usuarioId) {
         reports.deleteCalculation(id, usuarioId);
     }
+    @PreAuthorize(Permissions.REPORTS_DELETE)
     @DeleteMapping("/ambiental/relatorios/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable String id, @RequestParam long usuarioId) {
         reports.delete(id, usuarioId);
     }
+    @PreAuthorize(Permissions.MAP_READ)
     @GetMapping("/ambiental/relatorios/{id}")
     public Object detail(@PathVariable String id, @RequestParam(defaultValue = "0") int page,
         @RequestParam(defaultValue = "20") int size) {
