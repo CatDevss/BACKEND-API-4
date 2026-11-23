@@ -33,6 +33,8 @@ public class VectorTreatment {
 
     public Result apply(JsonNode input, List<FieldRule> dictionary, TreatmentRequest request) throws IOException {
         validateRequest(request);
+        if (input.has("crs"))
+            throw new IllegalArgumentException("Reprojete o arquivo para EPSG:4326 antes do tratamento; declaração crs não é aceita.");
         if (!input.path("features").isArray() || input.path("features").isEmpty())
             throw new IllegalArgumentException("O tratamento exige feições aprovadas com geometria.");
         if (input.path("features").size() > limits.getMaxFeatures())

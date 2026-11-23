@@ -55,7 +55,8 @@ CREATE OR REPLACE PACKAGE pkg_carga_ambiental AUTHID definer AS
         p_con_id     NUMBER,
         p_ver_id     NUMBER,
         p_cam_id     OUT NUMBER,
-        p_quantidade OUT NUMBER
+        p_quantidade OUT NUMBER,
+        p_corrigir_geometria NUMBER DEFAULT 0
     );
 
 END;
@@ -254,7 +255,8 @@ CREATE OR REPLACE PACKAGE BODY pkg_carga_ambiental AS
         p_con_id     NUMBER,
         p_ver_id     NUMBER,
         p_cam_id     OUT NUMBER,
-        p_quantidade OUT NUMBER
+        p_quantidade OUT NUMBER,
+        p_corrigir_geometria NUMBER DEFAULT 0
     ) IS
 
         v_uri      VARCHAR2(4000);
@@ -274,6 +276,11 @@ CREATE OR REPLACE PACKAGE BODY pkg_carga_ambiental AS
         v_item     json_object_t;
         v_geom     mdsys.sdo_geometry;
         v_validation VARCHAR2(4000);
+        v_original_validation VARCHAR2(4000);
+        v_original_gtype NUMBER;
+        v_repaired BOOLEAN;
+        v_properties json_object_t;
+        v_trace json_object_t;
         v_geometry CLOB;
         v_props    CLOB;
         v_origin   VARCHAR2(100);
@@ -296,6 +303,9 @@ CREATE OR REPLACE PACKAGE BODY pkg_carga_ambiental AS
 
     BEGIN
         SAVEPOINT carga_ambiental;
+        IF p_corrigir_geometria IS NULL OR p_corrigir_geometria NOT IN (0, 1) THEN
+            raise_application_error(-20109, 'Opcao de correcao deve ser 0 ou 1.');
+        END IF;
         SELECT
             arq_id
         INTO v_arq
@@ -488,24 +498,53 @@ CREATE OR REPLACE PACKAGE BODY pkg_carga_ambiental AS
             IF v_geom IS NULL THEN
                 raise_application_error(-20109, 'Geometria nula: indice ' || i);
             END IF;
+            IF v_geom.sdo_srid IS NOT NULL AND v_geom.sdo_srid <> 4326 THEN
+                raise_application_error(-20109, 'SRID diferente de EPSG:4326: indice ' || i);
+            END IF;
+            -- A entrada RFC 7946 declara longitude/latitude em WGS84; isto nao reprojeta.
+            v_geom.sdo_srid := 4326;
+            SELECT COUNT(*) INTO v_count
+            FROM TABLE(sdo_util.getvertices(v_geom)) p
+            WHERE p.x IS NULL OR p.y IS NULL
+               OR p.x < -180 OR p.x > 180 OR p.y < -90 OR p.y > 90;
+            IF v_count > 0 THEN
+                raise_application_error(-20109, 'Coordenadas fora dos limites EPSG:4326: indice ' || i);
+            END IF;
             IF v_geom.sdo_gtype IS NULL
-               OR v_geom.sdo_gtype NOT IN ( 2001, 2003, 2005, 2007 ) THEN
+               OR v_geom.sdo_gtype NOT IN ( 2001, 2002, 2003, 2005, 2006, 2007 ) THEN
                 raise_application_error(-20109, 'Tipo de geometria nao aceito: indice '
                     || i || '; GTYPE=' || nvl(to_char(v_geom.sdo_gtype), 'NULL'));
             END IF;
             v_validation := sdo_geom.validate_geometry_with_context(v_geom, 0.005);
-            -- Tratar somente orientacao e vertices redundantes, com revalidacao.
-            -- Duas tentativas permitem que a primeira correcao revele a outra.
-            FOR tentativa IN 1..2 LOOP
+            v_original_validation := v_validation;
+            v_original_gtype := v_geom.sdo_gtype;
+            v_repaired := FALSE;
+            -- Auto-intersecoes exigem autorizacao; o original no bucket nao e alterado.
+            FOR tentativa IN 1..4 LOOP
                 IF regexp_like(v_validation, '^13356([^0-9]|$)') THEN
                     v_geom := sdo_util.remove_duplicate_vertices(v_geom, 0.005);
+                    v_repaired := TRUE;
                 ELSIF regexp_like(v_validation, '^13367([^0-9]|$)') THEN
                     v_geom := sdo_util.rectify_geometry(v_geom, 0.005);
+                    v_repaired := TRUE;
+                ELSIF p_corrigir_geometria = 1 AND regexp_like(v_validation, '^13349([^0-9]|$)') THEN
+                    BEGIN
+                        v_geom := sdo_util.rectify_geometry(v_geom, 0.005);
+                    EXCEPTION WHEN OTHERS THEN
+                        raise_application_error(-20109, 'Nao foi possivel corrigir a feicao '
+                            || (i + 1) || ': ' || substr(SQLERRM, 1, 400));
+                    END;
+                    v_repaired := TRUE;
                 ELSE
                     EXIT;
                 END IF;
                 v_validation := sdo_geom.validate_geometry_with_context(v_geom, 0.005);
             END LOOP;
+            IF v_repaired AND (v_geom.sdo_gtype IS NULL OR v_geom.sdo_gtype NOT IN (2001, 2002, 2003, 2005, 2006, 2007)
+                OR v_geom.sdo_srid IS NULL OR v_geom.sdo_srid <> 4326
+                OR (MOD(v_original_gtype,100) IN (3,7) AND MOD(v_geom.sdo_gtype,100) NOT IN (3,7))) THEN
+                raise_application_error(-20109, 'Correcao nao preservou geometria suportada EPSG:4326: feicao ' || (i + 1));
+            END IF;
             IF nvl(v_validation, 'INVALID') <> 'TRUE' THEN
                 raise_application_error(-20109, 'Geometria invalida: indice ' || i
                     || '; GTYPE=' || v_geom.sdo_gtype
@@ -520,6 +559,24 @@ CREATE OR REPLACE PACKAGE BODY pkg_carga_ambiental AS
                 AND NOT v_item.get('properties').is_null()
             THEN
                 v_props := v_item.get_object('properties').to_clob();
+            END IF;
+
+            v_properties := json_object_t.parse(v_props);
+            IF v_properties.has('_tratamento_espacial') THEN
+                raise_application_error(-20109, 'Campo reservado para rastreabilidade: _tratamento_espacial.');
+            END IF;
+            IF v_repaired THEN
+                v_trace := json_object_t();
+                v_trace.put('metodo', 'Validacao e reparo Oracle Spatial');
+                v_trace.put('motivo', substr(v_original_validation, 1, 5));
+                v_trace.put('diagnosticoOriginal', v_original_validation);
+                v_trace.put('tipoOriginal', v_original_gtype);
+                v_trace.put('tipoFinal', v_geom.sdo_gtype);
+                v_trace.put('tolerancia', 0.005);
+                v_trace.put('srid', 4326);
+                v_trace.put('validacaoFinal', v_validation);
+                v_properties.put('_tratamento_espacial', v_trace);
+                v_props := v_properties.to_clob();
             END IF;
 
             v_origin := NULL;
@@ -543,6 +600,15 @@ CREATE OR REPLACE PACKAGE BODY pkg_carga_ambiental AS
 
             p_quantidade := p_quantidade + 1;
         END LOOP;
+        UPDATE camada SET cam_tipo_geom = (
+            SELECT CASE WHEN MIN(MOD(f.fei_geometria.sdo_gtype, 100))
+                           <> MAX(MOD(f.fei_geometria.sdo_gtype, 100)) THEN 'MIXED'
+                ELSE CASE MIN(MOD(f.fei_geometria.sdo_gtype, 100))
+                    WHEN 1 THEN 'POINT' WHEN 2 THEN 'LINESTRING' WHEN 3 THEN 'POLYGON'
+                    WHEN 5 THEN 'MULTIPOINT' WHEN 6 THEN 'MULTILINESTRING' WHEN 7 THEN 'MULTIPOLYGON'
+                    ELSE 'MIXED' END END
+            FROM feicao f WHERE f.cam_id = p_cam_id
+        ) WHERE cam_id = p_cam_id;
         -- Somente aprovar depois da ultima feicao: respeita trg_proteger_feicao.
         UPDATE versao
         SET

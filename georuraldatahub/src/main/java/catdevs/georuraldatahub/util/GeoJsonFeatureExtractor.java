@@ -26,6 +26,9 @@ public final class GeoJsonFeatureExtractor {
     }
 
     public static Extraction extract(JsonNode collection) {
+        if (collection == null || !"FeatureCollection".equals(collection.path("type").asText())
+                || collection.has("crs"))
+            throw new IllegalArgumentException("Exige FeatureCollection em EPSG:4326, sem declaração crs; reprojete antes da carga.");
         JsonNode array = collection.get("features");
         if (array == null || !array.isArray()) {
             throw new IllegalArgumentException("O GeoJSON precisa possuir um array chamado features.");
@@ -37,6 +40,8 @@ public final class GeoJsonFeatureExtractor {
 
         for (JsonNode feature : array) {
             position++;
+            if (!"Feature".equals(feature.path("type").asText()))
+                throw new IllegalArgumentException("Elemento " + position + " não é uma feição GeoJSON.");
             JsonNode geometry = feature.get("geometry");
             if (geometry == null || geometry.isNull() || !geometry.hasNonNull("type")) {
                 throw new IllegalArgumentException("A feição " + position + " não possui geometria.");

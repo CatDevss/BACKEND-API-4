@@ -2,6 +2,9 @@ package catdevs.georuraldatahub.controller;
 
 import org.springframework.security.access.prepost.PreAuthorize;
 import catdevs.georuraldatahub.security.Permissions;
+import java.time.LocalDate;
+import org.springframework.format.annotation.DateTimeFormat;
+import catdevs.georuraldatahub.repository.EnvironmentalHistoryFilter;
 
 import java.util.Map;
 
@@ -90,9 +93,13 @@ public class EnvironmentalIndicatorController {
     @GetMapping("/ambiental/calculos")
     public Object history(@RequestParam(defaultValue = "") String busca,
             @RequestParam(defaultValue = "") String indicador,
+            @RequestParam(required = false) Long camadaId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate inicio,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fim,
             @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
         checkPage(page, size);
-        return service.history(busca, indicador, page, size);
+        return service.history(busca, indicador, page, size,
+                new EnvironmentalHistoryFilter(camadaId, inicio, fim));
     }
 
     @PreAuthorize(Permissions.MAP_READ)
@@ -121,8 +128,9 @@ public class EnvironmentalIndicatorController {
     @PreAuthorize(Permissions.INGESTION_RUN)
     @PostMapping("/conjuntos/{datasetId}/versoes/{versionId}/camada-oracle")
     @ResponseStatus(HttpStatus.CREATED)
-    public ImportedLayer importGeoJson(@PathVariable long datasetId, @PathVariable long versionId) {
-        return service.importGeoJson(datasetId, versionId);
+    public ImportedLayer importGeoJson(@PathVariable long datasetId, @PathVariable long versionId,
+            @RequestParam(defaultValue = "false") boolean corrigirGeometria) {
+        return service.importGeoJson(datasetId, versionId, corrigirGeometria);
     }
 
     @PreAuthorize(Permissions.MAP_READ)

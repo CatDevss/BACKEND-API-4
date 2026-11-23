@@ -54,6 +54,14 @@ class DictionaryGenerationServiceTest {
         assertTrue(result.validation().issues().getFirst().errors().contains("DUPLICATE_RECORD"));
         verify(dictionaries).create(eq(2L), any());
     }
+    @Test void carSourceSkipsFileRevalidationButStillSavesTheDictionary() throws Exception {
+        sources.findEntityById(2L).setName("CAR");
+        var result = service.fromUpload(2L, 7L, csv("id\n1\n1"));
+        assertEquals("VALIDO", result.validation().status());
+        assertEquals(-1, result.validation().validRecords());
+        assertEquals(99L, result.dictionary().id());
+        verify(dictionaries).create(eq(2L), any());
+    }
     @Test void collectionDownloadsTheRequestedEditionWithoutLookingUpADictionary() throws Exception {
         var request = new CollectionRequest(CollectionRequest.Product.IBGE_MUNICIPIOS, null, 7L, "2022", "4106902", null, null);
         when(connectors.collect(request)).thenReturn(new CollectedData("malha_2022.csv", "csv", "codigo\n4106902".getBytes(StandardCharsets.UTF_8), List.of(), null));

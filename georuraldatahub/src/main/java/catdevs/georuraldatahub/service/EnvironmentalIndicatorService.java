@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import catdevs.georuraldatahub.repository.EnvironmentalIndicatorRepository;
+import catdevs.georuraldatahub.repository.EnvironmentalHistoryFilter;
 
 @Service
 public class EnvironmentalIndicatorService {
@@ -107,10 +108,16 @@ public class EnvironmentalIndicatorService {
 
     @Transactional
     public EnvironmentalIndicatorRepository.ImportedLayer importGeoJson(long datasetId, long versionId) {
+        return importGeoJson(datasetId, versionId, false);
+    }
+
+    @Transactional
+    public EnvironmentalIndicatorRepository.ImportedLayer importGeoJson(long datasetId, long versionId, boolean repair) {
         positive(datasetId);
         positive(versionId);
         try {
-            return repository.importGeoJson(datasetId, versionId);
+            return repair ? repository.importGeoJson(datasetId, versionId, true)
+                    : repository.importGeoJson(datasetId, versionId);
         } catch (DataAccessException e) {
             throw translate(e);
         }
@@ -119,6 +126,12 @@ public class EnvironmentalIndicatorService {
     @Transactional(readOnly = true)
     public Object history(String search, String indicator, int page, int size) {
         return repository.history(search, indicator, page, size);
+    }
+
+    @Transactional(readOnly = true)
+    public Object history(String search, String indicator, int page, int size, EnvironmentalHistoryFilter filters) {
+        return filters.isEmpty() ? repository.history(search, indicator, page, size)
+                : repository.history(search, indicator, page, size, filters);
     }
 
     @Transactional(readOnly = true)
@@ -229,7 +242,7 @@ public class EnvironmentalIndicatorService {
         }
     }
 
-    private JsonNode withSources(String json) throws java.io.IOException {
+    JsonNode withSources(String json) throws java.io.IOException {
         JsonNode result = mapper.readTree(json);
         var cache = new java.util.HashMap<Long, java.util.Map<String, Object>>();
         if (result.path("fontes").isArray())
@@ -250,7 +263,7 @@ public class EnvironmentalIndicatorService {
             throw new IllegalArgumentException("Informe um ID positivo.");
     }
 
-    private RuntimeException translate(DataAccessException error) {
+    RuntimeException translate(DataAccessException error) {
         for (Throwable cause = error; cause != null; cause = cause.getCause()) {
             if (cause instanceof SQLException sql) {
                 if (sql.getErrorCode() == 1403)

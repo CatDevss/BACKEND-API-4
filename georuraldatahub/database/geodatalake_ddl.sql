@@ -231,6 +231,57 @@ CREATE TABLE IF NOT EXISTS calculo_ambiental (
     calc_resultado  CLOB NOT NULL CHECK ( calc_resultado IS JSON )
 );
 
+CREATE TABLE IF NOT EXISTS calculo_ambiental_exclusao (
+    calc_id  NUMBER PRIMARY KEY
+        REFERENCES calculo_ambiental ( calc_id ),
+    usr_id   NUMBER NOT NULL
+        REFERENCES usuario ( usr_id ),
+    exc_data TIMESTAMP WITH TIME ZONE DEFAULT systimestamp NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS relatorio_ambiental (
+    rel_id         VARCHAR2(36) PRIMARY KEY,
+    cam_id         NUMBER NOT NULL
+        REFERENCES camada ( cam_id ),
+    rel_nome       VARCHAR2(200 CHAR) NOT NULL,
+    rel_indicador  VARCHAR2(20) NOT NULL,
+    rel_parametros CLOB NOT NULL CHECK ( rel_parametros IS JSON ),
+    rel_areas      CLOB NOT NULL CHECK ( rel_areas IS JSON ),
+    rel_total      NUMBER NOT NULL CHECK ( rel_total BETWEEN 1 AND 100000 ),
+    rel_criado     TIMESTAMP WITH TIME ZONE DEFAULT systimestamp NOT NULL,
+    CONSTRAINT chk_rel_indicador
+        CHECK ( rel_indicador IN ( 'icv', 'irl', 'iapp', 'isap', 'iae',
+                                   'idesmat', 'ifc' ) )
+);
+
+CREATE TABLE IF NOT EXISTS relatorio_ambiental_item (
+    rel_id      VARCHAR2(36) NOT NULL
+        REFERENCES relatorio_ambiental ( rel_id ),
+    fei_id      NUMBER NOT NULL
+        REFERENCES feicao ( fei_id ),
+    calc_id     NUMBER UNIQUE
+        REFERENCES calculo_ambiental ( calc_id ),
+    item_estado VARCHAR2(20) NOT NULL,
+    item_erro   VARCHAR2(2000 CHAR),
+    item_criado TIMESTAMP WITH TIME ZONE DEFAULT systimestamp NOT NULL,
+    PRIMARY KEY ( rel_id,
+                  fei_id ),
+    CONSTRAINT chk_rel_item_estado
+        CHECK ( ( item_estado = 'CONCLUIDO'
+                  AND calc_id IS NOT NULL
+                  AND item_erro IS NULL )
+                OR ( item_estado = 'ERRO'
+                     AND calc_id IS NULL
+                     AND item_erro IS NOT NULL ) )
+);
+
+CREATE TABLE IF NOT EXISTS relatorio_ambiental_exclusao (
+    rel_id   VARCHAR2(36) PRIMARY KEY
+        REFERENCES relatorio_ambiental ( rel_id ),
+    usr_id   NUMBER NOT NULL
+        REFERENCES usuario ( usr_id ),
+    exc_data TIMESTAMP WITH TIME ZONE DEFAULT systimestamp NOT NULL
+);
 
 -- Triggers de validação e segurança
 CREATE OR REPLACE TRIGGER trg_impedir_exclusao_usuario BEFORE
@@ -277,6 +328,36 @@ CREATE OR REPLACE TRIGGER trg_calculo_ambiental_imutavel BEFORE
     UPDATE OR DELETE ON calculo_ambiental
 BEGIN
     raise_application_error(-20120, 'Calculo imutavel; execute um novo calculo.');
+END;
+/
+
+CREATE OR REPLACE TRIGGER trg_calc_exclusao_imutavel BEFORE
+    UPDATE OR DELETE ON calculo_ambiental_exclusao
+BEGIN
+    raise_application_error(-20170, 'Registro de exclusão imutável.');
+END;
+/
+
+CREATE OR REPLACE TRIGGER trg_calc_exclusao_validar BEFORE
+    INSERT ON calculo_ambiental_exclusao
+    FOR EACH ROW
+DECLARE
+    v_permitido NUMBER;
+BEGIN
+    SELECT
+        COUNT(*)
+    INTO v_permitido
+    FROM
+        usuario
+    WHERE
+            usr_id = :new.usr_id
+        AND usr_status = 1
+        AND usr_tipo IN ( 'ADMIN', 'GESTOR', 'OPERADOR', 'ANALISTA' );
+
+    IF v_permitido <> 1 THEN
+        raise_application_error(-20171, 'Usuário sem permissão para excluir cálculo.');
+    END IF;
+    :new.exc_data := systimestamp;
 END;
 /
 
@@ -340,6 +421,51 @@ BEGIN
                                         || ').');
     END IF;
 
+END;
+/
+
+-- Proteção dos relatórios e de suas exclusões
+CREATE OR REPLACE TRIGGER trg_relatorio_imutavel BEFORE
+    UPDATE OR DELETE ON relatorio_ambiental
+BEGIN
+    raise_application_error(-20170, 'Relatorio imutavel; crie outro relatorio.');
+END;
+/
+
+CREATE OR REPLACE TRIGGER trg_rel_item_imutavel BEFORE
+    UPDATE OR DELETE ON relatorio_ambiental_item
+BEGIN
+    raise_application_error(-20170, 'Item imutavel; crie outro relatorio para tentar novamente.');
+END;
+/
+
+CREATE OR REPLACE TRIGGER trg_rel_exclusao_imutavel BEFORE
+    UPDATE OR DELETE ON relatorio_ambiental_exclusao
+BEGIN
+    raise_application_error(-20170, 'Registro de exclusão imutável.');
+END;
+/
+
+CREATE OR REPLACE TRIGGER trg_rel_exclusao_validar BEFORE
+    INSERT ON relatorio_ambiental_exclusao
+    FOR EACH ROW
+DECLARE
+    v_permitido NUMBER;
+BEGIN
+    SELECT
+        COUNT(*)
+    INTO v_permitido
+    FROM
+        usuario
+    WHERE
+            usr_id = :new.usr_id
+        AND usr_status = 1
+        AND usr_tipo IN ( 'ADMIN', 'GESTOR', 'OPERADOR', 'ANALISTA' );
+
+    IF v_permitido <> 1 THEN
+        raise_application_error(-20171, 'Usuário sem permissão para excluir relatório.');
+    END IF;
+    :new.exc_data := systimestamp;
 END;
 /
 
@@ -1352,6 +1478,165 @@ BEGIN
                'CALCULO_AMBIENTAL',
                'INSERT',
                v_detalhes );
+
+END;
+/
+
+CREATE OR REPLACE TRIGGER trg_aud_calc_exclusao AFTER
+    INSERT ON calculo_ambiental_exclusao
+    FOR EACH ROW
+DECLARE
+    v_fei   NUMBER;
+    v_regra calculo_ambiental.calc_regra%TYPE;
+    v_arq   NUMBER;
+    v_ing   NUMBER;
+BEGIN
+    SELECT
+        h.fei_imovel_id,
+        h.calc_regra,
+        v.arq_id,
+        a.ing_id
+    INTO
+        v_fei,
+        v_regra,
+        v_arq,
+        v_ing
+    FROM
+             calculo_ambiental h
+        JOIN feicao  f ON f.fei_id = h.fei_imovel_id
+        JOIN camada  c ON c.cam_id = f.cam_id
+        JOIN versao  v ON v.ver_id = c.ver_id
+        JOIN arquivo a ON a.arq_id = v.arq_id
+    WHERE
+        h.calc_id = :new.calc_id;
+
+    INSERT INTO auditoria (
+        usr_id,
+        arq_id,
+        ing_id,
+        aud_entidade,
+        aud_acao,
+        aud_detalhes
+    ) VALUES ( :new.usr_id,
+               v_arq,
+               v_ing,
+               'CALCULO_AMBIENTAL',
+               'DELETE',
+               'Exclusão lógica do cálculo: '
+               || :new.calc_id
+               || ' | Feição: '
+               || v_fei
+               || ' | Regra: '
+               || v_regra
+               || ' | Resultado e vínculos de relatórios preservados | Usuário informado: '
+               || :new.usr_id
+               || ' | Sessão BD: '
+               || sys_context('USERENV', 'SESSION_USER') );
+
+END;
+/
+
+-- Relatórios
+CREATE OR REPLACE TRIGGER trg_auditar_relatorio AFTER
+    INSERT ON relatorio_ambiental
+    FOR EACH ROW
+BEGIN
+    INSERT INTO auditoria (
+        aud_entidade,
+        aud_acao,
+        aud_detalhes
+    ) VALUES ( 'RELATORIO_AMBIENTAL',
+               'INSERT',
+               'Relatorio: '
+               || :new.rel_id
+               || ' | Indicador: '
+               || :new.rel_indicador
+               || ' | Areas: '
+               || :new.rel_total
+               || ' | Sessao BD: '
+               || sys_context('USERENV', 'SESSION_USER') );
+
+END;
+/
+
+CREATE OR REPLACE TRIGGER trg_auditar_rel_item AFTER
+    INSERT ON relatorio_ambiental_item
+    FOR EACH ROW
+BEGIN
+    INSERT INTO auditoria (
+        aud_entidade,
+        aud_acao,
+        aud_detalhes
+    ) VALUES ( 'RELATORIO_AMBIENTAL_ITEM',
+               'INSERT',
+               'Relatorio: '
+               || :new.rel_id
+               || ' | Feicao: '
+               || :new.fei_id
+               || ' | Calculo: '
+               || :new.calc_id
+               || ' | Estado: '
+               || :new.item_estado
+               || ' | Sessao BD: '
+               || sys_context('USERENV', 'SESSION_USER') );
+
+END;
+/
+
+CREATE OR REPLACE TRIGGER trg_aud_rel_exclusao AFTER
+    INSERT ON relatorio_ambiental_exclusao
+    FOR EACH ROW
+DECLARE
+    v_nome      relatorio_ambiental.rel_nome%TYPE;
+    v_indicador VARCHAR2(20);
+    v_total     NUMBER;
+    v_arq       NUMBER;
+    v_ing       NUMBER;
+BEGIN
+    SELECT
+        r.rel_nome,
+        r.rel_indicador,
+        r.rel_total,
+        v.arq_id,
+        a.ing_id
+    INTO
+        v_nome,
+        v_indicador,
+        v_total,
+        v_arq,
+        v_ing
+    FROM
+             relatorio_ambiental r
+        JOIN camada  c ON c.cam_id = r.cam_id
+        JOIN versao  v ON v.ver_id = c.ver_id
+        JOIN arquivo a ON a.arq_id = v.arq_id
+    WHERE
+        r.rel_id = :new.rel_id;
+
+    INSERT INTO auditoria (
+        usr_id,
+        arq_id,
+        ing_id,
+        aud_entidade,
+        aud_acao,
+        aud_detalhes
+    ) VALUES ( :new.usr_id,
+               v_arq,
+               v_ing,
+               'RELATORIO_AMBIENTAL',
+               'DELETE',
+               'Exclusão lógica do relatório: '
+               || :new.rel_id
+               || ' | Nome: '
+               || v_nome
+               || ' | Indicador: '
+               || v_indicador
+               || ' | Áreas: '
+               || v_total
+               || ' | Cálculos e vínculos preservados | Usuário informado: '
+               || :new.usr_id
+               || ' | Sessão BD: '
+               || sys_context('USERENV', 'SESSION_USER') );
 
 END;
 /
